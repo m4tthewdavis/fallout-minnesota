@@ -1,0 +1,15 @@
+[package]
+name = "fallout_minnesota"
+version = "0.1.0"
+edition = "2021"
+description = "Fallout: Minnesota - first-person cold-survival prototype"
+
+[dependencies]
+bevy = "0.16"
+
+# Keep debug builds playable: optimize our code a little, dependencies a lot.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
