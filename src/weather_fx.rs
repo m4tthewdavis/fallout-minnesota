@@ -1,12 +1,13 @@
-//! Drives the weather cycle and its visuals: fog, sunlight, ambient light and
-//! wind-blown snow that turns into a sickly green whiteout during rad-blizzards.
+//! Drives the weather cycle, the day/night clock and their visuals: fog, a
+//! moving sun and moon, ambient light, and wind-blown snow that turns into a
+//! sickly green whiteout during rad-blizzards.
 
 use bevy::pbr::{DistanceFog, FogFalloff, NotShadowCaster};
 use bevy::prelude::*;
 
 use crate::player::Player;
 use crate::sim::weather::{Phase, Weather};
-use crate::state::{Messages, RngRes, WeatherRes};
+use crate::state::{ClockRes, Messages, RngRes, WeatherRes};
 use crate::world::Sun;
 
 const FLAKES: usize = 900;
@@ -85,9 +86,22 @@ fn spawn_flakes(
 fn update_weather(
     time: Res<Time>,
     mut weather: ResMut<WeatherRes>,
+    mut clock: ResMut<ClockRes>,
     mut rng: ResMut<RngRes>,
     mut msgs: ResMut<Messages>,
+    mut was_night: Local<bool>,
 ) {
+    clock.0.advance(time.delta_secs());
+    let night = clock.0.is_night();
+    if night != *was_night {
+        *was_night = night;
+        if night {
+            msgs.show("Night falls over Mille Lacs. The cold bites harder.", 4.0);
+        } else {
+            msgs.show("Dawn. A pale sun rises over the ice.", 3.5);
+        }
+    }
+
     let changed = weather.weather.update(time.delta_secs(), &mut rng.0);
     weather.just_changed = changed;
     match changed {
@@ -121,24 +135,56 @@ fn smooth_visuals(time: Res<Time>, weather: Res<WeatherRes>, mut vis: ResMut<Vis
 
 fn apply_atmosphere(
     vis: Res<VisualWeather>,
+    clock: Res<ClockRes>,
     mut fog: Query<&mut DistanceFog>,
-    mut sun: Query<&mut DirectionalLight, With<Sun>>,
+    mut sun: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
     mut ambient: ResMut<AmbientLight>,
     mut clear: ResMut<ClearColor>,
 ) {
+    let sky = clock.0.sky();
+    // 0 at deepest night, 1 in full day.
+    let day = ((sky.daylight - 0.12) / 0.88).clamp(0.0, 1.0);
+
+    // Sky / fog colour: weather tint, darkened towards a deep-blue night,
+    // and warmed at sunrise and sunset.
     let white = Vec3::new(0.70, 0.74, 0.78);
     let green = Vec3::new(0.45, 0.62, 0.42);
-    let c = white.lerp(green, vis.sick) * (0.55 + 0.45 * vis.light);
+    let weather_tint = white.lerp(green, vis.sick) * (0.55 + 0.45 * vis.light);
+    let night_tint = Vec3::new(0.04, 0.05, 0.09) + green * 0.08 * vis.sick;
+    let mut c = night_tint.lerp(weather_tint, day);
+    c = c.lerp(
+        Vec3::new(0.85, 0.55, 0.42) * (0.5 + 0.5 * vis.light),
+        sky.warmth * 0.35 * day.max(0.3),
+    );
     let color = Color::srgb(c.x, c.y, c.z);
     for mut f in &mut fog {
         f.color = color;
         f.falloff = FogFalloff::Exponential { density: vis.fog };
     }
-    for mut light in &mut sun {
-        light.illuminance = 6_000.0 * vis.light;
-    }
-    ambient.brightness = 200.0 + 300.0 * vis.light;
     clear.0 = color;
+
+    // Sun by day, moon by night.
+    let (dir, strength, light_color) = if sky.sun >= sky.moon * 0.3 {
+        let warm = Vec3::new(1.0, 0.62, 0.38);
+        let noon = Vec3::new(0.95, 0.96, 1.0);
+        let lc = noon.lerp(warm, sky.warmth);
+        (Vec3::from_array(sky.sun_pos), 6_000.0 * sky.sun, lc)
+    } else {
+        (
+            Vec3::new(-0.3, 0.8, -0.5).normalize(),
+            350.0 * sky.moon,
+            Vec3::new(0.6, 0.7, 1.0),
+        )
+    };
+    for (mut light, mut tf) in &mut sun {
+        light.illuminance = strength * vis.light;
+        light.color = Color::srgb(light_color.x, light_color.y, light_color.z);
+        *tf = Transform::from_translation(Vec3::ZERO).looking_at(-dir, Vec3::Y);
+    }
+
+    let amb = Vec3::new(0.35, 0.42, 0.65).lerp(Vec3::new(0.75, 0.80, 0.90), day);
+    ambient.color = Color::srgb(amb.x, amb.y, amb.z);
+    ambient.brightness = ((200.0 + 300.0 * vis.light) * sky.daylight).max(60.0);
 }
 
 fn move_flakes(

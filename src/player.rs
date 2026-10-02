@@ -5,10 +5,13 @@ use bevy::pbr::{DistanceFog, FogFalloff, NotShadowCaster};
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 
+use crate::sim::collision;
+use crate::sim::daynight::Clock;
 use crate::sim::survival::{Exposure, Survival};
+use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE, PLAYER_SPAWN};
 use crate::sim::weather::Weather;
-use crate::state::{alive, Game, Messages, WeatherRes};
+use crate::state::{alive, ClockRes, Colliders, Game, Messages, SfxQueue, WeatherRes};
 use crate::wolves::Wolf;
 
 pub const EYE_HEIGHT: f32 = 1.7;
@@ -19,6 +22,10 @@ const GRAVITY: f32 = 15.0;
 const MOUSE_SENSITIVITY: f32 = 0.0022;
 /// Seconds of sprinting on nuclear ice before it gives way.
 const ICE_CRACK_SECS: f32 = 2.0;
+/// Collision radius of the player's body.
+const BODY_RADIUS: f32 = 0.35;
+const STEP_WALK_SECS: f32 = 0.48;
+const STEP_SPRINT_SECS: f32 = 0.32;
 
 #[derive(Component)]
 pub struct Player {
@@ -27,8 +34,11 @@ pub struct Player {
     pub vel_y: f32,
     pub grounded: bool,
     pub sprinting: bool,
+    pub moving: bool,
     pub ice_strain: f32,
     pub cold_warned: bool,
+    step_timer: f32,
+    step_count: u32,
 }
 
 impl Player {
@@ -39,8 +49,11 @@ impl Player {
             vel_y: 0.0,
             grounded: true,
             sprinting: false,
+            moving: false,
             ice_strain: 0.0,
             cold_warned: false,
+            step_timer: 0.0,
+            step_count: 0,
         }
     }
 }
@@ -198,7 +211,13 @@ fn look(
     tf.rotation = Quat::from_euler(EulerRot::YXZ, p.yaw, p.pitch, 0.0);
 }
 
-fn move_player(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut q: Query<(&mut Transform, &mut Player)>) {
+fn move_player(
+    time: Res<Time>,
+    keys: Res<ButtonInput<KeyCode>>,
+    colliders: Res<Colliders>,
+    mut sfx: ResMut<SfxQueue>,
+    mut q: Query<(&mut Transform, &mut Player)>,
+) {
     let dt = time.delta_secs();
     let Ok((mut tf, mut p)) = q.single_mut() else { return };
 
@@ -218,6 +237,7 @@ fn move_player(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut q: Query<(&
         wish -= right;
     }
     let moving = wish.length_squared() > 0.0;
+    p.moving = moving;
     p.sprinting = moving && keys.pressed(KeyCode::ShiftLeft);
     let speed = if p.sprinting { SPRINT_SPEED } else { WALK_SPEED };
     if moving {
@@ -226,6 +246,27 @@ fn move_player(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut q: Query<(&
     let limit = HALF_SIZE - 2.0;
     tf.translation.x = tf.translation.x.clamp(-limit, limit);
     tf.translation.z = tf.translation.z.clamp(-limit, limit);
+
+    // Slide around trees, walls and buildings.
+    let (cx, cz) = collision::push_out(tf.translation.x, tf.translation.z, BODY_RADIUS, &colliders.0);
+    tf.translation.x = cx;
+    tf.translation.z = cz;
+
+    // Footsteps crunching in the snow.
+    if moving && p.grounded {
+        p.step_timer -= dt;
+        if p.step_timer <= 0.0 {
+            p.step_timer = if p.sprinting { STEP_SPRINT_SECS } else { STEP_WALK_SECS };
+            p.step_count = p.step_count.wrapping_add(1);
+            sfx.play(match p.step_count % 3 {
+                0 => Sound::Step1,
+                1 => Sound::Step2,
+                _ => Sound::Step3,
+            });
+        }
+    } else {
+        p.step_timer = 0.0;
+    }
 
     // Gravity and jumping over the height field.
     let floor = terrain::walk_height(tf.translation.x, tf.translation.z) + EYE_HEIGHT;
@@ -248,7 +289,9 @@ fn survival_tick(
     time: Res<Time>,
     mut game: ResMut<Game>,
     weather: Res<WeatherRes>,
+    clock: Res<ClockRes>,
     mut msgs: ResMut<Messages>,
+    mut sfx: ResMut<SfxQueue>,
     mut q: Query<(&mut Transform, &mut Player)>,
 ) {
     let dt = time.delta_secs();
@@ -271,6 +314,7 @@ fn survival_tick(
             let (sx, sz) = terrain::shore_point(lake, x, z);
             tf.translation = Vec3::new(sx, terrain::walk_height(sx, sz) + EYE_HEIGHT, sz);
             p.vel_y = 0.0;
+            sfx.play(Sound::IceCrack);
             msgs.show(
                 "The nuclear ice cracks! You plunge into glowing water and claw your way ashore.",
                 4.0,
@@ -283,7 +327,7 @@ fn survival_tick(
     }
 
     let exposure = Exposure {
-        air_temp_f: cond.air_temp_f,
+        air_temp_f: cond.air_temp_f + clock.0.temp_offset_f(),
         wind_chill_f: cond.wind_chill_f,
         sheltered,
         near_heat: sheltered,
@@ -310,6 +354,7 @@ fn use_items(
     keys: Res<ButtonInput<KeyCode>>,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
+    mut sfx: ResMut<SfxQueue>,
     q: Query<&Transform, With<Player>>,
 ) {
     let Game { survival, inv, .. } = &mut *game;
@@ -356,7 +401,10 @@ fn use_items(
             msgs.show("You need a fish house workbench to craft. Find a shelter.", 2.5);
         } else {
             match inv.craft_coat() {
-                Ok(()) => msgs.show("Crafted a Frostfang coat! Insulation greatly increased.", 3.5),
+                Ok(()) => {
+                    sfx.play(Sound::Craft);
+                    msgs.show("Crafted a Frostfang coat! Insulation greatly increased.", 3.5)
+                }
                 Err(e) => msgs.show(e, 2.5),
             }
         }
@@ -368,6 +416,7 @@ fn respawn(
     mut commands: Commands,
     mut game: ResMut<Game>,
     mut weather: ResMut<WeatherRes>,
+    mut clock: ResMut<ClockRes>,
     mut msgs: ResMut<Messages>,
     mut player: Query<(&mut Transform, &mut Player)>,
     wolves: Query<(Entity, &Transform), (With<Wolf>, Without<Player>)>,
@@ -389,6 +438,7 @@ fn respawn(
     *game = Game::new();
     weather.weather = Weather::new();
     weather.just_changed = None;
+    clock.0 = Clock::new();
     msgs.show(
         "The Overseer drags you back inside and patches you up. Try again, Thawborn.",
         5.0,

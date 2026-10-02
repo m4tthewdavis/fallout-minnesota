@@ -2,9 +2,12 @@
 
 use bevy::prelude::*;
 
+use crate::sim::collision::Shape;
 use crate::sim::combat::Weapon;
+use crate::sim::daynight::Clock;
 use crate::sim::rng::Rng;
 use crate::sim::survival::{DeathCause, Inventory, Survival};
+use crate::sim::synth::Sound;
 use crate::sim::weather::{Phase, Weather};
 
 #[derive(Resource)]
@@ -43,6 +46,24 @@ pub struct WeatherRes {
 
 #[derive(Resource)]
 pub struct RngRes(pub Rng);
+
+/// Time of day.
+#[derive(Resource, Default)]
+pub struct ClockRes(pub Clock);
+
+/// Solid obstacles (trees, walls, buildings) for players and wolves.
+#[derive(Resource, Default)]
+pub struct Colliders(pub Vec<Shape>);
+
+/// Sound effects requested this frame; the audio plugin plays and clears them.
+#[derive(Resource, Default)]
+pub struct SfxQueue(pub Vec<Sound>);
+
+impl SfxQueue {
+    pub fn play(&mut self, sound: Sound) {
+        self.0.push(sound);
+    }
+}
 
 /// One line of text shown at the top of the screen for a few seconds.
 #[derive(Resource, Default)]
@@ -89,6 +110,9 @@ impl Plugin for StatePlugin {
             })
             .insert_resource(RngRes(Rng::new(seed)))
             .insert_resource(messages)
+            .init_resource::<ClockRes>()
+            .init_resource::<Colliders>()
+            .init_resource::<SfxQueue>()
             .add_systems(Update, (tick_messages, tick_lifetimes));
     }
 }

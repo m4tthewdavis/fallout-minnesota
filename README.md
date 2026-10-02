@@ -1,4 +1,4 @@
-# Fallout: Minnesota — Prototype (Milestone 1)
+# Fallout: Minnesota — Prototype (Milestone 2)
 
 A first-person cold-survival prototype made with **Rust + Bevy 0.16**. It is based on the *Fallout: Minnesota* design doc.
 
@@ -41,12 +41,22 @@ If the build reports an error, copy the error text back to Claude and it will fi
 - **Frostfang wolves**: translucent fur and glowing eyes. In calm weather they wander. In blizzards they stalk and chase. Each blizzard brings a new pack. Killing them drops pelts, which craft the Frostfang coat (+0.35 insulation).
 - **World**: the Vault 143 door, four fish-house shelters, pines, the Bullseye-Mart ruin, rusted cars, and loot (Stimpaks, RadAway, ammo, hotdish).
 
+## What's new in Milestone 2
+
+- **Collision**: you and the wolves now slide around trees, walls, fish houses, cars, silos and the vault hillside instead of walking through them.
+- **Sound**: every sound is synthesised in code, so there are no audio files. You'll hear calm wind, a howling blizzard gale, the air-raid siren before a storm, footsteps crunching in snow, gunshots, jams, reloads, wolf howls, snarls and yelps, cracking ice, and Pip-Boy pickup blips.
+- **Day/night cycle**: a full day lasts 12 real minutes. The sun moves and casts moving shadows, sunrise and sunset glow orange, and nights are dark blue with moonlight. Nights are up to 12°F colder, and distant howls carry across the ice. The HUD shows the day and clock.
+- **Animated wolves**: Frostfangs trot with swinging legs (diagonal pairs, like a real trot). Their stride speeds up when they chase, and their tails wag harder on the hunt.
+
 ## Code layout
 
 ```
 src/
   main.rs        App setup
   sim/           Pure game rules, no Bevy (unit-tested)
+    collision.rs Circles and rectangles that push movers out
+    daynight.rs  Clock, sun/moon position, night chill
+    synth.rs     Procedural sound effects and WAV encoding
     survival.rs  Body Heat, rads, health, inventory, crafting
     weather.rs   Calm / siren / blizzard cycle and conditions
     terrain.rs   Height field, lakes, shelters, radiation zones
@@ -59,12 +69,13 @@ src/
   weather_fx.rs  Fog, light and snow particles
   wolves.rs      Wolf spawning, AI and bites
   combat.rs      Shooting, tracers, gun animation
+  audio.rs       Plays sound effects and weather ambience
   hud.rs         Pip-Boy green HUD and overlays
 ```
 
 ## Possible next milestones
 
-- Collision with trees and buildings, and a real interior for Vault 143
+- A real interior for Vault 143
 - Dialogue system and the first faction (the Skyfolk or the Lockkeepers' Compact)
-- Save/load, a day/night cycle and false-thaw events
-- Replace the box models with real 3D assets (glTF) and add audio (siren, wind, wolves)
+- Save/load and false-thaw events
+- Replace the box models with real 3D assets (glTF)

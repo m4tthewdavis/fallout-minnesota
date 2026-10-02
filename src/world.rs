@@ -5,9 +5,11 @@ use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
 use crate::player::Player;
+use crate::sim::collision::{self, Shape};
 use crate::sim::survival::Item;
+use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE, ICE_FRACTION, ICE_LEVEL, LAKES, RAD_SOURCES, SHELTERS, VAULT_POS};
-use crate::state::{alive, Game, Messages, RngRes};
+use crate::state::{alive, Colliders, Game, Messages, RngRes, SfxQueue};
 
 /// The directional "sun" light, dimmed by the weather.
 #[derive(Component)]
@@ -65,7 +67,10 @@ fn build_world(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rng: ResMut<RngRes>,
+    mut colliders: ResMut<Colliders>,
 ) {
+    let solid = &mut colliders.0;
+
     // ---------- Terrain ----------
     let mut terrain_mesh: Mesh = Plane3d::default()
         .mesh()
@@ -143,6 +148,13 @@ fn build_world(
         MeshMaterial3d(rock.clone()),
         Transform::from_xyz(vx, vy + 5.0, vz + 4.0),
     ));
+    solid.push(Shape::rect_centered(vx, vz + 4.0, 26.0, 10.0));
+    solid.push(Shape::Rect {
+        x0: vx + 4.5,
+        z0: vz - 1.9,
+        x1: vx + 12.5,
+        z1: vz - 0.9,
+    });
     // The gear door, rolled aside to the right.
     commands.spawn((
         Mesh3d(meshes.add(Cylinder::new(4.0, 0.9))),
@@ -194,6 +206,12 @@ fn build_world(
             MeshMaterial3d(house.clone()),
             Transform::from_xyz(sx - 1.5, gy + 1.2, sz),
         ));
+        solid.push(Shape::rect_centered(sx - 1.5, sz, 3.0, 3.0));
+        solid.push(Shape::Circle {
+            x: sx + 1.5,
+            z: sz,
+            r: 0.45,
+        });
         commands.spawn((
             Mesh3d(meshes.add(Cuboid::new(3.5, 0.3, 3.5))),
             MeshMaterial3d(roof.clone()),
@@ -256,6 +274,7 @@ fn build_world(
         MeshMaterial3d(warhead),
         Transform::from_xyz(cx, ground(cx, cz) + 0.8, cz).with_rotation(Quat::from_rotation_z(1.1)),
     ));
+    solid.push(Shape::Circle { x: cx, z: cz, r: 1.4 });
     // Golden Atomic Mills grain silos, leaking at the second hot spot.
     let (gx, gz, _, _) = RAD_SOURCES[1];
     let rust = mat(&mut materials, Color::srgb(0.55, 0.38, 0.25));
@@ -266,6 +285,11 @@ fn build_world(
             MeshMaterial3d(rust.clone()),
             Transform::from_xyz(gx + off, ground(gx + off, gz + 9.0) + h / 2.0, gz + 9.0),
         ));
+        solid.push(Shape::Circle {
+            x: gx + off,
+            z: gz + 9.0,
+            r: 2.3,
+        });
     }
 
     // ---------- Bullseye-Mart ruin ----------
@@ -285,6 +309,8 @@ fn build_world(
         wall(8.0, 6.0, 1.0, -8.0, 8.0),
         wall(5.0, 2.5, 1.0, 9.5, 8.0),
     ] {
+        let size = shape.half_size * 2.0;
+        solid.push(Shape::rect_centered(tf.translation.x, tf.translation.z, size.x, size.z));
         commands.spawn((Mesh3d(meshes.add(shape)), MeshMaterial3d(concrete.clone()), tf));
     }
     let red = glow(
@@ -310,6 +336,18 @@ fn build_world(
     ];
     for (i, (x, z, yaw)) in CARS.iter().enumerate() {
         let gy = ground(*x, *z);
+        // Two circles along the car's length approximate its rotated body.
+        let (ax, az) = (yaw.sin() * 1.2, yaw.cos() * 1.2);
+        solid.push(Shape::Circle {
+            x: x + ax,
+            z: z + az,
+            r: 1.0,
+        });
+        solid.push(Shape::Circle {
+            x: x - ax,
+            z: z - az,
+            r: 1.0,
+        });
         let paint = mat(&mut materials, car_colors[i % car_colors.len()]);
         commands
             .spawn((
@@ -358,6 +396,7 @@ fn build_world(
         }
         placed += 1;
         let scale = rng.0.range(0.8, 1.7);
+        solid.push(Shape::Circle { x, z, r: 0.4 * scale });
         commands
             .spawn((
                 Transform::from_xyz(x, ground(x, z) - 0.1, z)
@@ -417,7 +456,7 @@ fn build_world(
         attempts += 1;
         let x = rng.0.range(-HALF_SIZE + 10.0, HALF_SIZE - 10.0);
         let z = rng.0.range(-HALF_SIZE + 10.0, HALF_SIZE - 10.0);
-        if terrain::lake_at(x, z).is_some() {
+        if terrain::lake_at(x, z).is_some() || collision::blocked(x, z, 0.6, solid) {
             continue;
         }
         let item = loot_table[(rng.0.f32() * loot_table.len() as f32) as usize % loot_table.len()];
@@ -465,6 +504,7 @@ fn collect_pickups(
     mut commands: Commands,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
+    mut sfx: ResMut<SfxQueue>,
     player: Query<&Transform, With<Player>>,
     pickups: Query<(Entity, &Transform, &Pickup), Without<Player>>,
 ) {
@@ -473,6 +513,7 @@ fn collect_pickups(
         let d = tf.translation - ptf.translation;
         if d.x * d.x + d.z * d.z < 2.2 * 2.2 && d.y.abs() < 3.0 {
             game.inv.add(pickup.item);
+            sfx.play(Sound::Pickup);
             let extra = if pickup.item == Item::Ammo { " (+12)" } else { "" };
             msgs.show(format!("Picked up: {}{}", pickup.item.name(), extra), 2.5);
             commands.entity(entity).despawn();

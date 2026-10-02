@@ -2,7 +2,9 @@
 //!
 //! Milestone 1: leave Vault 143, survive the Long Winter (Body Heat, radiation,
 //! rad-blizzards, nuclear ice), and fight Frostfang wolf packs.
+//! Milestone 2: collision, synthesised audio, day/night cycle, animated wolves.
 
+mod audio;
 mod combat;
 mod hud;
 mod player;
@@ -32,6 +34,7 @@ fn main() {
         }))
         .add_plugins((
             state::StatePlugin,
+            audio::SoundPlugin,
             world::WorldPlugin,
             player::PlayerPlugin,
             weather_fx::WeatherPlugin,

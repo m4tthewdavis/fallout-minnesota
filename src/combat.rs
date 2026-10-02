@@ -7,7 +7,8 @@ use bevy::window::PrimaryWindow;
 
 use crate::player::{cursor_locked, GunModel, Player};
 use crate::sim::combat::{ray_sphere, FireResult};
-use crate::state::{alive, Game, Lifetime, Messages, RngRes, WeatherRes};
+use crate::sim::synth::Sound;
+use crate::state::{alive, ClockRes, Game, Lifetime, Messages, RngRes, SfxQueue, WeatherRes};
 use crate::wolves::Wolf;
 
 #[derive(Resource)]
@@ -47,13 +48,19 @@ fn weapon_timers(time: Res<Time>, mut game: ResMut<Game>, mut msgs: ResMut<Messa
     game.hurt_flash = (game.hurt_flash - time.delta_secs() * 1.5).max(0.0);
 }
 
-fn reload(keys: Res<ButtonInput<KeyCode>>, mut game: ResMut<Game>, mut msgs: ResMut<Messages>) {
+fn reload(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut game: ResMut<Game>,
+    mut msgs: ResMut<Messages>,
+    mut sfx: ResMut<SfxQueue>,
+) {
     if !keys.just_pressed(KeyCode::KeyR) {
         return;
     }
     let Game { weapon, inv, .. } = &mut *game;
     let jammed = weapon.jammed;
     if weapon.start_reload(&mut inv.ammo_reserve) {
+        sfx.play(if jammed { Sound::Jam } else { Sound::Reload });
         if jammed {
             msgs.show("Working the frozen bolt loose...", 1.2);
         }
@@ -72,6 +79,8 @@ fn fire(
     weather: Res<WeatherRes>,
     mut rng: ResMut<RngRes>,
     mut msgs: ResMut<Messages>,
+    mut sfx: ResMut<SfxQueue>,
+    clock: Res<ClockRes>,
     cam: Query<&GlobalTransform, With<Player>>,
     mut wolves: Query<(Entity, &Transform, &mut Wolf), Without<Player>>,
 ) {
@@ -79,28 +88,32 @@ fn fire(
         return;
     }
     let Ok(cam) = cam.single() else { return };
-    let temp = weather.weather.conditions().air_temp_f;
+    let temp = weather.weather.conditions().air_temp_f + clock.0.temp_offset_f();
 
     match game.weapon.try_fire(temp, &mut rng.0) {
         FireResult::Busy => return,
         FireResult::Empty => {
             if mouse.just_pressed(MouseButton::Left) {
+                sfx.play(Sound::DryClick);
                 msgs.show("*click* Empty. Press R to reload.", 1.5);
             }
             return;
         }
         FireResult::Jammed => {
             if mouse.just_pressed(MouseButton::Left) {
+                sfx.play(Sound::DryClick);
                 msgs.show("JAMMED - the cold seized the action. Press R to clear it.", 2.0);
             }
             return;
         }
         FireResult::FiredAndJammed => {
+            sfx.play(Sound::Jam);
             msgs.show("The pipe rifle jams in the cold! Press R to clear it.", 2.5);
         }
         FireResult::Fired => {}
     }
     game.recoil = 1.0;
+    sfx.play(Sound::Gunshot);
 
     let origin = cam.translation();
     let dir = cam.forward().as_vec3();
@@ -147,6 +160,7 @@ fn fire(
         if let Ok((_, _, mut wolf)) = wolves.get_mut(entity) {
             let damage = game.weapon.damage;
             wolf.health -= damage;
+            sfx.play(Sound::Yelp);
             if wolf.health <= 0.0 {
                 let alpha = wolf.alpha;
                 commands.entity(entity).despawn();

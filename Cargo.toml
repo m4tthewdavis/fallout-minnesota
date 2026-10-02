@@ -5,11 +5,19 @@ edition = "2021"
 description = "Fallout: Minnesota - first-person cold-survival prototype"
 
 [dependencies]
-bevy = "0.16"
+# "wav" lets Bevy play the sound effects the game synthesises at start-up.
+bevy = { version = "0.16", features = ["wav"] }
+# Bevy already depends on blake3. The "pure" feature makes it pure Rust, so it
+# builds without a C compiler (needed for the lighter GNU toolchain on Windows).
+blake3 = { version = "1", features = ["pure"] }
 
 # Keep debug builds playable: optimize our code a little, dependencies a lot.
+# Debug info is turned off because it is most of the build folder's size
+# (several GB with Bevy). Turn it back on if you need a debugger.
 [profile.dev]
 opt-level = 1
+debug = false
 
 [profile.dev.package."*"]
 opt-level = 3
+debug = false

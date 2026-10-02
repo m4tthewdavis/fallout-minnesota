@@ -1,15 +1,23 @@
 //! Frostfang wolf packs: translucent, glowing-eyed timber wolves that wander in
-//! calm weather and hunt in packs during rad-blizzards.
+//! calm weather and hunt in packs during rad-blizzards. They trot with animated
+//! legs, steer around trees and buildings, and howl at night and in storms.
+
+use std::collections::HashMap;
 
 use bevy::prelude::*;
 
 use crate::player::Player;
+use crate::sim::collision;
+use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
+use crate::sim::weather::Phase;
 use crate::sim::wolf::{self, WolfMode, BITE_RANGE};
-use crate::state::{alive, Game, Messages, RngRes, WeatherRes};
+use crate::state::{alive, ClockRes, Colliders, Game, Messages, RngRes, SfxQueue, WeatherRes};
 
 const MAX_WOLVES: usize = 16;
 const BITE_COOLDOWN: f32 = 1.3;
+/// Radians of leg swing per metre travelled.
+const STRIDE_PER_METRE: f32 = 1.7;
 
 #[derive(Component)]
 pub struct Wolf {
@@ -19,9 +27,14 @@ pub struct Wolf {
     /// Visual and hitbox scale.
     pub size: f32,
     bite_cd: f32,
+    howl_cd: f32,
     wander_target: Vec2,
     wander_timer: f32,
     speed_jitter: f32,
+    /// Current ground speed, m/s (drives the leg animation).
+    gait: f32,
+    /// Accumulated walk-cycle phase.
+    stride: f32,
 }
 
 impl Wolf {
@@ -33,6 +46,14 @@ impl Wolf {
     pub fn hit_radius(&self) -> f32 {
         0.8 * self.size
     }
+}
+
+/// A leg (or tail) pivot belonging to a wolf.
+#[derive(Component)]
+struct WolfLimb {
+    owner: Entity,
+    phase: f32,
+    tail: bool,
 }
 
 #[derive(Resource)]
@@ -48,12 +69,23 @@ struct WolfAssets {
     eye_mat: Handle<StandardMaterial>,
 }
 
+/// Countdown to the next distant howl.
+#[derive(Resource)]
+struct DistantHowl(f32);
+
 pub struct WolfPlugin;
 
 impl Plugin for WolfPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_wolf_assets, spawn_initial_packs).chain())
-            .add_systems(Update, (blizzard_packs, wolf_ai).chain().run_if(alive));
+        app.insert_resource(DistantHowl(20.0))
+            .add_systems(Startup, (setup_wolf_assets, spawn_initial_packs).chain())
+            .add_systems(
+                Update,
+                (
+                    (blizzard_packs, wolf_ai, distant_howls).chain().run_if(alive),
+                    animate_limbs,
+                ),
+            );
     }
 }
 
@@ -102,7 +134,7 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
     };
     let y = terrain::walk_height(pos.x, pos.y);
 
-    commands
+    let id = commands
         .spawn((
             Transform::from_xyz(pos.x, y, pos.y).with_scale(Vec3::splat(size)),
             Visibility::default(),
@@ -112,47 +144,79 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
                 alpha,
                 size,
                 bite_cd: 0.0,
+                howl_cd: rng.0.range(5.0, 20.0),
                 wander_target: pos,
                 wander_timer: 0.0,
                 speed_jitter: rng.0.range(0.85, 1.05),
+                gait: 0.0,
+                stride: rng.0.range(0.0, 6.28),
             },
         ))
-        .with_children(|w| {
+        .id();
+
+    commands.entity(id).with_children(|w| {
+        w.spawn((
+            Mesh3d(assets.body.clone()),
+            MeshMaterial3d(fur.clone()),
+            Transform::from_xyz(0.0, 0.75, 0.0),
+        ));
+        w.spawn((
+            Mesh3d(assets.head.clone()),
+            MeshMaterial3d(fur.clone()),
+            Transform::from_xyz(0.0, 1.0, 0.85),
+        ));
+        w.spawn((
+            Mesh3d(assets.snout.clone()),
+            MeshMaterial3d(fur.clone()),
+            Transform::from_xyz(0.0, 0.92, 1.2),
+        ));
+        for x in [-0.12, 0.12] {
             w.spawn((
-                Mesh3d(assets.body.clone()),
-                MeshMaterial3d(fur.clone()),
-                Transform::from_xyz(0.0, 0.75, 0.0),
+                Mesh3d(assets.eye.clone()),
+                MeshMaterial3d(assets.eye_mat.clone()),
+                Transform::from_xyz(x, 1.08, 1.11),
             ));
-            w.spawn((
-                Mesh3d(assets.head.clone()),
-                MeshMaterial3d(fur.clone()),
-                Transform::from_xyz(0.0, 1.0, 0.85),
-            ));
-            w.spawn((
-                Mesh3d(assets.snout.clone()),
-                MeshMaterial3d(fur.clone()),
-                Transform::from_xyz(0.0, 0.92, 1.2),
-            ));
-            w.spawn((
+        }
+
+        // Tail pivots at the rump.
+        w.spawn((
+            Transform::from_xyz(0.0, 0.95, -0.7),
+            Visibility::default(),
+            WolfLimb {
+                owner: id,
+                phase: 0.0,
+                tail: true,
+            },
+        ))
+        .with_children(|t| {
+            t.spawn((
                 Mesh3d(assets.tail.clone()),
                 MeshMaterial3d(fur.clone()),
-                Transform::from_xyz(0.0, 0.9, -0.9).with_rotation(Quat::from_rotation_x(0.5)),
+                Transform::from_xyz(0.0, 0.0, -0.3),
             ));
-            for (x, z) in [(-0.2, 0.5), (0.2, 0.5), (-0.2, -0.5), (0.2, -0.5)] {
-                w.spawn((
+        });
+
+        // Legs pivot at the hip/shoulder; diagonal pairs move together (a trot).
+        let pi = std::f32::consts::PI;
+        for (x, z, phase) in [(-0.2, 0.5, 0.0), (0.2, 0.5, pi), (-0.2, -0.5, pi), (0.2, -0.5, 0.0)] {
+            w.spawn((
+                Transform::from_xyz(x, 0.6, z),
+                Visibility::default(),
+                WolfLimb {
+                    owner: id,
+                    phase,
+                    tail: false,
+                },
+            ))
+            .with_children(|leg| {
+                leg.spawn((
                     Mesh3d(assets.leg.clone()),
                     MeshMaterial3d(fur.clone()),
-                    Transform::from_xyz(x, 0.3, z),
+                    Transform::from_xyz(0.0, -0.3, 0.0),
                 ));
-            }
-            for x in [-0.12, 0.12] {
-                w.spawn((
-                    Mesh3d(assets.eye.clone()),
-                    MeshMaterial3d(assets.eye_mat.clone()),
-                    Transform::from_xyz(x, 1.08, 1.11),
-                ));
-            }
-        });
+            });
+        }
+    });
 }
 
 fn spawn_pack(commands: &mut Commands, assets: &WolfAssets, center: Vec2, count: usize, rng: &mut RngRes) {
@@ -178,13 +242,15 @@ fn blizzard_packs(
     mut commands: Commands,
     assets: Res<WolfAssets>,
     mut rng: ResMut<RngRes>,
+    mut sfx: ResMut<SfxQueue>,
     weather: Res<WeatherRes>,
     player: Query<&Transform, With<Player>>,
     wolves: Query<(), With<Wolf>>,
 ) {
-    if weather.just_changed != Some(crate::sim::weather::Phase::Blizzard) {
+    if weather.just_changed != Some(Phase::Blizzard) {
         return;
     }
+    sfx.play(Sound::HowlFar);
     let count = wolves.iter().count();
     if count >= MAX_WOLVES {
         return;
@@ -196,12 +262,15 @@ fn blizzard_packs(
     spawn_pack(&mut commands, &assets, center, size, &mut rng);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn wolf_ai(
     time: Res<Time>,
     weather: Res<WeatherRes>,
+    colliders: Res<Colliders>,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     mut rng: ResMut<RngRes>,
+    mut sfx: ResMut<SfxQueue>,
     player: Query<&Transform, With<Player>>,
     mut wolves: Query<(Entity, &mut Transform, &mut Wolf), Without<Player>>,
 ) {
@@ -222,6 +291,7 @@ fn wolf_ai(
         let dist = to_player.length();
         let mode = wolf::decide(dist, hunting, w.health / w.max_health);
         w.bite_cd = (w.bite_cd - dt).max(0.0);
+        w.howl_cd -= dt;
 
         let mut dir = match mode {
             WolfMode::Chase => to_player.normalize_or_zero(),
@@ -266,10 +336,17 @@ fn wolf_ai(
         }
 
         let step = dir.normalize_or_zero() * speed * dt;
-        let new_pos = (pos + step).clamp(Vec2::splat(-HALF_SIZE + 2.0), Vec2::splat(HALF_SIZE - 2.0));
+        let mut new_pos = (pos + step).clamp(Vec2::splat(-HALF_SIZE + 2.0), Vec2::splat(HALF_SIZE - 2.0));
+        let (cx, cz) = collision::push_out(new_pos.x, new_pos.y, 0.45 * w.size, &colliders.0);
+        new_pos = Vec2::new(cx, cz);
         tf.translation.x = new_pos.x;
         tf.translation.z = new_pos.y;
         tf.translation.y = terrain::walk_height(new_pos.x, new_pos.y);
+
+        // Animation inputs: real distance covered this frame.
+        let moved = new_pos.distance(pos);
+        w.gait = if dt > 0.0 { moved / dt } else { 0.0 };
+        w.stride += moved * STRIDE_PER_METRE / w.size;
 
         let face = if mode == WolfMode::Chase || mode == WolfMode::Stalk {
             to_player
@@ -280,15 +357,65 @@ fn wolf_ai(
             tf.rotation = Quat::from_rotation_y(face.x.atan2(face.y));
         }
 
+        // Pack calls while hunting.
+        if (mode == WolfMode::Stalk || (mode == WolfMode::Chase && dist > 15.0)) && w.howl_cd <= 0.0 {
+            w.howl_cd = rng.0.range(12.0, 25.0);
+            sfx.play(if dist < 40.0 { Sound::HowlNear } else { Sound::HowlFar });
+        }
+
         // Bite.
         if mode == WolfMode::Chase && dist < BITE_RANGE && w.bite_cd <= 0.0 && game.death.is_none() {
             w.bite_cd = BITE_COOLDOWN;
             let dmg = if w.alpha { 18.0 } else { 12.0 };
             game.hurt_flash = 1.0;
+            sfx.play(Sound::Snarl);
             if let Some(cause) = game.survival.damage(dmg) {
                 game.death = Some(cause);
                 msgs.show(cause.describe(), f32::MAX);
             }
+        }
+    }
+}
+
+/// Far-off howls at night and during blizzards, as long as wolves remain.
+fn distant_howls(
+    time: Res<Time>,
+    clock: Res<ClockRes>,
+    weather: Res<WeatherRes>,
+    mut timer: ResMut<DistantHowl>,
+    mut rng: ResMut<RngRes>,
+    mut sfx: ResMut<SfxQueue>,
+    wolves: Query<(), With<Wolf>>,
+) {
+    if !(clock.0.is_night() || weather.weather.phase == Phase::Blizzard) || wolves.is_empty() {
+        return;
+    }
+    timer.0 -= time.delta_secs();
+    if timer.0 <= 0.0 {
+        timer.0 = rng.0.range(18.0, 40.0);
+        sfx.play(Sound::HowlFar);
+    }
+}
+
+fn animate_limbs(time: Res<Time>, wolves: Query<(Entity, &Wolf)>, mut limbs: Query<(&mut Transform, &WolfLimb)>) {
+    let state: HashMap<Entity, (f32, f32)> = wolves.iter().map(|(e, w)| (e, (w.stride, w.gait))).collect();
+    let t = time.elapsed_secs();
+    for (mut tf, limb) in &mut limbs {
+        let Some(&(stride, gait)) = state.get(&limb.owner) else {
+            continue;
+        };
+        let effort = (gait / wolf::CHASE_SPEED).clamp(0.0, 1.0);
+        if limb.tail {
+            let wag = (t * (3.0 + 6.0 * effort)).sin() * (0.15 + 0.35 * effort);
+            tf.rotation = Quat::from_rotation_x(0.5 - 0.4 * effort) * Quat::from_rotation_y(wag);
+        } else {
+            let amp = 0.15 + 0.55 * effort;
+            let swing = if gait > 0.2 {
+                (stride + limb.phase).sin() * amp
+            } else {
+                0.0
+            };
+            tf.rotation = Quat::from_rotation_x(swing);
         }
     }
 }

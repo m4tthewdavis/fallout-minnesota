@@ -7,7 +7,7 @@ use crate::player::Player;
 use crate::sim::survival::{Inventory, Survival};
 use crate::sim::terrain;
 use crate::sim::weather::Phase;
-use crate::state::{Game, Messages, WeatherRes};
+use crate::state::{ClockRes, Game, Messages, WeatherRes};
 
 const PIP_GREEN: Color = Color::srgb(0.45, 1.0, 0.45);
 const WARN: Color = Color::srgb(1.0, 0.75, 0.3);
@@ -151,6 +151,7 @@ fn bar(value: f32, max: f32, width: usize) -> String {
 fn update_hud(
     game: Res<Game>,
     weather: Res<WeatherRes>,
+    clock: Res<ClockRes>,
     msgs: Res<Messages>,
     player: Query<&Transform, With<Player>>,
     mut texts: ParamSet<(
@@ -167,6 +168,7 @@ fn update_hud(
     let s = &game.survival;
     let w = &weather.weather;
     let cond = w.conditions();
+    let air_temp = cond.air_temp_f + clock.0.temp_offset_f();
 
     let (sheltered, ambient_rads) = player
         .single()
@@ -193,18 +195,24 @@ fn update_hud(
         String::new()
     };
     let feels = Survival::effective_temp(&crate::sim::survival::Exposure {
-        air_temp_f: cond.air_temp_f,
+        air_temp_f: air_temp,
         wind_chill_f: cond.wind_chill_f,
         sheltered,
         ..Default::default()
     });
+    let time_line = format!(
+        "Day {}  {}  {}",
+        clock.0.day,
+        clock.0.label(),
+        if clock.0.is_night() { "Night" } else { "Day" }
+    );
     let phase_line = match w.phase {
         Phase::Calm => format!("Calm  ({:.0}s)", w.timer.max(0.0)),
         Phase::Warning => format!("SIREN - blizzard in {:.0}s", w.timer.max(0.0)),
         Phase::Blizzard => format!("RAD-BLIZZARD  ({:.0}s left)", w.timer.max(0.0)),
     };
     let status = format!(
-        "HP    {} {:>3.0}/{:.0}\nHEAT  {} {:>3.0}%{}\nRADS  {} {:>4.0}{}\n{:.0}F  feels like {:.0}F  |  {}",
+        "HP    {} {:>3.0}/{:.0}\nHEAT  {} {:>3.0}%{}\nRADS  {} {:>4.0}{}\n{:.0}F  feels like {:.0}F  |  {}\n{}",
         bar(s.health, Survival::BASE_MAX_HEALTH, 20),
         s.health,
         s.max_health(),
@@ -214,9 +222,10 @@ fn update_hud(
         bar(s.rads, Survival::MAX_RADS, 20),
         s.rads,
         rad_note,
-        cond.air_temp_f,
+        air_temp,
         feels,
         phase_line,
+        time_line,
     );
     if let Ok(mut t) = texts.p0().single_mut() {
         t.0 = status;
