@@ -608,8 +608,16 @@ pub fn spawn_props(
         let z = road_n(x) + side * (ROAD_HALF_WIDTH + 1.8);
         let gy = ground(x, z);
         let h = 2.2 + size.y * 0.5;
-        commands.spawn((Mesh3d(meshes.add(Cylinder::new(0.045, h))), MeshMaterial3d(post_gray.clone()), Transform::from_xyz(x, gy + h * 0.5, z - 0.04)));
-        sign(commands, meshes, materials, image, size, Transform::from_xyz(x, gy + 2.2, z).with_rotation(Quat::from_rotation_y(yaw)), 0.0);
+        let rot = Quat::from_rotation_y(yaw);
+        // Posts stand behind the board: one for a small sign, two at the
+        // sides of a wide one.
+        let back = rot * Vec3::new(0.0, 0.0, -0.085);
+        let posts: &[f32] = if size.x > 1.5 { &[-0.36, 0.36] } else { &[0.0] };
+        for &u in posts {
+            let p = Vec3::new(x, gy + h * 0.5, z) + back + rot * Vec3::X * (u * size.x);
+            commands.spawn((Mesh3d(meshes.add(Cylinder::new(0.045, h))), MeshMaterial3d(post_gray.clone()), Transform::from_translation(p)));
+        }
+        sign(commands, meshes, materials, image, size, Transform::from_xyz(x, gy + 2.2, z).with_rotation(rot), 0.0);
         solid.push(Shape::Circle { x, z, r: 0.25 });
     };
     road_sign(&mut commands, &mut meshes, &mut materials, solid, &assets.sign_speed, Vec2::new(0.8, 1.0), -100.0, -1.0, FRAC_PI_2);

@@ -719,7 +719,7 @@ pub fn spawn_landmarks(
         commands.spawn((
             Mesh3d(meshes.add(Cylinder::new(0.05, 3.4))),
             MeshMaterial3d(post.clone()),
-            Transform::from_xyz(sx + dx, sy + 1.7, sz - 0.05),
+            Transform::from_xyz(sx + dx, sy + 1.7, sz - 0.09),
         ));
     }
     solid.push(Shape::Circle { x: sx, z: sz, r: 0.3 });

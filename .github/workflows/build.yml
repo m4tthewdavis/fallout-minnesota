@@ -24,6 +24,12 @@ jobs:
       - name: Run the game-rule tests
         run: cargo test --release
 
+      - name: Check the generated sign layouts
+        shell: pwsh
+        run: |
+          python -m pip install --quiet numpy pillow
+          python tools/test_gen_textures.py
+
       - name: Package the game
         shell: pwsh
         run: |

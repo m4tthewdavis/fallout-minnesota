@@ -62,13 +62,16 @@ struct MissingBanner;
 struct Crosshair;
 #[derive(Component)]
 struct PromptText;
+/// HUD parts that make way for the Pip-Boy screen while it's open.
+#[derive(Component)]
+struct HideWithPip;
 
 pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_hud)
-            .add_systems(Update, (update_hud, missing_banner, fade_crosshair, scale_ui, show_prompt));
+            .add_systems(Update, (update_hud, missing_banner, fade_crosshair, scale_ui, show_prompt, hide_with_pip));
     }
 }
 
@@ -132,7 +135,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
     ));
 
     // Crosshair.
-    commands.spawn(full_screen()).with_children(|p| {
+    commands.spawn((full_screen(), HideWithPip)).with_children(|p| {
         p.spawn((Text::new("+"), font(24.0), TextColor(PIP_GREEN.with_alpha(0.85)), Crosshair));
     });
 
@@ -155,18 +158,22 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             ..default()
         },
         HelpText,
+        HideWithPip,
     ));
 
     // Compass along the top.
     commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            width: Val::Percent(100.0),
-            top: Val::Px(8.0),
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            ..default()
-        })
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                top: Val::Px(8.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            HideWithPip,
+        ))
         .with_children(|p| {
             p.spawn(panel(Node {
                 flex_direction: FlexDirection::Column,
@@ -192,16 +199,35 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             ));
         });
 
+    // The bottom row: status panel on the left, weapon panel on the right.
+    // Both live in one flex row so they can shrink and wrap but never overlap.
+    let bottom = commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(14.0),
+                right: Val::Px(14.0),
+                bottom: Val::Px(14.0),
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::FlexEnd,
+                column_gap: Val::Px(24.0),
+                ..default()
+            },
+            HideWithPip,
+        ))
+        .id();
+
     // Status panel (bottom-left): three icon bars plus conditions.
     commands
         .spawn(panel(Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(14.0),
-            bottom: Val::Px(14.0),
             flex_direction: FlexDirection::Column,
             row_gap: Val::Px(5.0),
+            flex_shrink: 1.0,
+            min_width: Val::Px(0.0),
+            max_width: Val::Percent(52.0),
             ..default()
         }))
+        .insert(ChildOf(bottom))
         .with_children(|p| {
             for (stat, label, icon) in [
                 (Stat::Hp, "HP  ", &assets.icon_hp),
@@ -276,13 +302,14 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
     // Weapon panel (bottom-right).
     commands
         .spawn(panel(Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(14.0),
-            bottom: Val::Px(14.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::FlexEnd,
+            flex_shrink: 1.0,
+            min_width: Val::Px(0.0),
+            max_width: Val::Percent(44.0),
             ..default()
         }))
+        .insert(ChildOf(bottom))
         .with_children(|p| {
             p.spawn((Text::new(""), font(30.0), TextColor(PIP_GREEN), AmmoText));
             p.spawn((
@@ -296,13 +323,16 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
 
     // Context prompts: "[E] Open crate", workbench hints.
     commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            width: Val::Percent(100.0),
-            top: Val::Percent(60.0),
-            justify_content: JustifyContent::Center,
-            ..default()
-        })
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                top: Val::Percent(60.0),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            HideWithPip,
+        ))
         .with_children(|p| {
             p.spawn((
                 Text::new(""),
@@ -350,15 +380,27 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
     });
 }
 
-/// The HUD is laid out for a 720-pixel-tall window; scale it up on bigger
-/// screens so it stays readable (1.6x on a 1154-pixel-tall display).
+/// The HUD is laid out for a 1280x720 window; scale it up on bigger screens
+/// so it stays readable (1.6x on a 2461x1154 display).
 fn scale_ui(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut scale: ResMut<UiScale>) {
     let Ok(window) = windows.single() else { return };
     // FMN_UI_SCALE lets screenshot mode render small windows with a matching UI.
     let forced = std::env::var("FMN_UI_SCALE").ok().and_then(|v| v.parse::<f32>().ok());
-    let s = forced.unwrap_or_else(|| (window.height() / 720.0).clamp(1.0, 2.5));
+    // Fit both ways so a wide-but-short or narrow window never crowds the panels.
+    let fit = (window.height() / 720.0).min(window.width() / 1280.0);
+    let s = forced.unwrap_or_else(|| fit.clamp(1.0, 2.5));
     if (scale.0 - s).abs() > 0.01 {
         scale.0 = s;
+    }
+}
+
+fn hide_with_pip(pip: Res<crate::state::PipOpen>, mut q: Query<&mut Visibility, With<HideWithPip>>) {
+    if !pip.is_changed() {
+        return;
+    }
+    let v = if pip.0 { Visibility::Hidden } else { Visibility::Inherited };
+    for mut vis in &mut q {
+        *vis = v;
     }
 }
 
@@ -561,7 +603,7 @@ fn update_hud(
     };
     if let Ok(mut text) = texts.p1().single_mut() {
         text.0 = format!(
-            "{:.0}F  feels {:.0}F  |  {}\nDay {}  {}  {}",
+            "{:.0}F  feels {:.0}F\n{}\nDay {}  {}  {}",
             air_temp,
             feels,
             phase_line,
@@ -616,7 +658,7 @@ fn update_hud(
     }
     if let Ok(mut text) = texts.p2().single_mut() {
         text.0 = format!(
-            "{}  {}\n{}{}\nStimpak x{}  RadAway x{}  Hotdish x{}  Scrap x{}\n{}  |  Kills {}",
+            "{}  {}\n{}{}\nStimpak x{}  RadAway x{}\nHotdish x{}  Scrap x{}\n{}  |  Kills {}",
             wpn.name.to_uppercase(),
             wstate,
             slots,

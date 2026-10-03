@@ -5,6 +5,7 @@ it is original work released with the project.
 
     pip install numpy pillow
     python3 tools/gen_textures.py
+    python3 tools/test_gen_textures.py   # checks the sign layouts
 """
 
 import math
@@ -161,6 +162,41 @@ def aurora():
     save(Image.fromarray((np.clip(out, 0, 1) * 255).astype(np.uint8), "RGBA"), GEN, "aurora.png")
 
 
+def layout_sign(text_lines, size, border):
+    """Fit the lines inside the sign's inner frame. Returns the frame and, per
+    line, (text, font, x, y, ink box) with the ink box in image pixels. Lines
+    are sized by their real ink height, then shrunk together until the whole
+    block fits both ways with a margin."""
+    w, h = size
+    inset = 6 + 8 + max(6, int(min(w, h) * 0.05)) if border else max(8, int(min(w, h) * 0.06))
+    inner = (inset, inset, w - inset, h - inset)
+    avail_w, avail_h = inner[2] - inner[0], inner[3] - inner[1]
+    shrink = 1.0
+    while True:
+        lines = []
+        for text, scale in text_lines:
+            px = max(6, int(h * scale * shrink))
+            font = ImageFont.truetype(FONT, px)
+            while font.getlength(text) > avail_w and px > 6:
+                px -= 1
+                font = ImageFont.truetype(FONT, px)
+            lines.append((text, font, font.getbbox(text)))
+        heights = [b[3] - b[1] for _, _, b in lines]
+        gap = 0.32 * sum(heights) / len(heights)
+        total = sum(heights) + gap * (len(lines) - 1)
+        if total <= avail_h or shrink < 0.2:
+            break
+        shrink *= 0.95
+    out = []
+    y = inner[1] + (avail_h - total) / 2
+    for (text, font, b), hgt in zip(lines, heights):
+        tw = b[2] - b[0]
+        x = inner[0] + (avail_w - tw) / 2 - b[0]
+        out.append((text, font, x, y - b[1], (x + b[0], y, x + b[2], y + hgt)))
+        y += hgt + gap
+    return inner, out
+
+
 def sign(name, text_lines, size, bg, fg, border=None, rust=0.0):
     """Painted pre-war sign with rust and grime."""
     w, h = size
@@ -168,22 +204,28 @@ def sign(name, text_lines, size, bg, fg, border=None, rust=0.0):
     d = ImageDraw.Draw(img)
     if border:
         d.rectangle([6, 6, w - 7, h - 7], outline=border, width=8)
-    y = h * 0.5 - len(text_lines) * h * 0.18
-    for text, scale in text_lines:
-        px = int(h * scale)
-        font = ImageFont.truetype(FONT, px)
-        while d.textlength(text, font=font) > w * 0.86:
-            px -= 2
-            font = ImageFont.truetype(FONT, px)
-        tw = d.textlength(text, font=font)
-        d.text(((w - tw) / 2, y), text, font=font, fill=fg)
-        y += h * scale * 1.15
+    inner, lines = layout_sign(text_lines, size, border)
+    for text, font, x, y, ink in lines:
+        assert inner[0] <= ink[0] and ink[2] <= inner[2] and inner[1] <= ink[1] and ink[3] <= inner[3] + 0.5, (name, text, ink, inner)
+        d.text((x, y), text, font=font, fill=fg)
     arr = np.asarray(img, float) / 255
     noise = value_noise(max(w, h), 8)[:h, :w]
     stain = np.clip((noise - (1 - rust)) * 4, 0, 1)[..., None]
     arr = arr * (0.85 + 0.15 * noise[..., None])
     arr = arr * (1 - stain) + np.array([0.45, 0.25, 0.12]) * stain
     save(Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8)), GEN, name)
+
+
+# Every generated sign: file, lines (text, height as a share of the sign), size, colours, rust.
+SIGNS = [
+    ("sign_bullseye.png", [("BULLSEYE", 0.42), ("- MART -", 0.2)], (512, 256), (200, 20, 25), (245, 240, 230), (245, 240, 230), 0.35),
+    ("sign_mille_lacs.png", [("MILLE LACS 5", 0.34), ("VAULT 143  2", 0.34)], (512, 256), (30, 95, 50), (240, 240, 235), (240, 240, 235), 0.25),
+    ("sign_golden_atomic.png", [("GOLDEN ATOMIC MILLS", 0.42), ("Enriched Flour Since 1961", 0.18)], (1024, 256), (40, 35, 30), (230, 180, 40), None, 0.3),
+    ("sign_speed.png", [("SPEED", 0.13), ("LIMIT", 0.13), ("55", 0.32)], (256, 320), (240, 240, 235), (20, 20, 20), (20, 20, 20), 0.3),
+    ("sign_bait.png", [("BAIT &", 0.22), ("TACKLE", 0.22), ("OPEN 24 HRS", 0.1)], (512, 256), (230, 190, 40), (30, 25, 20), (30, 25, 20), 0.45),
+    ("sign_welcome.png", [("WELCOME TO", 0.2), ("MILLE LACS", 0.3), ("Pop. 1,143", 0.14)], (512, 256), (30, 95, 50), (240, 240, 235), (240, 240, 235), 0.3),
+    ("sign_fallout_shelter.png", [("FALLOUT", 0.3), ("SHELTER", 0.3)], (256, 256), (230, 190, 30), (25, 25, 25), (25, 25, 25), 0.3),
+]
 
 
 def clean_snow():
@@ -404,13 +446,8 @@ def main():
     flash()
     stars()
     aurora()
-    sign("sign_bullseye.png", [("BULLSEYE", 0.42), ("- MART -", 0.2)], (512, 256), (200, 20, 25), (245, 240, 230), (245, 240, 230), 0.35)
-    sign("sign_mille_lacs.png", [("MILLE LACS 5", 0.34), ("VAULT 143  2", 0.34)], (512, 256), (30, 95, 50), (240, 240, 235), (240, 240, 235), 0.25)
-    sign("sign_golden_atomic.png", [("GOLDEN ATOMIC MILLS", 0.42), ("Enriched Flour Since 1961", 0.18)], (1024, 256), (40, 35, 30), (230, 180, 40), None, 0.3)
-    sign("sign_speed.png", [("SPEED", 0.13), ("LIMIT", 0.13), ("55", 0.32)], (256, 320), (240, 240, 235), (20, 20, 20), (20, 20, 20), 0.3)
-    sign("sign_bait.png", [("BAIT &", 0.22), ("TACKLE", 0.22), ("OPEN 24 HRS", 0.1)], (512, 256), (230, 190, 40), (30, 25, 20), (30, 25, 20), 0.45)
-    sign("sign_welcome.png", [("WELCOME TO", 0.2), ("MILLE LACS", 0.3), ("Pop. 1,143", 0.14)], (512, 256), (30, 95, 50), (240, 240, 235), (240, 240, 235), 0.3)
-    sign("sign_fallout_shelter.png", [("FALLOUT", 0.3), ("SHELTER", 0.3)], (256, 256), (230, 190, 30), (25, 25, 25), (25, 25, 25), 0.3)
+    for spec in SIGNS:
+        sign(*spec)
     vending_front()
     chainlink()
     clean_snow()
@@ -418,5 +455,14 @@ def main():
     ui_icons()
 
 
+def signs_only():
+    print("generating signs")
+    for spec in SIGNS:
+        sign(*spec)
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+
+    # `gen_textures.py signs` regenerates just the signs.
+    signs_only() if sys.argv[1:] == ["signs"] else main()
