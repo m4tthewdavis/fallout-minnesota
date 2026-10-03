@@ -210,6 +210,11 @@ pub fn surface_at(x: f32, z: f32) -> Surface {
     Surface::Snow
 }
 
+/// Distance from a point to Vault 143's door.
+pub fn dist_to_vault(x: f32, z: f32) -> f32 {
+    dist(x, z, VAULT_POS.0, VAULT_POS.1)
+}
+
 /// True if a tree or prop can go here without blocking key locations.
 pub fn is_open_ground(x: f32, z: f32) -> bool {
     if x.abs() > HALF_SIZE - 4.0 || z.abs() > HALF_SIZE - 4.0 {

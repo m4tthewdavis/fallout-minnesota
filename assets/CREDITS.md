@@ -24,6 +24,15 @@ Fetched by `tools/fetch_assets.py`. License: <https://polyhaven.com/license>.
 | `models/russian_food_cans_01/` | Russian Food Cans 01 | <https://polyhaven.com/a/russian_food_cans_01> | Kosan Aziz | hotdish ration tins (loot) |
 | `models/rock_07/` | Rock 07 | <https://polyhaven.com/a/rock_07> | Jenelle van Heerden | boulders poking through the snow |
 | `models/tree_stump_01/` | Tree Stump 01 | <https://polyhaven.com/a/tree_stump_01> | Rob Tuytel | cut stumps near the shelters |
+| `models/stone_fire_pit/` | Stone Fire Pit | <https://polyhaven.com/a/stone_fire_pit> | Sebastian Platen | abandoned campfires |
+| `models/street_lamp_01/` | Street Lamp 01 | <https://polyhaven.com/a/street_lamp_01> | Josh Dean | lamp posts along the road and vault approach |
+| `models/metal_toolbox/` | Metal Toolbox | <https://polyhaven.com/a/metal_toolbox> | Mateusz Sadek | tool chests at the shelter workbenches |
+| `models/wooden_bucket_01/` | Wooden Bucket 01 | <https://polyhaven.com/a/wooden_bucket_01> | James Ray Cock | ice-fishing buckets and camp gear |
+| `models/tool_cart/` | Tool Cart | <https://polyhaven.com/a/tool_cart> | Savva Zakharov | workbench carts at the shelters |
+| `models/metal_trash_can/` | Metal Trash Can | <https://polyhaven.com/a/metal_trash_can> | GurJas Studios | dumpsters and bins around the Bullseye-Mart |
+| `models/boombox/` | Boombox | <https://polyhaven.com/a/boombox> | Thomas Paul Mouilleron | a boombox left at an abandoned camp |
+| `models/rusted_spade_01/` | Rusted Spade 01 | <https://polyhaven.com/a/rusted_spade_01> | Blemonade | a spade left in the snow at camp |
+| `models/worn_metal_rack/` | Worn Metal Rack | <https://polyhaven.com/a/worn_metal_rack> | Luca B | shelving in the Bullseye-Mart ruin |
 | `textures/snow_02/` | Snow 02 | <https://polyhaven.com/a/snow_02> | Rob Tuytel | terrain snow |
 | `textures/pine_bark/` | Pine Bark | <https://polyhaven.com/a/pine_bark> | Dimitrios Savva | pine trunks |
 | `textures/rusty_metal_02/` | Rusty Metal 02 | <https://polyhaven.com/a/rusty_metal_02> | Rob Tuytel | wrecked cars |

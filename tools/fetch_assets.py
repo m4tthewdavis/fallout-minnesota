@@ -36,6 +36,15 @@ MODELS = [
     ("russian_food_cans_01", "hotdish ration tins (loot)"),
     ("rock_07", "boulders poking through the snow"),
     ("tree_stump_01", "cut stumps near the shelters"),
+    ("stone_fire_pit", "abandoned campfires"),
+    ("street_lamp_01", "lamp posts along the road and vault approach"),
+    ("metal_toolbox", "tool chests at the shelter workbenches"),
+    ("wooden_bucket_01", "ice-fishing buckets and camp gear"),
+    ("tool_cart", "workbench carts at the shelters"),
+    ("metal_trash_can", "dumpsters and bins around the Bullseye-Mart"),
+    ("boombox", "a boombox left at an abandoned camp"),
+    ("rusted_spade_01", "a spade left in the snow at camp"),
+    ("worn_metal_rack", "shelving in the Bullseye-Mart ruin"),
 ]
 
 # PBR texture sets at 1k: (id, maps, use). "arm" packs AO/roughness/metal, which

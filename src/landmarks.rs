@@ -28,7 +28,7 @@ pub const CARS: [(f32, f32, f32); 6] = [
 ];
 
 /// A flat sign showing `image`, facing +Z, with a plain backing board.
-fn sign(
+pub fn sign(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
@@ -375,8 +375,6 @@ pub fn spawn_landmarks(
         // Cut stumps and a crate of supplies nearby.
         prop(&mut commands, &assets.stump, Vec3::new(sx + 3.5, gy - 0.1, sz - 3.2), i as f32, 0.9);
         solid.push(Shape::Circle { x: sx + 3.5, z: sz - 3.2, r: 0.6 });
-        prop(&mut commands, &assets.crate_wood, Vec3::new(sx - 1.5, gy, sz + 2.2), 0.2 + i as f32, 1.0);
-        solid.push(Shape::Circle { x: sx - 1.5, z: sz + 2.2, r: 0.5 });
     }
 
     // ================= Golden Atomic Mills =================
@@ -497,6 +495,9 @@ pub fn spawn_landmarks(
         solid.push(Shape::Circle { x, z, r: 0.4 });
     }
     for (k, (dx, dz)) in [(4.0, -7.0), (-6.0, -6.5), (8.5, -6.0)].into_iter().enumerate() {
+        if k == 0 {
+            continue; // the first one is the lootable armoury crate (props.rs)
+        }
         let (x, z) = (gx + dx, gzz + dz);
         prop(&mut commands, &assets.crate_military, Vec3::new(x, ground(x, z) + 0.1, z), k as f32 * 0.8, 1.2);
         solid.push(Shape::Circle { x, z, r: 0.7 });

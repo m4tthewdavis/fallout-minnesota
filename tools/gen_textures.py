@@ -280,6 +280,59 @@ def gun_textures():
     save(Image.fromarray((nor * 255).astype(np.uint8)), GEN, "gun_wood_nor.png")
 
 
+def vending_front():
+    """Front of a pre-war soda machine: glowing bottle window and a 'Frost Cola' header."""
+    w, h = 256, 512
+    img = Image.new("RGB", (w, h), (170, 20, 25))
+    d = ImageDraw.Draw(img)
+    font_big = ImageFont.truetype(FONT, 46)
+    font_small = ImageFont.truetype(FONT, 20)
+    d.rectangle([8, 8, w - 9, h - 9], outline=(245, 240, 230), width=5)
+    tw = d.textlength("FROST", font=font_big)
+    d.text(((w - tw) / 2, 20), "FROST", font=font_big, fill=(245, 240, 230))
+    tw = d.textlength("COLA", font=font_big)
+    d.text(((w - tw) / 2, 66), "COLA", font=font_big, fill=(245, 240, 230))
+    # Lit window with rows of bottles.
+    d.rectangle([28, 130, w - 29, 360], fill=(235, 245, 225), outline=(30, 30, 30), width=4)
+    colors = [(200, 40, 40), (60, 140, 220), (240, 190, 40), (70, 180, 90)]
+    for row in range(4):
+        for col in range(5):
+            x = 40 + col * 38
+            y = 142 + row * 54
+            d.rounded_rectangle([x, y, x + 24, y + 44], radius=6, fill=colors[(row + col) % 4], outline=(30, 30, 30), width=2)
+            d.rectangle([x + 8, y - 8, x + 16, y], fill=(190, 190, 190))
+    # Coin slot and dispensing flap.
+    d.rectangle([w - 70, 380, w - 40, 420], fill=(40, 40, 40))
+    d.text((40, 384), "ICE COLD", font=font_small, fill=(245, 240, 230))
+    d.rectangle([40, 440, w - 40, 490], fill=(25, 25, 25), outline=(245, 240, 230), width=3)
+    arr = np.asarray(img, float) / 255
+    noise = value_noise(512, 8)[:h, :w]
+    grime = np.clip((noise - 0.55) * 3, 0, 1)[..., None]
+    arr = arr * (1 - 0.35 * grime) + np.array([0.3, 0.2, 0.1]) * 0.25 * grime
+    save(Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8)), GEN, "vending_front.png")
+    # Glow only from the lit window and the lettering.
+    glow = np.zeros((h, w, 3))
+    base = np.asarray(img, float) / 255
+    lit = (base.sum(-1) > 1.9)
+    glow[lit] = base[lit] * 0.9
+    glow[130:360, 28 : w - 28] = base[130:360, 28 : w - 28] * 1.0
+    save(Image.fromarray((np.clip(glow, 0, 1) * 255).astype(np.uint8)), GEN, "vending_glow.png")
+
+
+def chainlink():
+    """Chain-link fence mesh: diamond wire on a transparent background (tiles)."""
+    n = 128
+    img = Image.new("RGBA", (n * 4, n * 4), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    step = 32
+    col = (150, 155, 160, 255)
+    for k in range(-n * 4, n * 8, step):
+        d.line([k, 0, k + n * 4, n * 4], fill=col, width=3)
+        d.line([k, n * 4, k + n * 4, 0], fill=col, width=3)
+    img = img.resize((n, n), Image.LANCZOS)
+    save(img, GEN, "chainlink.png")
+
+
 def ui_icons():
     """White-on-transparent HUD icons; the game tints them Pip-Boy green."""
     n = 64
@@ -354,7 +407,12 @@ def main():
     sign("sign_bullseye.png", [("BULLSEYE", 0.42), ("- MART -", 0.2)], (512, 256), (200, 20, 25), (245, 240, 230), (245, 240, 230), 0.35)
     sign("sign_mille_lacs.png", [("MILLE LACS 5", 0.34), ("VAULT 143  2", 0.34)], (512, 256), (30, 95, 50), (240, 240, 235), (240, 240, 235), 0.25)
     sign("sign_golden_atomic.png", [("GOLDEN ATOMIC MILLS", 0.42), ("Enriched Flour Since 1961", 0.18)], (1024, 256), (40, 35, 30), (230, 180, 40), None, 0.3)
+    sign("sign_speed.png", [("SPEED", 0.13), ("LIMIT", 0.13), ("55", 0.32)], (256, 320), (240, 240, 235), (20, 20, 20), (20, 20, 20), 0.3)
+    sign("sign_bait.png", [("BAIT &", 0.22), ("TACKLE", 0.22), ("OPEN 24 HRS", 0.1)], (512, 256), (230, 190, 40), (30, 25, 20), (30, 25, 20), 0.45)
+    sign("sign_welcome.png", [("WELCOME TO", 0.2), ("MILLE LACS", 0.3), ("Pop. 1,143", 0.14)], (512, 256), (30, 95, 50), (240, 240, 235), (240, 240, 235), 0.3)
     sign("sign_fallout_shelter.png", [("FALLOUT", 0.3), ("SHELTER", 0.3)], (256, 256), (230, 190, 30), (25, 25, 25), (25, 25, 25), 0.3)
+    vending_front()
+    chainlink()
     clean_snow()
     gun_textures()
     ui_icons()

@@ -61,6 +61,7 @@ impl Plugin for WorldPlugin {
             (
                 build_world,
                 crate::landmarks::spawn_landmarks,
+                crate::props::spawn_props,
                 crate::nature::spawn_nature,
                 spawn_loot,
             )

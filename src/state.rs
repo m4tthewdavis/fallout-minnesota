@@ -91,6 +91,11 @@ impl SfxQueue {
     }
 }
 
+/// Context hints shown near the crosshair ("[E] Open crate"). Systems set the
+/// lines each frame; the HUD shows them.
+#[derive(Resource, Default)]
+pub struct Prompt(pub Vec<String>);
+
 /// Marks anything that wants to hurt the player (wolves, the moose); the
 /// music turns tense when one is near.
 #[derive(Component)]
@@ -181,6 +186,7 @@ impl Plugin for StatePlugin {
             .init_resource::<Colliders>()
             .init_resource::<SfxQueue>()
             .init_resource::<FxQueue>()
+            .init_resource::<Prompt>()
             .add_systems(Update, (tick_messages, tick_lifetimes));
     }
 }

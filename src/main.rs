@@ -14,11 +14,13 @@ mod devshot;
 mod enemy;
 mod gun;
 mod hud;
+mod interact;
 mod landmarks;
 mod meshes;
 mod nature;
 mod particles;
 mod player;
+mod props;
 mod sim;
 mod sky;
 mod state;
@@ -56,6 +58,7 @@ fn main() {
             assets::AssetsPlugin,
             state::StatePlugin,
             audio::SoundPlugin,
+            interact::InteractPlugin,
             world::WorldPlugin,
             player::PlayerPlugin,
             sky::SkyPlugin,

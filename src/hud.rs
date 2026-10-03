@@ -60,13 +60,15 @@ struct HelpText;
 struct MissingBanner;
 #[derive(Component)]
 struct Crosshair;
+#[derive(Component)]
+struct PromptText;
 
 pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_hud)
-            .add_systems(Update, (update_hud, missing_banner, fade_crosshair, scale_ui));
+            .add_systems(Update, (update_hud, missing_banner, fade_crosshair, scale_ui, show_prompt));
     }
 }
 
@@ -292,6 +294,25 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             ));
         });
 
+    // Context prompts: "[E] Open crate", workbench hints.
+    commands
+        .spawn(Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.0),
+            top: Val::Percent(60.0),
+            justify_content: JustifyContent::Center,
+            ..default()
+        })
+        .with_children(|p| {
+            p.spawn((
+                Text::new(""),
+                font(19.0),
+                TextColor(PIP_GREEN),
+                TextLayout::new_with_justify(JustifyText::Center),
+                PromptText,
+            ));
+        });
+
     // Warning shown only if game files are missing.
     commands
         .spawn(Node {
@@ -336,6 +357,14 @@ fn scale_ui(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut scal
     let s = (window.height() / 720.0).clamp(1.0, 2.5);
     if (scale.0 - s).abs() > 0.01 {
         scale.0 = s;
+    }
+}
+
+fn show_prompt(prompt: Res<crate::state::Prompt>, mut q: Query<&mut Text, With<PromptText>>) {
+    let Ok(mut text) = q.single_mut() else { return };
+    let joined = prompt.0.join("\n");
+    if text.0 != joined {
+        text.0 = joined;
     }
 }
 
