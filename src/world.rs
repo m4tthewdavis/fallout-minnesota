@@ -13,7 +13,7 @@ use crate::player::Player;
 use crate::sim::collision;
 use crate::sim::meshgen::{self, MeshData};
 use crate::sim::survival::Item;
-use crate::sim::synth::Sound;
+use crate::sim::sfx;
 use crate::sim::terrain::{self, HALF_SIZE, ICE_FRACTION, ICE_LEVEL, LAKES, RAD_SOURCES, SHELTERS, VAULT_POS};
 use crate::state::{alive, Colliders, Game, Messages, RngRes, SfxQueue};
 
@@ -425,7 +425,7 @@ fn collect_pickups(
         let d = tf.translation - ptf.translation;
         if d.x * d.x + d.z * d.z < 2.2 * 2.2 && d.y.abs() < 3.0 {
             game.inv.add(pickup.item);
-            sfx.play(Sound::Pickup);
+            sfx.play(sfx::pickup_sound(pickup.item));
             let extra = if pickup.item == Item::Ammo { " (+12)" } else { "" };
             msgs.show(format!("Picked up: {}{}", pickup.item.name(), extra), 2.5);
             commands.entity(entity).despawn();

@@ -515,7 +515,7 @@ fn update_casings(time: Res<Time>, mut sfx: ResMut<SfxQueue>, mut q: Query<(&mut
                 c.bounced = true;
                 c.vel = Vec3::new(c.vel.x * 0.3, -c.vel.y * 0.25, c.vel.z * 0.3);
                 c.spin *= 0.4;
-                sfx.play(Sound::ShellTink);
+                sfx.play_at(Sound::ShellTink, tf.translation);
             }
         }
     }

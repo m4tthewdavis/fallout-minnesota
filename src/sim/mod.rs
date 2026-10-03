@@ -12,6 +12,7 @@ pub mod daynight;
 pub mod meshgen;
 pub mod mipmaps;
 pub mod rng;
+pub mod sfx;
 pub mod survival;
 pub mod synth;
 pub mod viewmodel;

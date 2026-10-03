@@ -14,7 +14,7 @@ use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
 use crate::sim::weather::Phase;
 use crate::sim::wolf::{self, WolfMode, BITE_RANGE};
-use crate::state::{alive, ClockRes, Colliders, Game, Messages, RngRes, SfxQueue, WeatherRes};
+use crate::state::{alive, random_point_around, ClockRes, Colliders, Game, Hostile, Messages, RngRes, SfxQueue, WeatherRes};
 
 const MAX_WOLVES: usize = 16;
 const BITE_COOLDOWN: f32 = 1.3;
@@ -144,6 +144,7 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
         .spawn((
             Transform::from_xyz(pos.x, y, pos.y).with_scale(Vec3::splat(size)),
             Visibility::default(),
+            Hostile,
             Wolf {
                 health,
                 max_health: health,
@@ -235,7 +236,6 @@ fn blizzard_packs(
     if weather.just_changed != Some(Phase::Blizzard) {
         return;
     }
-    sfx.play(Sound::HowlFar);
     let count = wolves.iter().count();
     if count >= MAX_WOLVES {
         return;
@@ -245,6 +245,9 @@ fn blizzard_packs(
     let center = Vec2::new(ptf.translation.x, ptf.translation.z) + Vec2::new(angle.cos(), angle.sin()) * 55.0;
     let size = (4 + (rng.0.f32() * 3.0) as usize).min(MAX_WOLVES - count);
     spawn_pack(&mut commands, &assets, center, size, &mut rng);
+    // The pack announces itself from the treeline.
+    let from = Vec3::new(center.x, 1.0, center.y);
+    sfx.play_at(Sound::HowlFar, from);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -344,18 +347,18 @@ fn wolf_ai(
 
         // Pack calls while hunting.
         if (mode == WolfMode::Stalk || (mode == WolfMode::Chase && dist > 15.0)) && w.howl_cd <= 0.0 {
-            w.howl_cd = rng.0.range(12.0, 25.0);
-            sfx.play(if dist < 18.0 {
-                Sound::Growl
-            } else if dist < 40.0 {
-                if rng.0.chance(0.5) {
+            w.howl_cd = rng.0.range(14.0, 28.0);
+            let at = tf.translation + Vec3::Y;
+            sfx.play_at(
+                if dist < 18.0 {
+                    Sound::Growl
+                } else if dist < 45.0 {
                     Sound::HowlNear
                 } else {
-                    Sound::HowlNear2
-                }
-            } else {
-                Sound::HowlFar
-            });
+                    Sound::HowlFar
+                },
+                at,
+            );
         }
 
         // Bite.
@@ -363,7 +366,7 @@ fn wolf_ai(
             w.bite_cd = BITE_COOLDOWN;
             let dmg = if w.alpha { 18.0 } else { 12.0 };
             game.hurt_flash = 1.0;
-            sfx.play(Sound::Snarl);
+            sfx.play_at(Sound::Snarl, tf.translation + Vec3::Y);
             if let Some(cause) = game.survival.damage(dmg) {
                 game.death = Some(cause);
                 msgs.show(cause.describe(), f32::MAX);
@@ -381,14 +384,19 @@ fn distant_howls(
     mut rng: ResMut<RngRes>,
     mut sfx: ResMut<SfxQueue>,
     wolves: Query<(), With<Wolf>>,
+    player: Query<&Transform, With<Player>>,
 ) {
     if !(clock.0.is_night() || weather.weather.phase == Phase::Blizzard) || wolves.is_empty() {
         return;
     }
     timer.0 -= time.delta_secs();
     if timer.0 <= 0.0 {
-        timer.0 = rng.0.range(18.0, 40.0);
-        sfx.play(Sound::HowlFar);
+        timer.0 = rng.0.range(25.0, 55.0);
+        // Somewhere out in the dark, 70-110 m away.
+        if let Ok(p) = player.single() {
+            let dist = rng.0.range(70.0, 110.0);
+            sfx.play_at(Sound::HowlFar, random_point_around(p.translation, dist, &mut rng.0));
+        }
     }
 }
 

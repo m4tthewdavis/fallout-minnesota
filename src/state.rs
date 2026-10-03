@@ -55,14 +55,42 @@ pub struct ClockRes(pub Clock);
 #[derive(Resource, Default)]
 pub struct Colliders(pub Vec<Shape>);
 
+/// One sound requested by gameplay code.
+#[derive(Clone, Copy, Debug)]
+pub struct SfxReq {
+    pub sound: Sound,
+    /// Where it comes from, for positioned sounds (they pan and fade).
+    pub pos: Option<Vec3>,
+    /// Extra volume scale (a soft footstep, a muffled shot).
+    pub gain: f32,
+}
+
 /// Sound effects requested this frame; the audio plugin plays and clears them.
 #[derive(Resource, Default)]
-pub struct SfxQueue(pub Vec<Sound>);
+pub struct SfxQueue(pub Vec<SfxReq>);
 
 impl SfxQueue {
     pub fn play(&mut self, sound: Sound) {
-        self.0.push(sound);
+        self.0.push(SfxReq { sound, pos: None, gain: 1.0 });
     }
+    pub fn play_gain(&mut self, sound: Sound, gain: f32) {
+        self.0.push(SfxReq { sound, pos: None, gain });
+    }
+    /// A sound that comes from a place in the world.
+    pub fn play_at(&mut self, sound: Sound, pos: Vec3) {
+        self.0.push(SfxReq { sound, pos: Some(pos), gain: 1.0 });
+    }
+}
+
+/// Marks anything that wants to hurt the player (wolves, the moose); the
+/// music turns tense when one is near.
+#[derive(Component)]
+pub struct Hostile;
+
+/// A point `dist` metres from `from` in a random direction (distant howls).
+pub fn random_point_around(from: Vec3, dist: f32, rng: &mut Rng) -> Vec3 {
+    let a = rng.range(0.0, std::f32::consts::TAU);
+    from + Vec3::new(a.cos() * dist, 0.0, a.sin() * dist)
 }
 
 /// A visual effect requested by gameplay code; the particle plugin spawns it.

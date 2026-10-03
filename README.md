@@ -39,6 +39,11 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
 | Esc | Free the mouse (click to recapture) |
+| G | Geiger counter on / off |
+| F9 | Mute / unmute all sound |
+| F10 / F11 | Master volume down / up |
+| F5 / F6 | Effects volume down / up |
+| F7 / F8 | Music volume down / up |
 
 ## What's in Milestone 1
 

@@ -9,6 +9,7 @@ use crate::gun::{GunModel, MUZZLE, VIEW_LAYER};
 use crate::particles::ground_hit;
 use crate::player::{cursor_locked, Player};
 use crate::sim::combat::{ray_sphere, FireResult};
+use crate::sim::sfx;
 use crate::sim::synth::Sound;
 use crate::state::{alive, ClockRes, Fx, FxQueue, Game, Lifetime, Messages, RngRes, SfxQueue, WeatherRes};
 use crate::wolves::Wolf;
@@ -25,7 +26,7 @@ impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_fx).add_systems(
             Update,
-            (weapon_timers, reload, fire).chain().run_if(alive),
+            (weapon_timers, reload, reload_cues, fire).chain().run_if(alive),
         );
     }
 }
@@ -54,7 +55,6 @@ fn reload(
     keys: Res<ButtonInput<KeyCode>>,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
-    mut sfx: ResMut<SfxQueue>,
 ) {
     if !keys.just_pressed(KeyCode::KeyR) {
         return;
@@ -62,12 +62,33 @@ fn reload(
     let Game { weapon, inv, .. } = &mut *game;
     let jammed = weapon.jammed;
     if weapon.start_reload(&mut inv.ammo_reserve) {
-        sfx.play(if jammed { Sound::Jam } else { Sound::Reload });
         if jammed {
             msgs.show("Working the frozen bolt loose...", 1.2);
         }
     } else if inv.ammo_reserve == 0 && weapon.mag == 0 {
         msgs.show("Out of ammo. Search the snow for pipe rounds.", 2.0);
+    }
+}
+
+/// Plays the clunks and clacks of a reload (or unjam) as the animation
+/// reaches them.
+fn reload_cues(game: Res<Game>, mut sfx: ResMut<SfxQueue>, mut last: Local<Option<(f32, bool)>>) {
+    match (game.weapon.reload_progress(), *last) {
+        (Some(p), prev) => {
+            let (from, unjam) = prev.unwrap_or((-0.001, game.weapon.jammed));
+            for sound in sfx::cues_between(&sfx::rifle_cues(unjam), from, p) {
+                sfx.play(sound);
+            }
+            *last = Some((p, unjam));
+        }
+        // Finished since last frame: play whatever cues remained.
+        (None, Some((from, unjam))) => {
+            for sound in sfx::cues_between(&sfx::rifle_cues(unjam), from, 1.0) {
+                sfx.play(sound);
+            }
+            *last = None;
+        }
+        (None, None) => {}
     }
 }
 
@@ -117,7 +138,7 @@ fn fire(
         FireResult::Fired => {}
     }
     game.recoil = 1.0;
-    sfx.play(Sound::Gunshot);
+    sfx.play(Sound::RifleShot);
 
     let origin = cam.translation();
     let dir = cam.forward().as_vec3();
@@ -175,7 +196,7 @@ fn fire(
         if let Ok((_, wtf, mut wolf)) = wolves.get_mut(entity) {
             let damage = game.weapon.damage;
             wolf.health -= damage;
-            sfx.play(Sound::Yelp);
+            sfx.play_at(Sound::Yelp, origin + dir * t);
             fxq.spawn(Fx::WolfHit(origin + dir * t, dir));
             if wolf.health <= 0.0 {
                 fxq.spawn(Fx::WolfDeath(wolf.hit_center(wtf), wolf.size));

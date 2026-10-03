@@ -41,6 +41,25 @@ pub const ROAD: [(f32, f32); 9] = [
 ];
 pub const ROAD_HALF_WIDTH: f32 = 3.5;
 
+/// What the ground under your boots is made of (for footstep sounds).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Surface {
+    Snow,
+    Ice,
+    Road,
+    Concrete,
+    Wood,
+}
+
+/// Poured-concrete aprons: (centre x, centre z, half width, half depth).
+/// One in front of the vault door, one under the Bullseye-Mart car park.
+pub const CONCRETE_PADS: [(f32, f32, f32, f32); 2] = [(VAULT_POS.0, VAULT_POS.1 - 6.5, 9.0, 5.5), (-40.0, -108.0, 16.0, 16.0)];
+
+/// Wooden landing around each shelter's fire barrel: (centre x, centre z, half width, half depth).
+pub fn wood_decks() -> impl Iterator<Item = (f32, f32, f32, f32)> {
+    SHELTERS.iter().map(|&(sx, sz)| (sx + 1.6, sz, 2.2, 1.9))
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -172,6 +191,25 @@ pub fn road_z(x: f32) -> f32 {
     }
 }
 
+/// The surface at a point, for footsteps. Ice beats everything (it is a lake),
+/// then decks, concrete, the road, and finally snow.
+pub fn surface_at(x: f32, z: f32) -> Surface {
+    if lake_at(x, z).is_some() {
+        return Surface::Ice;
+    }
+    let inside = |(cx, cz, hx, hz): (f32, f32, f32, f32)| (x - cx).abs() < hx && (z - cz).abs() < hz;
+    if wood_decks().any(inside) {
+        return Surface::Wood;
+    }
+    if CONCRETE_PADS.iter().copied().any(inside) {
+        return Surface::Concrete;
+    }
+    if road_distance(x, z) < ROAD_HALF_WIDTH {
+        return Surface::Road;
+    }
+    Surface::Snow
+}
+
 /// True if a tree or prop can go here without blocking key locations.
 pub fn is_open_ground(x: f32, z: f32) -> bool {
     if x.abs() > HALF_SIZE - 4.0 || z.abs() > HALF_SIZE - 4.0 {
@@ -255,6 +293,31 @@ mod tests {
             assert!(road_distance(sx, sz) > SHELTER_RADIUS + ROAD_HALF_WIDTH);
         }
         assert!(road_distance(VAULT_POS.0, VAULT_POS.1) > 40.0);
+    }
+
+    #[test]
+    fn surfaces_follow_the_map() {
+        let (lx, lz, _) = LAKES[0];
+        assert_eq!(surface_at(lx, lz), Surface::Ice);
+        assert_eq!(surface_at(25.0, road_z(25.0)), Surface::Road);
+        assert_eq!(surface_at(25.0, road_z(25.0) + ROAD_HALF_WIDTH + 1.0), Surface::Snow);
+        let (sx, sz) = SHELTERS[0];
+        assert_eq!(surface_at(sx + 1.6, sz), Surface::Wood);
+        assert_eq!(surface_at(VAULT_POS.0, VAULT_POS.1 - 6.0), Surface::Concrete);
+        assert_eq!(surface_at(-40.0, -108.0), Surface::Concrete);
+        assert_eq!(surface_at(PLAYER_SPAWN.0 + 30.0, PLAYER_SPAWN.1 - 40.0), Surface::Snow);
+        // Spawn is on the vault apron or snow, never ice or road.
+        assert!(matches!(surface_at(PLAYER_SPAWN.0, PLAYER_SPAWN.1), Surface::Snow | Surface::Concrete));
+    }
+
+    #[test]
+    fn pads_do_not_overlap_ice_or_road() {
+        for &(cx, cz, hx, hz) in &CONCRETE_PADS {
+            for &(lx, lz, r) in &LAKES {
+                assert!(dist(cx, cz, lx, lz) > r + hx.max(hz), "pad at ({cx},{cz}) touches a lake");
+            }
+            assert!(road_distance(cx, cz) > hx.max(hz) + ROAD_HALF_WIDTH - 1.0);
+        }
     }
 
     #[test]

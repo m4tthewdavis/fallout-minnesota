@@ -10,11 +10,12 @@ use bevy::window::{CursorGrabMode, PrimaryWindow};
 use crate::sim::collision;
 use crate::sim::daynight::Clock;
 use crate::sim::survival::{Exposure, Survival};
+use crate::sim::sfx;
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE, PLAYER_SPAWN};
 use crate::sim::weather::Weather;
 use crate::assets::GameAssets;
-use crate::state::{alive, ClockRes, Colliders, Fx, FxQueue, Game, Messages, SfxQueue, WeatherRes};
+use crate::state::{alive, ClockRes, Colliders, Fx, FxQueue, Game, Messages, RngRes, SfxQueue, WeatherRes};
 use crate::wolves::Wolf;
 
 pub const EYE_HEIGHT: f32 = 1.7;
@@ -41,7 +42,6 @@ pub struct Player {
     pub ice_strain: f32,
     pub cold_warned: bool,
     step_timer: f32,
-    step_count: u32,
 }
 
 impl Player {
@@ -56,7 +56,6 @@ impl Player {
             ice_strain: 0.0,
             cold_warned: false,
             step_timer: 0.0,
-            step_count: 0,
         }
     }
 }
@@ -98,6 +97,8 @@ fn spawn_player(
                 ..default()
             },
             Bloom::NATURAL,
+            // Ears for positioned sounds (wolves, fires).
+            SpatialListener::new(0.3),
             Tonemapping::TonyMcMapface,
             Projection::from(PerspectiveProjection {
                 fov: 75.0_f32.to_radians(),
@@ -176,6 +177,7 @@ fn move_player(
     colliders: Res<Colliders>,
     mut sfx: ResMut<SfxQueue>,
     mut fx: ResMut<FxQueue>,
+    mut rng: ResMut<RngRes>,
     mut q: Query<(&mut Transform, &mut Player)>,
 ) {
     let dt = time.delta_secs();
@@ -212,17 +214,15 @@ fn move_player(
     tf.translation.x = cx;
     tf.translation.z = cz;
 
-    // Footsteps crunching in the snow.
+    // Footsteps: a different sound for snow, ice, road, concrete and decks,
+    // at slightly uneven intervals so the rhythm never sounds mechanical.
     if moving && p.grounded {
         p.step_timer -= dt;
         if p.step_timer <= 0.0 {
-            p.step_timer = if p.sprinting { STEP_SPRINT_SECS } else { STEP_WALK_SECS };
-            p.step_count = p.step_count.wrapping_add(1);
-            sfx.play(match p.step_count % 3 {
-                0 => Sound::Step1,
-                1 => Sound::Step2,
-                _ => Sound::Step3,
-            });
+            let base = if p.sprinting { STEP_SPRINT_SECS } else { STEP_WALK_SECS };
+            p.step_timer = base * rng.0.range(0.9, 1.1);
+            let surface = terrain::surface_at(tf.translation.x, tf.translation.z);
+            sfx.play_gain(sfx::step_sound(surface), if p.sprinting { 1.0 } else { 0.7 });
             fx.spawn(Fx::Footstep(crate::particles::feet(tf.translation) + wish.normalize() * 0.3));
         }
     } else {

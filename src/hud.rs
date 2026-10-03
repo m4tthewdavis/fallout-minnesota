@@ -139,7 +139,8 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             "WASD move  SHIFT sprint  SPACE jump\n\
              LMB fire  RMB aim  R reload/unjam\n\
              H stimpak  X RadAway  F hotdish\n\
-             C craft coat (at shelter)  ESC free mouse",
+             C craft coat (at shelter)  ESC free mouse\n\
+             G Geiger on/off  F9 mute  F10/F11 volume",
         ),
         font(13.0),
         TextColor(PIP_GREEN.with_alpha(0.6)),
