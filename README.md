@@ -16,7 +16,13 @@ You are the Thawborn, just out of **Vault 143** on the shore of Lake Mille Lacs.
    The first build compiles the Bevy engine, which takes a few minutes. Later builds take seconds.
 3. To run the game-rule unit tests: `cargo test`.
 
-The game loads its models, textures, font and HUD images from the `assets/` folder. `cargo run` finds it automatically. If you run the `.exe` directly, keep the `assets` folder next to it (the downloadable build from GitHub Actions already does this).
+### Running the downloaded build
+
+1. Download `fallout-minnesota-windows` from the GitHub Actions run.
+2. **Unzip the whole thing first** (right-click → *Extract All…*). Don't double-click the `.exe` inside the zip: Windows then copies only the `.exe` to a temp folder, without its `assets`.
+3. Run `FalloutMinnesota.exe` from the extracted folder. The `assets` folder must stay next to it.
+
+The game looks for `assets` next to the `.exe`, one or two folders above it (so `target\release\fallout_minnesota.exe` finds the project's folder), in the current folder, and in the project folder when started with `cargo run`. If it still can't find its files it says so on screen and falls back to plain colours instead of drawing an invisible world.
 
 If the build reports an error, copy the error text back to Claude and it will fix it.
 

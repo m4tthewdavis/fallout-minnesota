@@ -1,10 +1,22 @@
 //! Loads the CC0 Poly Haven models and textures, the generated textures and
 //! the HUD font from `assets/`, builds the shared PBR materials, and gives
 //! loaded textures proper mipmaps so tiled snow and rust don't shimmer.
+//!
+//! It also keeps the game playable when files are missing: the `assets`
+//! folder is searched for in several places, the HUD font, HUD images and
+//! particle sprites are built into the executable, any material whose
+//! texture fails to load falls back to its plain colour, and missing files
+//! are counted so the HUD can warn the player.
 
-use bevy::asset::AssetEvent;
-use bevy::image::{ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor};
+use std::path::{Path, PathBuf};
+
+use bevy::asset::{AssetEvent, AssetLoadFailedEvent, UntypedAssetLoadFailedEvent};
+use bevy::image::{
+    CompressedImageFormats, ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor,
+    ImageType,
+};
 use bevy::prelude::*;
+use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::TextureFormat;
 
 use crate::sim::mipmaps;
@@ -70,11 +82,58 @@ pub struct GameAssets {
     pub frost: Handle<Image>,
 }
 
+/// A file every complete `assets` folder contains.
+const MARKER: &str = "textures/snow_02/diff_clean.jpg";
+
+/// Where to look for the `assets` folder, best first: next to the
+/// executable, one or two folders up (a `cargo build` puts the executable in
+/// `target/release`), the working directory, and the source checkout.
+fn candidate_roots(exe_dir: Option<&Path>, cwd: Option<&Path>, manifest: Option<&Path>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(dir) = exe_dir {
+        out.push(dir.join("assets"));
+        out.extend(dir.parent().map(|p| p.join("assets")));
+        out.extend(dir.parent().and_then(Path::parent).map(|p| p.join("assets")));
+    }
+    out.extend(cwd.map(|d| d.join("assets")));
+    out.extend(manifest.map(|d| d.join("assets")));
+    out
+}
+
+/// The first candidate that really is a complete `assets` folder.
+fn pick_root(candidates: &[PathBuf], is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    candidates.iter().find(|c| is_file(&c.join(MARKER))).cloned()
+}
+
+/// Absolute path of the `assets` folder for Bevy's `AssetPlugin`. Falls back
+/// to the folder next to the executable (which the HUD then reports as missing).
+pub fn asset_root() -> String {
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+    let cwd = std::env::current_dir().ok();
+    let manifest = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from);
+    let candidates = candidate_roots(exe_dir.as_deref(), cwd.as_deref(), manifest.as_deref());
+    let root = pick_root(&candidates, |p| p.is_file()).unwrap_or_else(|| candidates.first().cloned().unwrap_or_else(|| "assets".into()));
+    root.to_string_lossy().into_owned()
+}
+
+/// Files that failed to load, for the HUD warning.
+#[derive(Resource, Default)]
+pub struct MissingAssets {
+    pub count: usize,
+    pub first: Option<String>,
+    pub root: String,
+}
+
 pub struct AssetsPlugin;
 
 impl Plugin for AssetsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, load_assets).add_systems(Update, add_mipmaps);
+        app.insert_resource(MissingAssets {
+            root: asset_root(),
+            ..default()
+        })
+        .add_systems(PreStartup, load_assets)
+        .add_systems(Update, (add_mipmaps, fall_back_to_plain_colours, count_missing));
     }
 }
 
@@ -118,11 +177,44 @@ fn scene(server: &AssetServer, id: &str) -> Handle<Scene> {
     server.load(GltfAssetLabel::Scene(0).from_asset(format!("models/{id}/{id}.gltf")))
 }
 
-fn load_assets(mut commands: Commands, server: Res<AssetServer>, mut materials: ResMut<Assets<StandardMaterial>>) {
+/// A PNG compiled into the executable.
+fn embedded_png(images: &mut Assets<Image>, bytes: &[u8]) -> Handle<Image> {
+    let image = Image::from_buffer(
+        bytes,
+        ImageType::Extension("png"),
+        CompressedImageFormats::NONE,
+        true,
+        ImageSampler::linear(),
+        RenderAssetUsages::default(),
+    )
+    .expect("embedded PNG is valid");
+    images.add(image)
+}
+
+fn load_assets(
+    mut commands: Commands,
+    server: Res<AssetServer>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut fonts: ResMut<Assets<Font>>,
+) {
     let s = &*server;
     let m = &mut *materials;
     let generated = |name: &str| s.load::<Image>(format!("textures/generated/{name}"));
-    let ui = |name: &str| s.load::<Image>(format!("ui/{name}"));
+    // The HUD and particle sprites are small, so they are built into the
+    // executable: the HUD always works even if the assets folder is missing.
+    let mut png = |bytes: &[u8]| embedded_png(&mut images, bytes);
+    let font = Font::try_from_bytes(include_bytes!("../assets/fonts/ShareTechMono-Regular.ttf").to_vec())
+        .expect("embedded font is valid");
+    let font = fonts.add(font);
+    let icon_hp = png(include_bytes!("../assets/ui/icon_hp.png"));
+    let icon_heat = png(include_bytes!("../assets/ui/icon_heat.png"));
+    let icon_rads = png(include_bytes!("../assets/ui/icon_rads.png"));
+    let scanlines = png(include_bytes!("../assets/ui/scanlines.png"));
+    let vignette = png(include_bytes!("../assets/ui/vignette.png"));
+    let frost = png(include_bytes!("../assets/ui/frost.png"));
+    let soft = png(include_bytes!("../assets/textures/generated/soft.png"));
+    let flash = png(include_bytes!("../assets/textures/generated/flash.png"));
 
     // Terrain snow: a cleaned-up diffuse (see tools/gen_textures.py) and no
     // baked AO, which made the whole map look dirty when tiled.
@@ -144,7 +236,7 @@ fn load_assets(mut commands: Commands, server: Res<AssetServer>, mut materials: 
     });
 
     commands.insert_resource(GameAssets {
-        font: s.load("fonts/ShareTechMono-Regular.ttf"),
+        font,
 
         barrel_stove: scene(s, "barrel_stove"),
         barrel: scene(s, "barrel_03"),
@@ -180,8 +272,8 @@ fn load_assets(mut commands: Commands, server: Res<AssetServer>, mut materials: 
         ice_diff: tiled(s, "textures/generated/ice_diff.png".into(), true),
         ice_emissive: tiled(s, "textures/generated/ice_emissive.png".into(), true),
         scorch: generated("scorch.png"),
-        soft: generated("soft.png"),
-        flash: generated("flash.png"),
+        soft,
+        flash,
         stars: generated("stars.png"),
         aurora: tiled(s, "textures/generated/aurora.png".into(), true),
         sign_bullseye: generated("sign_bullseye.png"),
@@ -189,12 +281,12 @@ fn load_assets(mut commands: Commands, server: Res<AssetServer>, mut materials: 
         sign_golden_atomic: generated("sign_golden_atomic.png"),
         sign_shelter: generated("sign_fallout_shelter.png"),
 
-        icon_hp: ui("icon_hp.png"),
-        icon_heat: ui("icon_heat.png"),
-        icon_rads: ui("icon_rads.png"),
-        scanlines: ui("scanlines.png"),
-        vignette: ui("vignette.png"),
-        frost: ui("frost.png"),
+        icon_hp,
+        icon_heat,
+        icon_rads,
+        scanlines,
+        vignette,
+        frost,
     });
 }
 
@@ -234,5 +326,87 @@ fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<As
                 ..default()
             });
         }
+    }
+}
+
+/// A material whose texture failed to load is never drawn at all (that made
+/// the whole terrain invisible). Drop the missing texture so the material
+/// falls back to its plain colour: white snow, grey rock and so on.
+fn fall_back_to_plain_colours(
+    mut failed: EventReader<AssetLoadFailedEvent<Image>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for event in failed.read() {
+        let id = event.id;
+        let uses = |slot: &Option<Handle<Image>>| slot.as_ref().is_some_and(|h| h.id() == id);
+        let affected: Vec<AssetId<StandardMaterial>> = materials
+            .iter()
+            .filter(|(_, m)| {
+                uses(&m.base_color_texture)
+                    || uses(&m.normal_map_texture)
+                    || uses(&m.metallic_roughness_texture)
+                    || uses(&m.occlusion_texture)
+                    || uses(&m.emissive_texture)
+            })
+            .map(|(mid, _)| mid)
+            .collect();
+        for mid in affected {
+            let Some(m) = materials.get_mut(mid) else { continue };
+            for slot in [
+                &mut m.base_color_texture,
+                &mut m.normal_map_texture,
+                &mut m.metallic_roughness_texture,
+                &mut m.occlusion_texture,
+                &mut m.emissive_texture,
+            ] {
+                if slot.as_ref().is_some_and(|h| h.id() == id) {
+                    *slot = None;
+                }
+            }
+            // Without its metal/roughness map a material would turn into
+            // shiny chrome (both factors are 1.0 for textured materials).
+            if m.metallic_roughness_texture.is_none() && m.metallic > 0.99 {
+                m.metallic = 0.0;
+                m.perceptual_roughness = 0.9;
+            }
+        }
+    }
+}
+
+fn count_missing(mut failed: EventReader<UntypedAssetLoadFailedEvent>, mut missing: ResMut<MissingAssets>) {
+    for event in failed.read() {
+        missing.count += 1;
+        if missing.first.is_none() {
+            missing.first = Some(event.path.to_string());
+        }
+        warn!("missing game file: {} ({})", event.path, event.error);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_assets_next_to_the_exe_first() {
+        let exe = Path::new("/game");
+        let c = candidate_roots(Some(exe), Some(Path::new("/home/me")), None);
+        assert_eq!(c[0], Path::new("/game/assets"));
+        let found = pick_root(&c, |p| p.starts_with("/home/me/assets"));
+        assert_eq!(found.as_deref(), Some(Path::new("/home/me/assets")));
+    }
+
+    #[test]
+    fn finds_the_checkout_from_target_release() {
+        let exe = Path::new("/src/fallout-minnesota/target/release");
+        let c = candidate_roots(Some(exe), None, None);
+        let found = pick_root(&c, |p| p == Path::new("/src/fallout-minnesota/assets").join(MARKER));
+        assert_eq!(found.as_deref(), Some(Path::new("/src/fallout-minnesota/assets")));
+    }
+
+    #[test]
+    fn nothing_found_means_none() {
+        let c = candidate_roots(Some(Path::new("/tmp/x")), Some(Path::new("/tmp")), None);
+        assert!(pick_root(&c, |_| false).is_none());
     }
 }

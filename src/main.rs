@@ -34,14 +34,22 @@ fn main() {
             brightness: 500.0,
             ..default()
         })
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Fallout: Minnesota - Prototype".into(),
-                resolution: (1280.0_f32, 720.0_f32).into(),
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Fallout: Minnesota - Prototype".into(),
+                        resolution: (1280.0_f32, 720.0_f32).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                // Find the assets folder wherever the game was launched from.
+                .set(AssetPlugin {
+                    file_path: assets::asset_root(),
+                    ..default()
+                }),
+        )
         .add_plugins((
             assets::AssetsPlugin,
             state::StatePlugin,

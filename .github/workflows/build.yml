@@ -33,6 +33,13 @@ jobs:
           # Models, textures, fonts and HUD images must sit next to the .exe.
           Copy-Item -Recurse assets dist/assets
 
+      - name: Check the package has its game files
+        shell: pwsh
+        run: |
+          foreach ($f in @("dist/FalloutMinnesota.exe", "dist/assets/textures/snow_02/diff_clean.jpg", "dist/assets/models/barrel_stove/barrel_stove.gltf")) {
+            if (-not (Test-Path $f)) { Write-Error "Missing from the package: $f"; exit 1 }
+          }
+
       - name: Upload the game for download
         uses: actions/upload-artifact@v4
         with:

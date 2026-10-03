@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 use bevy::ui::widget::NodeImageMode;
 
-use crate::assets::GameAssets;
+use crate::assets::{GameAssets, MissingAssets};
 use crate::player::Player;
 use crate::sim::survival::{Exposure, Inventory, Survival};
 use crate::sim::terrain::{self, SHELTERS, VAULT_POS};
@@ -55,12 +55,14 @@ struct FrostOverlay;
 struct RadOverlay;
 #[derive(Component)]
 struct HelpText;
+#[derive(Component)]
+struct MissingBanner;
 
 pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_hud).add_systems(Update, update_hud);
+        app.add_systems(Startup, spawn_hud).add_systems(Update, (update_hud, missing_banner));
     }
 }
 
@@ -282,6 +284,31 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             ));
         });
 
+    // Warning shown only if game files are missing.
+    commands
+        .spawn(Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.0),
+            top: Val::Percent(30.0),
+            justify_content: JustifyContent::Center,
+            ..default()
+        })
+        .with_children(|p| {
+            p.spawn((
+                Text::new(""),
+                font(20.0),
+                TextColor(DANGER),
+                TextLayout::new_with_justify(JustifyText::Center),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                Node {
+                    max_width: Val::Px(1000.0),
+                    padding: UiRect::all(Val::Px(12.0)),
+                    ..default()
+                },
+                MissingBanner,
+            ));
+        });
+
     // Death screen text.
     commands.spawn(full_screen()).with_children(|p| {
         p.spawn((
@@ -292,6 +319,32 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             DeathText,
         ));
     });
+}
+
+fn missing_banner(
+    time: Res<Time>,
+    missing: Res<MissingAssets>,
+    mut q: Query<(&mut Text, &mut BackgroundColor), With<MissingBanner>>,
+) {
+    let Ok((mut text, mut bg)) = q.single_mut() else { return };
+    // Leave it up for the first 20 seconds, then shrink to a reminder.
+    if missing.count == 0 {
+        return;
+    }
+    text.0 = if time.elapsed_secs() < 20.0 {
+        format!(
+            "MISSING GAME FILES ({} could not be loaded, e.g. {})\n\n\
+             The game looked for its 'assets' folder here:\n{}\n\n\
+             Unzip the WHOLE download first (don't run the game from inside the zip),\n\
+             and keep the 'assets' folder next to FalloutMinnesota.exe.",
+            missing.count,
+            missing.first.as_deref().unwrap_or("?"),
+            missing.root,
+        )
+    } else {
+        format!("{} game files missing - see the 'assets' folder note in README.md", missing.count)
+    };
+    bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.7);
 }
 
 /// Compass bearing from north (-Z), clockwise, in degrees 0..360.
