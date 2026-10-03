@@ -172,12 +172,18 @@ impl Survival {
     }
 }
 
+use super::combat::{Ammo, Upgrade, Weapon};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
     Stimpak,
     RadAway,
     Hotdish,
+    /// Pipe-rifle rounds.
     Ammo,
+    Shells,
+    RevolverRounds,
+    Scrap,
 }
 
 impl Item {
@@ -187,6 +193,20 @@ impl Item {
             Item::RadAway => "RadAway",
             Item::Hotdish => "Vault 143 Hotdish",
             Item::Ammo => "Pipe rounds",
+            Item::Shells => "Shotgun shells",
+            Item::RevolverRounds => "Revolver rounds",
+            Item::Scrap => "Scrap",
+        }
+    }
+
+    /// How many you get from one pickup.
+    pub fn amount(self) -> u32 {
+        match self {
+            Item::Ammo => Inventory::AMMO_PER_BOX,
+            Item::Shells => Inventory::SHELLS_PER_BOX,
+            Item::RevolverRounds => Inventory::REVOLVER_PER_BOX,
+            Item::Scrap => Inventory::SCRAP_PER_PILE,
+            _ => 1,
         }
     }
 }
@@ -196,7 +216,11 @@ pub struct Inventory {
     pub stimpaks: u32,
     pub radaway: u32,
     pub hotdish: u32,
+    /// Pipe-rifle rounds in reserve.
     pub ammo_reserve: u32,
+    pub shells: u32,
+    pub revolver_rounds: u32,
+    pub scrap: u32,
     pub pelts: u32,
     pub has_frostfang_coat: bool,
 }
@@ -210,6 +234,9 @@ impl Default for Inventory {
 impl Inventory {
     pub const PELTS_FOR_COAT: u32 = 3;
     pub const AMMO_PER_BOX: u32 = 12;
+    pub const SHELLS_PER_BOX: u32 = 6;
+    pub const REVOLVER_PER_BOX: u32 = 12;
+    pub const SCRAP_PER_PILE: u32 = 3;
 
     /// What the Overseer hands you at the Vault 143 door.
     pub fn starting_kit() -> Self {
@@ -218,6 +245,9 @@ impl Inventory {
             radaway: 1,
             hotdish: 2,
             ammo_reserve: 24,
+            shells: 0,
+            revolver_rounds: 0,
+            scrap: 0,
             pelts: 0,
             has_frostfang_coat: false,
         }
@@ -234,7 +264,43 @@ impl Inventory {
             Item::RadAway => self.radaway += 1,
             Item::Hotdish => self.hotdish += 1,
             Item::Ammo => self.ammo_reserve += Self::AMMO_PER_BOX,
+            Item::Shells => self.shells += Self::SHELLS_PER_BOX,
+            Item::RevolverRounds => self.revolver_rounds += Self::REVOLVER_PER_BOX,
+            Item::Scrap => self.scrap += Self::SCRAP_PER_PILE,
         }
+    }
+
+    /// Reserve ammunition of a kind.
+    pub fn reserve(&self, ammo: Ammo) -> u32 {
+        match ammo {
+            Ammo::PipeRounds => self.ammo_reserve,
+            Ammo::Shells => self.shells,
+            Ammo::RevolverRounds => self.revolver_rounds,
+        }
+    }
+
+    pub fn reserve_mut(&mut self, ammo: Ammo) -> &mut u32 {
+        match ammo {
+            Ammo::PipeRounds => &mut self.ammo_reserve,
+            Ammo::Shells => &mut self.shells,
+            Ammo::RevolverRounds => &mut self.revolver_rounds,
+        }
+    }
+
+    /// Spend scrap to fit an upgrade to a weapon at a workbench.
+    pub fn craft_upgrade(&mut self, weapon: &mut Weapon, up: Upgrade) -> Result<(), &'static str> {
+        if !up.applies_to(weapon.kind) {
+            return Err("That upgrade doesn't fit this weapon.");
+        }
+        if weapon.has_upgrade(up) {
+            return Err("Already fitted.");
+        }
+        if self.scrap < up.scrap_cost() {
+            return Err("Not enough scrap.");
+        }
+        weapon.apply_upgrade(up)?;
+        self.scrap -= up.scrap_cost();
+        Ok(())
     }
 
     pub fn craft_coat(&mut self) -> Result<(), &'static str> {
@@ -350,5 +416,37 @@ mod tests {
         assert_eq!(inv.ammo_reserve, 36);
         inv.add(Item::Stimpak);
         assert_eq!(inv.stimpaks, 3);
+    }
+
+    #[test]
+    fn every_item_adds_to_the_right_pile() {
+        let mut inv = Inventory::starting_kit();
+        inv.add(Item::Shells);
+        inv.add(Item::RevolverRounds);
+        inv.add(Item::Scrap);
+        assert_eq!((inv.shells, inv.revolver_rounds, inv.scrap), (6, 12, 3));
+        assert_eq!(inv.reserve(Ammo::Shells), 6);
+        *inv.reserve_mut(Ammo::RevolverRounds) -= 2;
+        assert_eq!(inv.revolver_rounds, 10);
+        assert_eq!(Item::Scrap.amount(), 3);
+        assert_eq!(Item::Stimpak.amount(), 1);
+        for item in [Item::Ammo, Item::Shells, Item::RevolverRounds, Item::Scrap] {
+            assert!(item.amount() > 1, "{item:?}");
+        }
+    }
+
+    #[test]
+    fn crafting_an_upgrade_spends_scrap() {
+        use crate::sim::combat::WeaponKind;
+        let mut inv = Inventory::starting_kit();
+        let mut rifle = Weapon::new(WeaponKind::PipeRifle);
+        assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::InsulatedAction), Err("Not enough scrap."));
+        inv.scrap = 20;
+        assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::InsulatedAction), Ok(()));
+        assert_eq!(inv.scrap, 14);
+        assert!(rifle.has_upgrade(Upgrade::InsulatedAction));
+        assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::InsulatedAction), Err("Already fitted."));
+        assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::Choke), Err("That upgrade doesn't fit this weapon."));
+        assert_eq!(inv.scrap, 14, "failed crafts cost nothing");
     }
 }

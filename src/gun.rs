@@ -26,7 +26,9 @@ use crate::state::{Colliders, Game};
 /// Render layer for the view model and its camera.
 pub const VIEW_LAYER: usize = 1;
 /// Muzzle position in the gun model's local space.
-pub const MUZZLE: Vec3 = Vec3::new(0.0, 0.012, -0.81);
+pub fn muzzle_local(_kind: crate::sim::combat::WeaponKind) -> Vec3 {
+    Vec3::new(0.0, 0.012, -0.81)
+}
 const HIP_FOV: f32 = 75.0;
 const ADS_FOV: f32 = 52.0;
 /// Barrel axis height in gun space.
@@ -382,7 +384,7 @@ fn aim_down_sights(
 ) {
     let dt = time.delta_secs().max(1e-4);
     let Ok((tf, p)) = player.single() else { return };
-    let want = (force.0 || (mouse.pressed(MouseButton::Right) && cursor_locked(&windows))) && game.death.is_none() && !p.sprinting && !game.weapon.is_reloading();
+    let want = (force.0 || (mouse.pressed(MouseButton::Right) && cursor_locked(&windows))) && game.death.is_none() && !p.sprinting && !game.weapon().is_reloading();
     let target = if want { 1.0 } else { 0.0 };
     state.ads += (target - state.ads) * (dt * 12.0).min(1.0);
     aim.0 = state.ads;
@@ -449,8 +451,8 @@ fn pose_gun(
         moving,
         sprinting,
         recoil: game.recoil,
-        reload: game.weapon.reload_progress(),
-        unjamming: game.weapon.jammed,
+        reload: game.weapon().reload_progress(),
+        unjamming: game.weapon().jammed,
         ads: state.ads,
         blocked: state.blocked,
         look: state.look.to_array(),
@@ -484,7 +486,8 @@ mod tests {
 
     #[test]
     fn muzzle_is_in_front_of_the_barrel() {
-        assert!(MUZZLE.z < -0.8 && (MUZZLE.y - BORE_Y).abs() < 1e-6);
+        let m = muzzle_local(crate::sim::combat::WeaponKind::PipeRifle);
+        assert!(m.z < -0.8 && (m.y - BORE_Y).abs() < 1e-6);
         assert!(SIGHT_Y > BORE_Y + 0.05);
     }
 }

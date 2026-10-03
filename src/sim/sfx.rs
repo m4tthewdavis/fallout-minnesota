@@ -8,13 +8,15 @@ use std::collections::HashMap;
 
 use super::rng::Rng;
 use super::synth::{Bus, Sound};
+use super::combat::WeaponKind;
 use super::survival::Item;
 use super::terrain::Surface;
 
 /// The sound of picking an item up.
 pub fn pickup_sound(item: Item) -> Sound {
     match item {
-        Item::Ammo => Sound::PickupAmmo,
+        Item::Ammo | Item::Shells | Item::RevolverRounds => Sound::PickupAmmo,
+        Item::Scrap => Sound::PickupScrap,
         Item::Stimpak | Item::RadAway => Sound::PickupMed,
         Item::Hotdish => Sound::PickupFood,
     }
@@ -309,13 +311,43 @@ pub fn geiger_clicks_per_sec(rads_per_sec: f32) -> f32 {
 /// A sound to play at a moment during a reload animation: (progress 0..1, sound).
 pub type Cue = (f32, Sound);
 
-/// Sounds for the pipe rifle's reload (magazine out, magazine in, bolt) and
-/// for clearing a frozen bolt (two hard racks), timed to `sim::viewmodel`.
-pub fn rifle_cues(unjamming: bool) -> Vec<Cue> {
+/// Sounds for reloading (or clearing a frozen action), timed to the
+/// animation in `sim::viewmodel`.
+pub fn cues(kind: WeaponKind, unjamming: bool) -> Vec<Cue> {
     if unjamming {
-        vec![(0.04, Sound::Jam), (0.09, Sound::BoltRack), (0.58, Sound::BoltRack)]
-    } else {
-        vec![(0.17, Sound::ClunkOut), (0.72, Sound::ClunkIn), (0.78, Sound::BoltRack)]
+        return match kind {
+            WeaponKind::PipeRifle => vec![(0.04, Sound::Jam), (0.09, Sound::BoltRack), (0.58, Sound::BoltRack)],
+            WeaponKind::ScrapShotgun => vec![(0.04, Sound::Jam), (0.22, Sound::BreakOpen), (0.7, Sound::BreakClose)],
+            WeaponKind::Revolver => vec![(0.04, Sound::Jam), (0.3, Sound::CylinderSpin), (0.7, Sound::ClunkIn)],
+            WeaponKind::IceAxe => vec![],
+        };
+    }
+    match kind {
+        WeaponKind::PipeRifle => vec![(0.17, Sound::ClunkOut), (0.72, Sound::ClunkIn), (0.78, Sound::BoltRack)],
+        WeaponKind::ScrapShotgun => vec![
+            (0.2, Sound::BreakOpen),
+            (0.36, Sound::ClunkOut),
+            (0.58, Sound::ClunkIn),
+            (0.66, Sound::ClunkIn),
+            (0.84, Sound::BreakClose),
+        ],
+        WeaponKind::Revolver => vec![
+            (0.2, Sound::ClunkOut),
+            (0.4, Sound::ClunkOut),
+            (0.64, Sound::ClunkIn),
+            (0.82, Sound::CylinderSpin),
+        ],
+        WeaponKind::IceAxe => vec![],
+    }
+}
+
+/// The sound of a weapon going off (or being swung).
+pub fn fire_sound(kind: WeaponKind) -> Sound {
+    match kind {
+        WeaponKind::PipeRifle => Sound::RifleShot,
+        WeaponKind::ScrapShotgun => Sound::ShotgunShot,
+        WeaponKind::Revolver => Sound::RevolverShot,
+        WeaponKind::IceAxe => Sound::Swing,
     }
 }
 
@@ -589,16 +621,32 @@ mod tests {
 
     #[test]
     fn rifle_cues_follow_the_animation() {
-        let reload = rifle_cues(false);
+        let reload = cues(WeaponKind::PipeRifle, false);
         assert_eq!(reload.iter().map(|c| c.1).collect::<Vec<_>>(), vec![Sound::ClunkOut, Sound::ClunkIn, Sound::BoltRack]);
         // The magazine leaves at 0.15-0.35 and is back by 0.75 (see viewmodel.rs).
         assert!(reload[0].0 > 0.15 && reload[0].0 < 0.35);
         assert!(reload[1].0 > 0.55 && reload[1].0 <= 0.75);
         assert!(reload[2].0 > reload[1].0 && reload[2].0 < 0.9);
-        assert_eq!(rifle_cues(true).iter().filter(|c| c.1 == Sound::BoltRack).count(), 2);
-        for c in reload.iter().chain(rifle_cues(true).iter()) {
-            assert!((0.0..=1.0).contains(&c.0));
+        assert_eq!(cues(WeaponKind::PipeRifle, true).iter().filter(|c| c.1 == Sound::BoltRack).count(), 2);
+    }
+
+    #[test]
+    fn every_weapon_has_sorted_in_range_cues() {
+        for kind in WeaponKind::ALL {
+            for unjam in [false, true] {
+                let c = cues(kind, unjam);
+                if kind == WeaponKind::IceAxe {
+                    assert!(c.is_empty(), "the axe has no reload");
+                } else {
+                    assert!(!c.is_empty(), "{kind:?} unjam={unjam}");
+                }
+                assert!(c.windows(2).all(|w| w[0].0 < w[1].0), "{kind:?} cues out of order");
+                assert!(c.iter().all(|(t, _)| (0.0..=1.0).contains(t)));
+            }
         }
+        // Every weapon sounds different when fired.
+        let fires: std::collections::HashSet<Sound> = WeaponKind::ALL.iter().map(|k| fire_sound(*k)).collect();
+        assert_eq!(fires.len(), 4);
     }
 
     #[test]

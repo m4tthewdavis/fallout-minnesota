@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
+use crate::enemy::{Body, Dying, Species};
 use crate::meshes::to_mesh;
 use crate::player::Player;
 use crate::sim::meshgen;
@@ -23,8 +24,6 @@ const STRIDE_PER_METRE: f32 = 1.7;
 
 #[derive(Component)]
 pub struct Wolf {
-    pub health: f32,
-    pub max_health: f32,
     pub alpha: bool,
     /// Visual and hitbox scale.
     pub size: f32,
@@ -39,16 +38,6 @@ pub struct Wolf {
     stride: f32,
 }
 
-impl Wolf {
-    /// Centre of the body for hit detection.
-    pub fn hit_center(&self, tf: &Transform) -> Vec3 {
-        tf.translation + Vec3::Y * 0.75 * self.size
-    }
-
-    pub fn hit_radius(&self) -> f32 {
-        0.8 * self.size
-    }
-}
 
 /// A leg (or tail) pivot belonging to a wolf.
 #[derive(Component)]
@@ -145,9 +134,8 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
             Transform::from_xyz(pos.x, y, pos.y).with_scale(Vec3::splat(size)),
             Visibility::default(),
             Hostile,
+            Body::new(Species::Wolf { alpha }, health, 0.75, 0.8),
             Wolf {
-                health,
-                max_health: health,
                 alpha,
                 size,
                 bite_cd: 0.0,
@@ -231,7 +219,7 @@ fn blizzard_packs(
     mut sfx: ResMut<SfxQueue>,
     weather: Res<WeatherRes>,
     player: Query<&Transform, With<Player>>,
-    wolves: Query<(), With<Wolf>>,
+    wolves: Query<(), (With<Wolf>, Without<Dying>)>,
 ) {
     if weather.just_changed != Some(Phase::Blizzard) {
         return;
@@ -260,7 +248,7 @@ fn wolf_ai(
     mut rng: ResMut<RngRes>,
     mut sfx: ResMut<SfxQueue>,
     player: Query<&Transform, With<Player>>,
-    mut wolves: Query<(Entity, &mut Transform, &mut Wolf), Without<Player>>,
+    mut wolves: Query<(Entity, &mut Transform, &mut Wolf, &Body), (Without<Player>, Without<Dying>)>,
 ) {
     let dt = time.delta_secs();
     let Ok(ptf) = player.single() else { return };
@@ -270,14 +258,14 @@ fn wolf_ai(
     // Snapshot positions for pack separation.
     let positions: Vec<(Entity, Vec2)> = wolves
         .iter()
-        .map(|(e, tf, _)| (e, Vec2::new(tf.translation.x, tf.translation.z)))
+        .map(|(e, tf, _, _)| (e, Vec2::new(tf.translation.x, tf.translation.z)))
         .collect();
 
-    for (entity, mut tf, mut w) in &mut wolves {
+    for (entity, mut tf, mut w, body) in &mut wolves {
         let pos = Vec2::new(tf.translation.x, tf.translation.z);
         let to_player = player_xz - pos;
         let dist = to_player.length();
-        let mode = wolf::decide(dist, hunting, w.health / w.max_health);
+        let mode = wolf::decide(dist, hunting, body.health_fraction());
         w.bite_cd = (w.bite_cd - dt).max(0.0);
         w.howl_cd -= dt;
 
@@ -383,7 +371,7 @@ fn distant_howls(
     mut timer: ResMut<DistantHowl>,
     mut rng: ResMut<RngRes>,
     mut sfx: ResMut<SfxQueue>,
-    wolves: Query<(), With<Wolf>>,
+    wolves: Query<(), (With<Wolf>, Without<Dying>)>,
     player: Query<&Transform, With<Player>>,
 ) {
     if !(clock.0.is_night() || weather.weather.phase == Phase::Blizzard) || wolves.is_empty() {
@@ -400,8 +388,9 @@ fn distant_howls(
     }
 }
 
-fn animate_limbs(time: Res<Time>, wolves: Query<(Entity, &Wolf)>, mut limbs: Query<(&mut Transform, &WolfLimb)>) {
-    let state: HashMap<Entity, (f32, f32)> = wolves.iter().map(|(e, w)| (e, (w.stride, w.gait))).collect();
+fn animate_limbs(time: Res<Time>, wolves: Query<(Entity, &Wolf, Has<Dying>)>, mut limbs: Query<(&mut Transform, &WolfLimb)>) {
+    // A dead wolf's gait is zero, so its legs go slack.
+    let state: HashMap<Entity, (f32, f32)> = wolves.iter().map(|(e, w, dead)| (e, (w.stride, if dead { 0.0 } else { w.gait }))).collect();
     let t = time.elapsed_secs();
     for (mut tf, limb) in &mut limbs {
         let Some(&(stride, gait)) = state.get(&limb.owner) else {

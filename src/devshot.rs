@@ -95,7 +95,8 @@ fn take_shot(
     }
     aim.0 = shot.aim;
     if let Some(r) = shot.reload {
-        game.weapon.busy = game.weapon.reload_time * (1.0 - r);
+        let w = game.weapon_mut();
+        w.busy = w.reload_time * (1.0 - r);
     }
     if let Ok((mut tf, mut p)) = player.single_mut() {
         p.yaw = shot.yaw;

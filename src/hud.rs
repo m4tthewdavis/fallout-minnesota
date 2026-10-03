@@ -8,6 +8,7 @@ use bevy::ui::widget::NodeImageMode;
 
 use crate::assets::{GameAssets, MissingAssets};
 use crate::player::Player;
+use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::sim::survival::{Exposure, Inventory, Survival};
 use crate::sim::terrain::{self, SHELTERS, VAULT_POS};
 use crate::sim::weather::Phase;
@@ -540,7 +541,7 @@ fn update_hud(
     }
 
     // ---- Weapon + inventory ----
-    let wpn = &game.weapon;
+    let wpn = game.weapon();
     let wstate = if wpn.jammed && wpn.is_reloading() {
         "UNJAMMING"
     } else if wpn.jammed {
@@ -551,8 +552,11 @@ fn update_hud(
         ""
     };
     if let Ok((mut text, mut color)) = texts.p3().single_mut() {
-        text.0 = format!("{:>2} / {}", wpn.mag, game.inv.ammo_reserve);
-        color.0 = if wpn.jammed || wpn.mag == 0 { WARN } else { PIP_GREEN };
+        text.0 = match wpn.kind.ammo() {
+            Some(ammo) => format!("{:>2} / {}", wpn.mag, game.inv.reserve(ammo)),
+            None => "MELEE".to_string(),
+        };
+        color.0 = if wpn.jammed || (wpn.mag == 0 && !wpn.melee) { WARN } else { PIP_GREEN };
     }
     let inv = &game.inv;
     let coat = if inv.has_frostfang_coat {
@@ -560,14 +564,36 @@ fn update_hud(
     } else {
         format!("Pelts {}/{} for a coat", inv.pelts, Inventory::PELTS_FOR_COAT)
     };
+    // Weapon slots: owned ones lit, the one in hand bracketed.
+    let slots: String = WeaponKind::ALL
+        .iter()
+        .map(|k| {
+            let i = k.slot();
+            match (game.arsenal.owned[i], game.arsenal.current == i) {
+                (true, true) => format!("[{}]", i + 1),
+                (true, false) => format!(" {} ", i + 1),
+                (false, _) => " - ".to_string(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    let mut tags = String::new();
+    for up in Upgrade::ALL {
+        if wpn.has_upgrade(up) {
+            tags.push_str(&format!(" +{}", up.name().split(' ').next().unwrap_or("").to_uppercase()));
+        }
+    }
     if let Ok(mut text) = texts.p2().single_mut() {
         text.0 = format!(
-            "{}  {}\nStimpak x{}  RadAway x{}  Hotdish x{}\n{}  |  Kills {}",
+            "{}  {}\n{}{}\nStimpak x{}  RadAway x{}  Hotdish x{}  Scrap x{}\n{}  |  Kills {}",
             wpn.name.to_uppercase(),
             wstate,
+            slots,
+            tags,
             inv.stimpaks,
             inv.radaway,
             inv.hotdish,
+            inv.scrap,
             coat,
             game.kills,
         );

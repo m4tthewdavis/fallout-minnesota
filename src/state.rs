@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 
 use crate::sim::collision::Shape;
-use crate::sim::combat::Weapon;
+use crate::sim::combat::{Arsenal, Weapon};
 use crate::sim::daynight::Clock;
 use crate::sim::rng::Rng;
 use crate::sim::survival::{DeathCause, Inventory, Survival};
@@ -14,7 +14,7 @@ use crate::sim::weather::{Phase, Weather};
 pub struct Game {
     pub survival: Survival,
     pub inv: Inventory,
-    pub weapon: Weapon,
+    pub arsenal: Arsenal,
     pub death: Option<DeathCause>,
     /// 0..=1, drives the red damage overlay.
     pub hurt_flash: f32,
@@ -24,11 +24,20 @@ pub struct Game {
 }
 
 impl Game {
+    /// The weapon in your hands.
+    pub fn weapon(&self) -> &Weapon {
+        self.arsenal.current()
+    }
+
+    pub fn weapon_mut(&mut self) -> &mut Weapon {
+        self.arsenal.current_mut()
+    }
+
     pub fn new() -> Self {
         Game {
             survival: Survival::new(),
             inv: Inventory::starting_kit(),
-            weapon: Weapon::pipe_rifle(),
+            arsenal: Arsenal::starting(),
             death: None,
             hurt_flash: 0.0,
             recoil: 0.0,

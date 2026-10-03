@@ -334,6 +334,43 @@ fn spawn_loot(
         perceptual_roughness: 0.3,
         ..default()
     });
+    // Shotgun shells: three red cartridges with brass bases. Revolver rounds: a
+    // small brass box. Scrap: a little heap of rusted metal.
+    let mut shell_data = meshgen::MeshData::default();
+    for (i, dx) in [-0.07f32, 0.0, 0.07].into_iter().enumerate() {
+        let shell = meshgen::lathe(&[(0.034, 0.0), (0.034, 0.12), (0.03, 0.125), (0.0, 0.125)], 10, 0.2, true, false)
+            .rotated_z(std::f32::consts::FRAC_PI_2)
+            .translated([0.0, 0.034, dx * 1.0 + i as f32 * 0.0]);
+        shell_data.append(&shell);
+    }
+    let shell_mesh = meshes.add(to_mesh(&shell_data));
+    let shell_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.75, 0.12, 0.1),
+        emissive: LinearRgba::rgb(0.35, 0.03, 0.02),
+        perceptual_roughness: 0.4,
+        ..default()
+    });
+    let brass_mesh = meshes.add(Cuboid::new(0.26, 0.12, 0.18));
+    let brass_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.8, 0.6, 0.25),
+        emissive: LinearRgba::rgb(0.3, 0.2, 0.03),
+        metallic: 0.8,
+        perceptual_roughness: 0.35,
+        ..default()
+    });
+    let mut scrap_data = meshgen::MeshData::default();
+    for (i, (size, pos, rot)) in [
+        ([0.3, 0.04, 0.2], [0.0, 0.03, 0.0], 0.3f32),
+        ([0.22, 0.05, 0.12], [0.05, 0.08, 0.03], 1.1),
+        ([0.16, 0.14, 0.04], [-0.06, 0.1, -0.05], 0.7),
+        ([0.1, 0.1, 0.1], [0.1, 0.06, -0.08], 0.2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        scrap_data.append(&meshgen::cuboid(size, 0.3).rotated_y(rot + i as f32 * 0.4).rotated_z(0.1 * i as f32).translated(pos));
+    }
+    let scrap_mesh = meshes.add(to_mesh_tangents(&scrap_data));
     // A faint Pip-Boy-green ring marks every pickup so it can be spotted in snow.
     let ring_mesh = meshes.add(Annulus::new(0.45, 0.55));
     let ring_mat = materials.add(StandardMaterial {
@@ -369,6 +406,19 @@ fn spawn_loot(
             Item::Hotdish => {
                 p.spawn((Mesh3d(dish_mesh.clone()), MeshMaterial3d(dish_mat.clone()), Transform::default()));
             }
+            Item::Shells => {
+                p.spawn((Mesh3d(shell_mesh.clone()), MeshMaterial3d(shell_mat.clone()), Transform::from_xyz(0.0, -0.1, 0.0)));
+            }
+            Item::RevolverRounds => {
+                p.spawn((Mesh3d(brass_mesh.clone()), MeshMaterial3d(brass_mat.clone()), Transform::default()));
+            }
+            Item::Scrap => {
+                p.spawn((
+                    Mesh3d(scrap_mesh.clone()),
+                    MeshMaterial3d(assets.rust.clone()),
+                    Transform::from_xyz(0.0, -0.1, 0.0).with_scale(Vec3::splat(1.3)),
+                ));
+            }
         });
         commands.spawn((
             Mesh3d(ring_mesh.clone()),
@@ -379,10 +429,21 @@ fn spawn_loot(
         ));
     };
 
-    let loot_table = [Item::Stimpak, Item::RadAway, Item::Ammo, Item::Ammo, Item::Hotdish];
+    let loot_table = [
+        Item::Stimpak,
+        Item::RadAway,
+        Item::Ammo,
+        Item::Ammo,
+        Item::Hotdish,
+        Item::Shells,
+        Item::RevolverRounds,
+        Item::Scrap,
+        Item::Scrap,
+        Item::Scrap,
+    ];
     let mut spawned = 0;
     let mut attempts = 0;
-    while spawned < 34 && attempts < 2_000 {
+    while spawned < 42 && attempts < 2_000 {
         attempts += 1;
         let x = rng.0.range(-HALF_SIZE + 10.0, HALF_SIZE - 10.0);
         let z = rng.0.range(-HALF_SIZE + 10.0, HALF_SIZE - 10.0);
@@ -426,7 +487,8 @@ fn collect_pickups(
         if d.x * d.x + d.z * d.z < 2.2 * 2.2 && d.y.abs() < 3.0 {
             game.inv.add(pickup.item);
             sfx.play(sfx::pickup_sound(pickup.item));
-            let extra = if pickup.item == Item::Ammo { " (+12)" } else { "" };
+            let n = pickup.item.amount();
+            let extra = if n > 1 { format!(" (+{n})") } else { String::new() };
             msgs.show(format!("Picked up: {}{}", pickup.item.name(), extra), 2.5);
             commands.entity(entity).despawn();
             for (ring, owner) in &rings {
