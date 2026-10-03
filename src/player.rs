@@ -61,12 +61,6 @@ impl Player {
     }
 }
 
-/// The pipe rifle view model, a child of the camera.
-#[derive(Component)]
-pub struct GunModel {
-    pub rest: Vec3,
-}
-
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -94,7 +88,6 @@ fn spawn_player(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let player = Player::new();
-    let rest = Vec3::new(0.2, -0.19, -0.42);
 
     commands
         .spawn((
@@ -124,14 +117,7 @@ fn spawn_player(
             player,
         ))
         .with_children(|cam| {
-            cam.spawn((
-                Transform::from_translation(rest).with_scale(Vec3::splat(0.8)),
-                Visibility::default(),
-                GunModel { rest },
-            ))
-            .with_children(|gun| {
-                crate::combat::build_pipe_rifle(gun, &mut meshes, &mut materials, &assets);
-            });
+            crate::gun::spawn_view_model(cam, &mut meshes, &mut materials, &assets);
         });
 }
 

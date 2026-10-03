@@ -2,19 +2,23 @@
 //! headless machine). Does nothing unless `FMN_SHOT` is set:
 //!
 //! ```text
-//! FMN_SHOT="x,z,yaw_deg,pitch_deg,hour[,blizzard]" FMN_SHOT_OUT=shot.png cargo run
+//! FMN_SHOT="x,z,yaw_deg,pitch_deg,hour[,blizzard[,aim[,reload]]]" FMN_SHOT_OUT=shot.png cargo run
 //! ```
 //!
+//! `FMN_SHOT_SIZE="2461,1154"` also resizes the window first.
+//!
 //! Teleports the player, sets the time of day (and optionally starts a
-//! rad-blizzard), waits for assets to load, saves a screenshot and exits.
+//! rad-blizzard, aims down the sights, or freezes a reload at the given
+//! progress 0..1), waits for assets to load, saves a screenshot and exits.
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 
+use crate::gun::ForceAim;
 use crate::player::{Player, EYE_HEIGHT};
 use crate::sim::terrain;
 use crate::sim::weather::Phase;
-use crate::state::{ClockRes, WeatherRes};
+use crate::state::{ClockRes, Game, WeatherRes};
 
 #[derive(Resource)]
 struct Shot {
@@ -24,6 +28,8 @@ struct Shot {
     pitch: f32,
     hour: f32,
     blizzard: bool,
+    aim: bool,
+    reload: Option<f32>,
     out: String,
     /// Real seconds to wait for assets to load before shooting.
     wait: f32,
@@ -50,11 +56,22 @@ impl Plugin for DevShotPlugin {
             pitch: v[3].to_radians(),
             hour: v[4],
             blizzard: v.get(5).is_some_and(|b| *b > 0.0),
+            aim: v.get(6).is_some_and(|b| *b > 0.0),
+            reload: v.get(7).copied().filter(|r| *r > 0.0),
             out,
             wait: std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0),
             taken: None,
         })
-        .add_systems(Update, take_shot);
+        .add_systems(Update, take_shot)
+        .add_systems(Startup, resize_window);
+    }
+}
+
+fn resize_window(mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>) {
+    let Ok(size) = std::env::var("FMN_SHOT_SIZE") else { return };
+    let v: Vec<f32> = size.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    if let (Some(&w), Some(&h), Ok(mut window)) = (v.first(), v.get(1), windows.single_mut()) {
+        window.resolution.set(w, h);
     }
 }
 
@@ -64,6 +81,8 @@ fn take_shot(
     mut shot: ResMut<Shot>,
     mut clock: ResMut<ClockRes>,
     mut weather: ResMut<WeatherRes>,
+    mut game: ResMut<Game>,
+    mut aim: ResMut<ForceAim>,
     mut player: Query<(&mut Transform, &mut Player)>,
     mut exit: EventWriter<AppExit>,
 ) {
@@ -73,6 +92,10 @@ fn take_shot(
         weather.weather.timer = 30.0;
     } else {
         weather.weather.timer = 60.0;
+    }
+    aim.0 = shot.aim;
+    if let Some(r) = shot.reload {
+        game.weapon.busy = game.weapon.reload_time * (1.0 - r);
     }
     if let Ok((mut tf, mut p)) = player.single_mut() {
         p.yaw = shot.yaw;

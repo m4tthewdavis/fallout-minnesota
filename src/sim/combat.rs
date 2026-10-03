@@ -62,6 +62,15 @@ impl Weapon {
         self.busy > 0.0
     }
 
+    /// Progress 0..1 through the current reload or unjam, if one is running.
+    pub fn reload_progress(&self) -> Option<f32> {
+        if self.busy <= 0.0 {
+            return None;
+        }
+        let total = if self.jammed { self.unjam_time } else { self.reload_time };
+        Some((1.0 - self.busy / total).clamp(0.0, 1.0))
+    }
+
     /// Advance timers. Returns true on the frame a reload or unjam completes.
     pub fn tick(&mut self, dt: f32) -> bool {
         self.cooldown = (self.cooldown - dt).max(0.0);
@@ -216,5 +225,24 @@ mod tests {
         assert!(miss.is_none());
         let behind = ray_sphere([0.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 0.0, 10.0], 1.0);
         assert!(behind.is_none());
+    }
+
+    #[test]
+    fn reload_progress_runs_zero_to_one() {
+        let mut w = Weapon::pipe_rifle();
+        assert_eq!(w.reload_progress(), None);
+        w.mag = 0;
+        let mut reserve = 20;
+        assert!(w.start_reload(&mut reserve));
+        assert_eq!(w.reload_progress(), Some(0.0));
+        w.tick(w.reload_time / 2.0);
+        assert!((w.reload_progress().unwrap() - 0.5).abs() < 1e-4);
+        w.tick(w.reload_time);
+        assert_eq!(w.reload_progress(), None);
+        // Unjamming uses the (shorter) unjam time.
+        w.jammed = true;
+        assert!(w.start_reload(&mut reserve));
+        w.tick(w.unjam_time / 2.0);
+        assert!((w.reload_progress().unwrap() - 0.5).abs() < 1e-4);
     }
 }

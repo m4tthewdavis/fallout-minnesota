@@ -24,6 +24,8 @@ use crate::sim::mipmaps;
 /// Handles to every model, material and sprite the world uses.
 #[derive(Resource)]
 pub struct GameAssets {
+    /// Pipe-rifle textures: steel_diff, steel_arm, wood_diff, wood_nor.
+    pub gun_textures: std::collections::HashMap<&'static str, Handle<Image>>,
     pub font: Handle<Font>,
 
     // Poly Haven models (glTF scenes).
@@ -235,7 +237,18 @@ fn load_assets(
         ..default()
     });
 
+    let gun_textures = [
+        ("steel_diff", "gun_steel_diff.png", true),
+        ("steel_arm", "gun_steel_arm.png", false),
+        ("wood_diff", "gun_wood_diff.png", true),
+        ("wood_nor", "gun_wood_nor.png", false),
+    ]
+    .into_iter()
+    .map(|(key, file, srgb)| (key, tiled(s, format!("textures/generated/{file}"), srgb)))
+    .collect();
+
     commands.insert_resource(GameAssets {
+        gun_textures,
         font,
 
         barrel_stove: scene(s, "barrel_stove"),

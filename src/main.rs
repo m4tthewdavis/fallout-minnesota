@@ -11,6 +11,7 @@ mod assets;
 mod audio;
 mod combat;
 mod devshot;
+mod gun;
 mod hud;
 mod landmarks;
 mod meshes;
@@ -60,6 +61,7 @@ fn main() {
             weather_fx::WeatherPlugin,
             wolves::WolfPlugin,
             combat::CombatPlugin,
+            gun::GunPlugin,
             particles::ParticlePlugin,
             hud::HudPlugin,
             devshot::DevShotPlugin,

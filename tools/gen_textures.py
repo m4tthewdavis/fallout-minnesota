@@ -218,6 +218,68 @@ def clean_snow():
     print("   textures/snow_02/diff_clean.jpg")
 
 
+def gun_textures():
+    """Pipe-rifle materials: worn blued steel with rust gathering in pits and
+    seams plus bright scratches, and scratched, grimy wood grain."""
+    n = 512
+    yy, xx = np.mgrid[0:n, 0:n].astype(float)
+    # --- steel ---
+    brushed = value_noise(n, 64, 2)
+    brushed = np.repeat(brushed[:, :1], n, 1) * 0.5 + brushed * 0.5  # streaks along U
+    pits = value_noise(n, 12, 5)
+    seams = np.clip(1 - voronoi_edges(n, 14) / 5.0, 0, 1)
+    rust = np.clip((pits - 0.64) * 5 + seams * 0.55 * (pits > 0.45), 0, 1)
+    rust = np.asarray(Image.fromarray((rust * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2)), float) / 255
+    scratches = np.zeros((n, n))
+    img = Image.fromarray((scratches * 255).astype(np.uint8))
+    d = ImageDraw.Draw(img)
+    for _ in range(60):
+        x0, y0 = rng.random(2) * n
+        ang = rng.normal(0, 0.35)
+        length = rng.uniform(15, 90)
+        d.line([x0, y0, x0 + math.cos(ang) * length, y0 + math.sin(ang) * length], fill=int(rng.uniform(80, 200)), width=1)
+    scratches = np.asarray(img, float) / 255
+    blued = np.stack([0.16, 0.17, 0.19]) * (0.85 + 0.3 * brushed[..., None])
+    rust_col = np.stack([0.3, 0.15, 0.07]) * (0.7 + 0.5 * pits[..., None])
+    steel = blued * (1 - rust[..., None]) + rust_col * rust[..., None]
+    steel = steel + scratches[..., None] * 0.18 * (1 - rust[..., None])
+    save(Image.fromarray((np.clip(steel, 0, 1) * 255).astype(np.uint8)), GEN, "gun_steel_diff.png")
+    rough = 0.35 + 0.15 * brushed + 0.5 * rust - 0.15 * scratches
+    metal = 1.0 - 0.9 * rust
+    arm = np.stack([1 - 0.4 * seams * rust, np.clip(rough, 0, 1), np.clip(metal, 0, 1)], -1)
+    save(Image.fromarray((arm * 255).astype(np.uint8)), GEN, "gun_steel_arm.png")
+
+    # --- wood ---
+    warp = value_noise(n, 4, 3)
+    knots = value_noise(n, 3, 2)
+    grain = np.sin((xx / n * 56 + warp * 4 + knots * 1.5) * math.pi) * 0.5 + 0.5
+    fine = value_noise(n, 128, 1)
+    fine = np.repeat(fine[:1], n, 0) * 0.5 + fine * 0.5  # fine pores along the grain
+    wood_h = grain * 0.7 + fine * 0.3
+    light = np.stack([0.45, 0.28, 0.15])
+    dark = np.stack([0.22, 0.12, 0.06])
+    wood = dark + (light - dark) * wood_h[..., None]
+    grime = np.clip((value_noise(n, 6, 3) - 0.5) * 2.5, 0, 1)
+    wood = wood * (1 - 0.35 * grime[..., None])
+    img = Image.fromarray(np.zeros((n, n), np.uint8))
+    d = ImageDraw.Draw(img)
+    for _ in range(90):
+        x0, y0 = rng.random(2) * n
+        ang = rng.uniform(0, math.pi)
+        length = rng.uniform(8, 50)
+        d.line([x0, y0, x0 + math.cos(ang) * length, y0 + math.sin(ang) * length], fill=int(rng.uniform(100, 255)), width=1)
+    nicks = np.asarray(img, float) / 255
+    wood = wood * (1 - 0.3 * nicks[..., None]) + np.stack([0.55, 0.42, 0.3]) * 0.25 * nicks[..., None]
+    save(Image.fromarray((np.clip(wood, 0, 1) * 255).astype(np.uint8)), GEN, "gun_wood_diff.png")
+    # Normal map from the grain and scratch height (OpenGL convention).
+    hgt = wood_h * 0.6 - nicks * 0.8
+    gy, gx = np.gradient(hgt)
+    nx, ny, nz = -gx * 3.0, gy * 3.0, np.ones_like(hgt)
+    length = np.sqrt(nx * nx + ny * ny + nz * nz)
+    nor = np.stack([nx / length, ny / length, nz / length], -1) * 0.5 + 0.5
+    save(Image.fromarray((nor * 255).astype(np.uint8)), GEN, "gun_wood_nor.png")
+
+
 def ui_icons():
     """White-on-transparent HUD icons; the game tints them Pip-Boy green."""
     n = 64
@@ -294,6 +356,7 @@ def main():
     sign("sign_golden_atomic.png", [("GOLDEN ATOMIC MILLS", 0.42), ("Enriched Flour Since 1961", 0.18)], (1024, 256), (40, 35, 30), (230, 180, 40), None, 0.3)
     sign("sign_fallout_shelter.png", [("FALLOUT", 0.3), ("SHELTER", 0.3)], (256, 256), (230, 190, 30), (25, 25, 25), (25, 25, 25), 0.3)
     clean_snow()
+    gun_textures()
     ui_icons()
 
 

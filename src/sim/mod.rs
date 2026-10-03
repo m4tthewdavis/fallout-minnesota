@@ -14,6 +14,7 @@ pub mod mipmaps;
 pub mod rng;
 pub mod survival;
 pub mod synth;
+pub mod viewmodel;
 pub mod terrain;
 pub mod weather;
 pub mod wolf;

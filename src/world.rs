@@ -177,6 +177,8 @@ fn build_world(
             ..default()
         }
         .build(),
+        // The sun lights the world and the first-person rifle.
+        bevy::render::view::RenderLayers::from_layers(&[0, crate::gun::VIEW_LAYER]),
         Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(-0.4, -1.0, -0.3), Vec3::Y),
         Sun,
     ));
