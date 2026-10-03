@@ -1,4 +1,4 @@
-# Fallout: Minnesota — Prototype (Milestone 2)
+# Fallout: Minnesota — Prototype (Milestone 3)
 
 A first-person cold-survival prototype made with **Rust + Bevy 0.16**. It is based on the *Fallout: Minnesota* design doc.
 
@@ -15,6 +15,8 @@ You are the Thawborn, just out of **Vault 143** on the shore of Lake Mille Lacs.
 
    The first build compiles the Bevy engine, which takes a few minutes. Later builds take seconds.
 3. To run the game-rule unit tests: `cargo test`.
+
+The game loads its models, textures, font and HUD images from the `assets/` folder. `cargo run` finds it automatically. If you run the `.exe` directly, keep the `assets` folder next to it (the downloadable build from GitHub Actions already does this).
 
 If the build reports an error, copy the error text back to Claude and it will fix it.
 
@@ -48,6 +50,26 @@ If the build reports an error, copy the error text back to Claude and it will fi
 - **Day/night cycle**: a full day lasts 12 real minutes. The sun moves and casts moving shadows, sunrise and sunset glow orange, and nights are dark blue with moonlight. Nights are up to 12°F colder, and distant howls carry across the ice. The HUD shows the day and clock.
 - **Animated wolves**: Frostfangs trot with swinging legs (diagonal pairs, like a real trot). Their stride speeds up when they chase, and their tails wag harder on the hunt.
 
+## What's new in Milestone 3
+
+The prototype now looks, sounds and feels like a game instead of a box test.
+
+- **Real 3D art**: low-poly CC0 models from [Poly Haven](https://polyhaven.com) (barrel stoves, oil drums, tyres, crates, jerrycans, ammo boxes, medical kits, rocks, stumps, a tarp-covered car) and tiled PBR textures (snow, bark, rust, corrugated iron, planks, concrete, rock, diamond plate, snowy asphalt). Every texture gets mipmaps so it doesn't shimmer in the distance.
+- **Procedural models**: snow-laden Northwoods pines and dead snags, Frostfang wolves with real bodies, heads, ears and bushy tails, rusted 1950s sedans, gabled fish houses, the Vault 143 gear door, Golden Atomic Mills silos, boulders, snowdrifts and the pipe rifle are all generated in code (`src/sim/meshgen.rs`, unit-tested).
+- **A fuller map**: the old US-169 highway with plough banks, power lines with sagging wires, road signs, the Bullseye-Mart ruin with a collapsed roof and rubble, the silo complex with a catwalk, elevator tower and leaking glowing drums, scorched craters, cracked nuclear ice whose cracks pulse green, junk and boulders everywhere.
+- **Sky and light**: a sky that follows the day/night clock and the weather, stars, the northern lights on clear nights, sun and moon, HDR bloom and filmic tonemapping, flickering firelight, a floodlit vault door.
+- **Effects**: breath vapour, snow kicked up by footsteps, chimney smoke, fire flames and embers, radioactive motes, muzzle flashes and smoke, ejected brass, fur and blood on hits (blood stains the snow), shattering ice.
+- **Pip-Boy HUD**: retro monospace font, icon bars (radiation eats a red slice off your max HP), a compass marking the vault (V) and the nearest shelter (H), scanlines, vignette, frost creeping in as you freeze.
+- **Audio**: an ambient "Long Winter" music loop, a Geiger counter that clicks faster the more rads you take, fire crackle near the barrels, growling and a second howl voice for the wolves, groaning ice, tinkling shell casings. All still synthesised in code.
+
+Asset sources and licenses are listed in [assets/CREDITS.md](assets/CREDITS.md). To re-download or regenerate the assets:
+
+```
+python3 tools/fetch_assets.py     # CC0 models and textures from Poly Haven
+pip install numpy pillow
+python3 tools/gen_textures.py     # generated textures, signs and HUD images
+```
+
 ## Code layout
 
 ```
@@ -55,22 +77,33 @@ src/
   main.rs        App setup
   sim/           Pure game rules, no Bevy (unit-tested)
     collision.rs Circles and rectangles that push movers out
+    meshgen.rs   Procedural geometry (pines, wolves, cars, sheds, gear door...)
+    mipmaps.rs   Mipmap chains for loaded textures
     daynight.rs  Clock, sun/moon position, night chill
     synth.rs     Procedural sound effects and WAV encoding
     survival.rs  Body Heat, rads, health, inventory, crafting
     weather.rs   Calm / siren / blizzard cycle and conditions
-    terrain.rs   Height field, lakes, shelters, radiation zones
+    terrain.rs   Height field, lakes, shelters, radiation zones, highway
     combat.rs    Pipe rifle, jams, ray-sphere hits
     wolf.rs      Frostfang behaviour decisions
     rng.rs       Small deterministic RNG
-  state.rs       Shared resources (Game, weather, messages)
-  world.rs       Builds the map and handles loot
+  state.rs       Shared resources (Game, weather, messages, effect queue)
+  assets.rs      Loads models, textures, font; builds materials and mipmaps
+  meshes.rs      Turns sim::meshgen geometry into Bevy meshes
+  world.rs       Terrain, ice, craters, loot, animated lights
+  landmarks.rs   Vault 143, fish houses, silos, Bullseye-Mart, cars, road, power lines
+  nature.rs      Pines, snags, rocks, drifts, shrubs, junk
+  sky.rs         Sky dome, stars, aurora, sun and moon
+  particles.rs   Billboard particle effects
+  devshot.rs     Screenshot mode for automated previews (FMN_SHOT)
   player.rs      First-person controller, survival tick, items, respawn
   weather_fx.rs  Fog, light and snow particles
   wolves.rs      Wolf spawning, AI and bites
   combat.rs      Shooting, tracers, gun animation
   audio.rs       Plays sound effects and weather ambience
   hud.rs         Pip-Boy green HUD and overlays
+assets/          Models, textures, font, HUD images (see assets/CREDITS.md)
+tools/           Scripts that download and generate the assets
 ```
 
 ## Possible next milestones
@@ -78,4 +111,6 @@ src/
 - A real interior for Vault 143
 - Dialogue system and the first faction (the Skyfolk or the Lockkeepers' Compact)
 - Save/load and false-thaw events
-- Replace the box models with real 3D assets (glTF)
+- Animated, rigged wolf model (skeletal animation instead of swinging limbs)
+- Interiors you can enter (the fish houses, Bullseye-Mart)
+- Distance LODs for trees and a settings menu (shadow quality, view distance)

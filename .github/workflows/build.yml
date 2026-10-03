@@ -30,6 +30,8 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/fallout_minnesota.exe dist/FalloutMinnesota.exe
           Copy-Item README.md dist/README.md
+          # Models, textures, fonts and HUD images must sit next to the .exe.
+          Copy-Item -Recurse assets dist/assets
 
       - name: Upload the game for download
         uses: actions/upload-artifact@v4
