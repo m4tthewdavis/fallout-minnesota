@@ -10,6 +10,7 @@
 mod assets;
 mod audio;
 mod combat;
+mod devshot;
 mod hud;
 mod landmarks;
 mod meshes;
@@ -53,6 +54,7 @@ fn main() {
             combat::CombatPlugin,
             particles::ParticlePlugin,
             hud::HudPlugin,
+            devshot::DevShotPlugin,
         ))
         .run();
 }
