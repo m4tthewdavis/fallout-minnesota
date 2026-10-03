@@ -6,7 +6,8 @@ description = "Fallout: Minnesota - first-person cold-survival prototype"
 
 [dependencies]
 # "wav" lets Bevy play the sound effects the game synthesises at start-up.
-bevy = { version = "0.16", features = ["wav"] }
+# "jpeg" loads the CC0 Poly Haven textures in assets/.
+bevy = { version = "0.16", features = ["wav", "jpeg"] }
 # Bevy already depends on blake3. The "pure" feature makes it pure Rust, so it
 # builds without a C compiler (needed for the lighter GNU toolchain on Windows).
 blake3 = { version = "1", features = ["pure"] }

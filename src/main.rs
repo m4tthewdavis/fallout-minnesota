@@ -3,10 +3,15 @@
 //! Milestone 1: leave Vault 143, survive the Long Winter (Body Heat, radiation,
 //! rad-blizzards, nuclear ice), and fight Frostfang wolf packs.
 //! Milestone 2: collision, synthesised audio, day/night cycle, animated wolves.
+//! Milestone 3: real art - CC0 models and PBR textures, procedural pines,
+//! wolves, cars and buildings, a sky with stars and aurora, particles, bloom,
+//! a Pip-Boy HUD, music and a Geiger counter.
 
+mod assets;
 mod audio;
 mod combat;
 mod hud;
+mod meshes;
 mod player;
 mod sim;
 mod state;
@@ -27,12 +32,13 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Fallout: Minnesota - Prototype".into(),
-                resolution: (1280.0, 720.0).into(),
+                resolution: (1280.0_f32, 720.0_f32).into(),
                 ..default()
             }),
             ..default()
         }))
         .add_plugins((
+            assets::AssetsPlugin,
             state::StatePlugin,
             audio::SoundPlugin,
             world::WorldPlugin,
