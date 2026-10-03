@@ -121,6 +121,8 @@ pub enum Fx {
     WolfHit(Vec3, Vec3),
     /// A Frostfang dropping dead: (body centre, size).
     WolfDeath(Vec3, f32),
+    /// A wolf exhaling glowing vapour: (mouth, direction).
+    WolfBreath(Vec3, Vec3),
     /// A bullet kicking up snow where it lands.
     Ricochet(Vec3),
     /// Nuclear ice giving way.

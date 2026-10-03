@@ -17,6 +17,7 @@ mod hud;
 mod interact;
 mod landmarks;
 mod meshes;
+mod moose;
 mod nature;
 mod particles;
 mod player;
@@ -60,10 +61,13 @@ fn main() {
             audio::SoundPlugin,
             interact::InteractPlugin,
             world::WorldPlugin,
+        ))
+        .add_plugins((
             player::PlayerPlugin,
             sky::SkyPlugin,
             weather_fx::WeatherPlugin,
             wolves::WolfPlugin,
+            moose::MoosePlugin,
             enemy::EnemyPlugin,
             combat::CombatPlugin,
             gun::GunPlugin,

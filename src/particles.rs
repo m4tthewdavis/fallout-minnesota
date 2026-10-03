@@ -34,6 +34,7 @@ enum Look {
     Ice,
     Flash,
     Flame,
+    WolfBreath,
 }
 
 #[derive(Resource)]
@@ -126,7 +127,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // (look, colour, emissive glow, additive, texture)
-    let specs: [(Look, LinearRgba, bool, &Handle<Image>); 10] = [
+    let specs: [(Look, LinearRgba, bool, &Handle<Image>); 11] = [
         (Look::Snow, LinearRgba::new(0.95, 0.97, 1.0, 0.85), false, &assets.soft),
         (Look::Smoke, LinearRgba::new(0.32, 0.32, 0.33, 0.5), false, &assets.soft),
         (Look::Breath, LinearRgba::new(0.95, 0.97, 1.0, 0.35), false, &assets.soft),
@@ -137,6 +138,7 @@ fn setup(
         (Look::Ice, LinearRgba::new(1.0, 3.0, 2.2, 1.0), true, &assets.soft),
         (Look::Flash, LinearRgba::new(9.0, 6.0, 2.5, 1.0), true, &assets.flash),
         (Look::Flame, LinearRgba::new(5.0, 1.8, 0.35, 1.0), true, &assets.flash),
+        (Look::WolfBreath, LinearRgba::new(0.4, 1.6, 2.0, 0.55), true, &assets.soft),
     ];
     let mut looks = HashMap::new();
     for (look, color, additive, tex) in specs {
@@ -327,6 +329,12 @@ fn spawn_requested_fx(
                 for _ in 0..8 {
                     let v = rand_dir(&mut rng) * 1.5 + Vec3::Y * 2.0;
                     emit(&mut commands, &pa, Spec::new(Look::Blood, p, v, 1.5, (0.07, 0.05)).gravity(9.0).stains());
+                }
+            }
+            Fx::WolfBreath(p, dir) => {
+                for k in 0..2 {
+                    let v = dir * (0.6 + 0.3 * k as f32) + Vec3::Y * 0.25 + rand_dir(&mut rng) * 0.1;
+                    emit(&mut commands, &pa, Spec::new(Look::WolfBreath, p, v, rng.0.range(0.9, 1.5), (0.05, 0.4)).drag(1.4).windy());
                 }
             }
             Fx::Ricochet(p) => {

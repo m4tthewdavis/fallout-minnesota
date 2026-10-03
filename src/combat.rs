@@ -370,7 +370,10 @@ fn strike(
                 );
             }
             Species::Moose => {
-                msgs.show(format!("{} down. It won't be charging anyone again.", body.species.name()), 3.0);
+                // Meat for the hotdish pot and antler for scrap.
+                game.inv.hotdish += 2;
+                game.inv.scrap += 9;
+                msgs.show(format!("{} down! +2 Hotdish (moose meat), +9 Scrap (antler)", body.species.name()), 4.0);
             }
         }
         // Fall away from the shot.

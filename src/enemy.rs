@@ -21,6 +21,10 @@ impl Species {
     }
 }
 
+/// Screenshot mode: this creature stands still and never acts.
+#[derive(Component)]
+pub struct Frozen;
+
 /// Anything the player can shoot or hit.
 #[derive(Component, Clone, Debug)]
 pub struct Body {

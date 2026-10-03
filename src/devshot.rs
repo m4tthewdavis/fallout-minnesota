@@ -74,7 +74,21 @@ impl Plugin for DevShotPlugin {
             taken: None,
         })
         .add_systems(Update, take_shot)
+        .add_systems(PostStartup, spawn_extras)
         .add_systems(Startup, resize_window);
+    }
+}
+
+/// FMN_LINEUP=wolves|moose spawns a row of stationary creatures to look at.
+fn spawn_extras(mut commands: Commands) {
+    match std::env::var("FMN_LINEUP").as_deref() {
+        Ok("wolves") => {
+            commands.run_system_cached(crate::wolves::spawn_lineup);
+        }
+        Ok("moose") => {
+            commands.run_system_cached(crate::moose::spawn_lineup);
+        }
+        _ => {}
     }
 }
 

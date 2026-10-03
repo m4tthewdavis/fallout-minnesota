@@ -12,6 +12,7 @@ pub mod daynight;
 pub mod loot;
 pub mod meshgen;
 pub mod mipmaps;
+pub mod moose;
 pub mod rng;
 pub mod sfx;
 pub mod survival;

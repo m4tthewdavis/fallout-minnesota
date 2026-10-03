@@ -1,12 +1,15 @@
 //! Frostfang wolf packs: translucent, glowing-eyed timber wolves that wander in
-//! calm weather and hunt in packs during rad-blizzards. They trot with animated
-//! legs, steer around trees and buildings, and howl at night and in storms.
+//! calm weather and hunt in packs during rad-blizzards. Every wolf looks a
+//! little different (four fur patterns, torn or tall ears, three coats, odd
+//! proportions). They trot, break into a bounding gallop when they chase,
+//! lunge as they bite, flinch when hit, fall over when killed, exhale glowing
+//! vapour, steer around trees and buildings, and howl at night and in storms.
 
 use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-use crate::enemy::{Body, Dying, Species};
+use crate::enemy::{Body, Dying, Frozen, Species};
 use crate::meshes::to_mesh;
 use crate::player::Player;
 use crate::sim::meshgen;
@@ -15,7 +18,7 @@ use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
 use crate::sim::weather::Phase;
 use crate::sim::wolf::{self, WolfMode, BITE_RANGE};
-use crate::state::{alive, random_point_around, ClockRes, Colliders, Game, Hostile, Messages, RngRes, SfxQueue, WeatherRes};
+use crate::state::{alive, random_point_around, ClockRes, Colliders, Fx, FxQueue, Game, Hostile, Messages, RngRes, SfxQueue, WeatherRes};
 
 const MAX_WOLVES: usize = 16;
 const BITE_COOLDOWN: f32 = 1.3;
@@ -36,6 +39,11 @@ pub struct Wolf {
     gait: f32,
     /// Accumulated walk-cycle phase.
     stride: f32,
+    /// 0 = trotting, 1 = full gallop (smoothed).
+    gallop: f32,
+    /// 1 right after a bite, falling to 0: the lunge.
+    lunge: f32,
+    breath_cd: f32,
 }
 
 
@@ -43,20 +51,30 @@ pub struct Wolf {
 #[derive(Component)]
 struct WolfLimb {
     owner: Entity,
-    phase: f32,
+    /// Phase when trotting (diagonal pairs) and when galloping (fore and hind pairs).
+    trot_phase: f32,
+    gallop_phase: f32,
     tail: bool,
 }
 
+/// The wolf's whole body, so it can bound, lunge and flinch without fighting
+/// the AI for control of the root transform.
+#[derive(Component)]
+struct WolfRig {
+    owner: Entity,
+}
+
 #[derive(Resource)]
-struct WolfAssets {
-    body: Handle<Mesh>,
-    head: Handle<Mesh>,
+pub(crate) struct WolfAssets {
+    bodies: Vec<Handle<Mesh>>,
+    heads: Vec<Handle<Mesh>>,
     leg: Handle<Mesh>,
     tail: Handle<Mesh>,
     eye: Handle<Mesh>,
-    fur: Handle<StandardMaterial>,
+    furs: Vec<Handle<StandardMaterial>>,
     alpha_fur: Handle<StandardMaterial>,
     eye_mat: Handle<StandardMaterial>,
+    alpha_eye_mat: Handle<StandardMaterial>,
 }
 
 /// Countdown to the next distant howl.
@@ -73,7 +91,7 @@ impl Plugin for WolfPlugin {
                 Update,
                 (
                     (blizzard_packs, wolf_ai, distant_howls).chain().run_if(alive),
-                    animate_limbs,
+                    animate_wolves,
                 ),
             );
     }
@@ -84,54 +102,78 @@ fn setup_wolf_assets(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // "Translucent fur that blends into snow." Three coats: arctic white,
+    // ash grey and dusky brown-grey.
+    let fur = |materials: &mut Assets<StandardMaterial>, c: Color| {
+        materials.add(StandardMaterial {
+            base_color: c,
+            alpha_mode: AlphaMode::Blend,
+            perceptual_roughness: 0.9,
+            double_sided: true,
+            cull_mode: None,
+            ..default()
+        })
+    };
+    let furs = vec![
+        fur(&mut materials, Color::srgba(0.9, 0.93, 0.97, 0.72)),
+        fur(&mut materials, Color::srgba(0.68, 0.72, 0.78, 0.78)),
+        fur(&mut materials, Color::srgba(0.56, 0.52, 0.5, 0.8)),
+    ];
+    let alpha_fur = fur(&mut materials, Color::srgba(0.5, 0.55, 0.64, 0.86));
+    // Glowing eyes are the only tell in a whiteout; an alpha's burn amber.
+    let eye = |materials: &mut Assets<StandardMaterial>, c: Color, e: LinearRgba| {
+        materials.add(StandardMaterial {
+            base_color: c,
+            emissive: e,
+            unlit: true,
+            ..default()
+        })
+    };
     commands.insert_resource(WolfAssets {
         // Smooth procedural bodies (see sim::meshgen), countershaded with
-        // vertex colours: a dusky saddle and a pale belly.
-        body: meshes.add(to_mesh(&meshgen::wolf_body())),
-        head: meshes.add(to_mesh(&meshgen::wolf_head())),
+        // vertex colours and marked per variant.
+        bodies: (0..meshgen::WOLF_VARIANTS).map(|v| meshes.add(to_mesh(&meshgen::wolf_body_variant(v)))).collect(),
+        heads: (0..meshgen::WOLF_VARIANTS).map(|v| meshes.add(to_mesh(&meshgen::wolf_head_variant(v)))).collect(),
         leg: meshes.add(to_mesh(&meshgen::wolf_leg())),
         tail: meshes.add(to_mesh(&meshgen::wolf_tail())),
         eye: meshes.add(Sphere::new(0.032)),
-        // "Translucent fur that blends into snow."
-        fur: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.86, 0.90, 0.95, 0.72),
-            alpha_mode: AlphaMode::Blend,
-            perceptual_roughness: 0.9,
-            double_sided: true,
-            cull_mode: None,
-            ..default()
-        }),
-        alpha_fur: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.55, 0.60, 0.68, 0.85),
-            alpha_mode: AlphaMode::Blend,
-            perceptual_roughness: 0.9,
-            double_sided: true,
-            cull_mode: None,
-            ..default()
-        }),
-        // Glowing eyes are the only tell in a whiteout.
-        eye_mat: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.4, 0.9, 1.0),
-            emissive: LinearRgba::rgb(4.0, 16.0, 22.0),
-            unlit: true,
-            ..default()
-        }),
+        furs,
+        alpha_fur,
+        eye_mat: eye(&mut materials, Color::srgb(0.4, 0.9, 1.0), LinearRgba::rgb(4.0, 16.0, 22.0)),
+        alpha_eye_mat: eye(&mut materials, Color::srgb(1.0, 0.7, 0.3), LinearRgba::rgb(24.0, 11.0, 2.0)),
     });
 }
 
-fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bool, rng: &mut RngRes) {
+fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bool, rng: &mut RngRes) -> Entity {
+    spawn_wolf_with(commands, assets, pos, alpha, None, None, rng)
+}
+
+/// Spawn a wolf, optionally forcing its fur pattern and coat.
+fn spawn_wolf_with(
+    commands: &mut Commands,
+    assets: &WolfAssets,
+    pos: Vec2,
+    alpha: bool,
+    variant: Option<u32>,
+    coat: Option<usize>,
+    rng: &mut RngRes,
+) -> Entity {
     let size = if alpha { 1.3 } else { rng.0.range(0.9, 1.1) };
     let health = if alpha { 100.0 } else { 60.0 };
+    let variant = variant.unwrap_or((rng.0.f32() * meshgen::WOLF_VARIANTS as f32) as u32) % meshgen::WOLF_VARIANTS;
     let fur = if alpha {
         assets.alpha_fur.clone()
     } else {
-        assets.fur.clone()
+        assets.furs[coat.unwrap_or((rng.0.f32() * assets.furs.len() as f32) as usize) % assets.furs.len()].clone()
     };
+    let eye_mat = if alpha { assets.alpha_eye_mat.clone() } else { assets.eye_mat.clone() };
+    // Slightly different proportions: broader or leaner, longer or shorter.
+    let scale = Vec3::new(size * rng.0.range(0.94, 1.08), size, size * rng.0.range(0.95, 1.06));
     let y = terrain::walk_height(pos.x, pos.y);
 
     let id = commands
         .spawn((
-            Transform::from_xyz(pos.x, y, pos.y).with_scale(Vec3::splat(size)),
+            Transform::from_xyz(pos.x, y, pos.y).with_scale(scale),
             Visibility::default(),
             Hostile,
             Body::new(Species::Wolf { alpha }, health, 0.75, 0.8),
@@ -145,59 +187,77 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
                 speed_jitter: rng.0.range(0.85, 1.05),
                 gait: 0.0,
                 stride: rng.0.range(0.0, 6.28),
+                gallop: 0.0,
+                lunge: 0.0,
+                breath_cd: rng.0.range(0.0, 2.0),
             },
         ))
         .id();
 
     commands.entity(id).with_children(|w| {
-        w.spawn((Mesh3d(assets.body.clone()), MeshMaterial3d(fur.clone())));
-        w.spawn((Mesh3d(assets.head.clone()), MeshMaterial3d(fur.clone())));
-        for x in [-0.075, 0.075] {
-            w.spawn((
-                Mesh3d(assets.eye.clone()),
-                MeshMaterial3d(assets.eye_mat.clone()),
-                Transform::from_xyz(x, 1.11, 1.02),
-            ));
-        }
+        w.spawn((Transform::default(), Visibility::default(), WolfRig { owner: id })).with_children(|rig| {
+            rig.spawn((Mesh3d(assets.bodies[variant as usize].clone()), MeshMaterial3d(fur.clone())));
+            rig.spawn((Mesh3d(assets.heads[variant as usize].clone()), MeshMaterial3d(fur.clone())));
+            for x in [-0.075, 0.075] {
+                rig.spawn((Mesh3d(assets.eye.clone()), MeshMaterial3d(eye_mat.clone()), Transform::from_xyz(x, 1.11, 1.02)));
+            }
 
-        // Tail pivots at the rump.
-        w.spawn((
-            Transform::from_xyz(0.0, 0.95, -0.7),
-            Visibility::default(),
-            WolfLimb {
-                owner: id,
-                phase: 0.0,
-                tail: true,
-            },
-        ))
-        .with_children(|t| {
-            t.spawn((Mesh3d(assets.tail.clone()), MeshMaterial3d(fur.clone())));
-        });
-
-        // Legs pivot at the hip/shoulder; diagonal pairs move together (a trot).
-        let pi = std::f32::consts::PI;
-        for (x, z, phase) in [(-0.2, 0.5, 0.0), (0.2, 0.5, pi), (-0.2, -0.5, pi), (0.2, -0.5, 0.0)] {
-            w.spawn((
-                Transform::from_xyz(x, 0.6, z),
+            // Tail pivots at the rump.
+            rig.spawn((
+                Transform::from_xyz(0.0, 0.95, -0.7),
                 Visibility::default(),
                 WolfLimb {
                     owner: id,
-                    phase,
-                    tail: false,
+                    trot_phase: 0.0,
+                    gallop_phase: 0.0,
+                    tail: true,
                 },
             ))
-            .with_children(|leg| {
-                leg.spawn((Mesh3d(assets.leg.clone()), MeshMaterial3d(fur.clone())));
+            .with_children(|t| {
+                t.spawn((Mesh3d(assets.tail.clone()), MeshMaterial3d(fur.clone())));
             });
-        }
+
+            // Legs pivot at the hip/shoulder. Trotting, diagonal pairs move
+            // together; galloping, the two forelegs reach together and the two
+            // hindlegs push together a beat later.
+            let pi = std::f32::consts::PI;
+            for (x, z, trot, gallop) in [(-0.2, 0.5, 0.0, 0.0), (0.2, 0.5, pi, 0.25), (-0.2, -0.5, pi, 2.5), (0.2, -0.5, 0.0, 2.75)] {
+                rig.spawn((
+                    Transform::from_xyz(x, 0.6, z),
+                    Visibility::default(),
+                    WolfLimb {
+                        owner: id,
+                        trot_phase: trot,
+                        gallop_phase: gallop,
+                        tail: false,
+                    },
+                ))
+                .with_children(|leg| {
+                    leg.spawn((Mesh3d(assets.leg.clone()), MeshMaterial3d(fur.clone())));
+                });
+            }
+        });
     });
+    id
+}
+
+/// Screenshot helper: every wolf look in a row, standing still, facing south
+/// (towards the player's spawn): four patterns across, then an alpha.
+pub fn spawn_lineup(mut commands: Commands, assets: Res<WolfAssets>, mut rng: ResMut<RngRes>) {
+    let (sx, sz) = terrain::PLAYER_SPAWN;
+    let z = sz - 9.0;
+    for (i, (variant, coat, alpha)) in [(0, 0, false), (1, 1, false), (2, 0, false), (3, 2, false), (2, 1, true)].into_iter().enumerate() {
+        let x = sx - 6.0 + i as f32 * 3.0;
+        let id = spawn_wolf_with(&mut commands, &assets, Vec2::new(x, z), alpha, Some(variant), Some(coat), &mut rng);
+        commands.entity(id).insert((Frozen, Transform::from_xyz(x, terrain::walk_height(x, z), z).with_scale(Vec3::splat(if alpha { 1.3 } else { 1.0 })).with_rotation(Quat::from_rotation_y(std::f32::consts::PI))));
+    }
 }
 
 fn spawn_pack(commands: &mut Commands, assets: &WolfAssets, center: Vec2, count: usize, rng: &mut RngRes) {
     for i in 0..count {
         let offset = Vec2::new(rng.0.range(-6.0, 6.0), rng.0.range(-6.0, 6.0));
         let p = (center + offset).clamp(Vec2::splat(-HALF_SIZE + 5.0), Vec2::splat(HALF_SIZE - 5.0));
-        spawn_wolf(commands, assets, p, i == 0, rng);
+        let _ = spawn_wolf(commands, assets, p, i == 0, rng);
     }
 }
 
@@ -247,8 +307,9 @@ fn wolf_ai(
     mut msgs: ResMut<Messages>,
     mut rng: ResMut<RngRes>,
     mut sfx: ResMut<SfxQueue>,
+    mut fxq: ResMut<FxQueue>,
     player: Query<&Transform, With<Player>>,
-    mut wolves: Query<(Entity, &mut Transform, &mut Wolf, &Body), (Without<Player>, Without<Dying>)>,
+    mut wolves: Query<(Entity, &mut Transform, &mut Wolf, &Body), (Without<Player>, Without<Dying>, Without<Frozen>)>,
 ) {
     let dt = time.delta_secs();
     let Ok(ptf) = player.single() else { return };
@@ -323,6 +384,17 @@ fn wolf_ai(
         let moved = new_pos.distance(pos);
         w.gait = if dt > 0.0 { moved / dt } else { 0.0 };
         w.stride += moved * STRIDE_PER_METRE / w.size;
+        // Break into a gallop when running hard; lunge decays after a bite.
+        let target = ((w.gait / wolf::CHASE_SPEED - 0.65) / 0.25).clamp(0.0, 1.0);
+        w.gallop += (target - w.gallop) * (dt * 5.0).min(1.0);
+        w.lunge = (w.lunge - dt * 3.0).max(0.0);
+        // Breath: glowing vapour in the cold, faster when running.
+        w.breath_cd -= dt;
+        if w.breath_cd <= 0.0 && dist < 50.0 {
+            w.breath_cd = (if w.gait > 5.0 { 0.55 } else { 1.9 }) * rng.0.range(0.8, 1.25);
+            let mouth = tf.translation + tf.rotation * Vec3::new(0.0, 0.98 * w.size, 1.3 * w.size);
+            fxq.spawn(Fx::WolfBreath(mouth, tf.rotation * Vec3::Z));
+        }
 
         let face = if mode == WolfMode::Chase || mode == WolfMode::Stalk {
             to_player
@@ -352,6 +424,7 @@ fn wolf_ai(
         // Bite.
         if mode == WolfMode::Chase && dist < BITE_RANGE && w.bite_cd <= 0.0 && game.death.is_none() {
             w.bite_cd = BITE_COOLDOWN;
+            w.lunge = 1.0;
             let dmg = if w.alpha { 18.0 } else { 12.0 };
             game.hurt_flash = 1.0;
             sfx.play_at(Sound::Snarl, tf.translation + Vec3::Y);
@@ -388,26 +461,77 @@ fn distant_howls(
     }
 }
 
-fn animate_limbs(time: Res<Time>, wolves: Query<(Entity, &Wolf, Has<Dying>)>, mut limbs: Query<(&mut Transform, &WolfLimb)>) {
-    // A dead wolf's gait is zero, so its legs go slack.
-    let state: HashMap<Entity, (f32, f32)> = wolves.iter().map(|(e, w, dead)| (e, (w.stride, if dead { 0.0 } else { w.gait }))).collect();
+/// What the animation needs from each wolf.
+struct Pose {
+    stride: f32,
+    gait: f32,
+    gallop: f32,
+    lunge: f32,
+    flinch: f32,
+    /// Which side a hit came from relative to the wolf (+1 right, -1 left).
+    hit_side: f32,
+    dead: bool,
+}
+
+#[allow(clippy::type_complexity)]
+fn animate_wolves(
+    time: Res<Time>,
+    wolves: Query<(Entity, &Wolf, &Body, &Transform, Has<Dying>)>,
+    mut limbs: Query<(&mut Transform, &WolfLimb), (Without<Wolf>, Without<WolfRig>)>,
+    mut rigs: Query<(&mut Transform, &WolfRig), (Without<Wolf>, Without<WolfLimb>)>,
+) {
+    let state: HashMap<Entity, Pose> = wolves
+        .iter()
+        .map(|(e, w, body, tf, dead)| {
+            let right = tf.rotation * Vec3::X;
+            (
+                e,
+                Pose {
+                    stride: w.stride,
+                    gait: if dead { 0.0 } else { w.gait },
+                    gallop: if dead { 0.0 } else { w.gallop },
+                    lunge: w.lunge,
+                    flinch: body.flinch,
+                    hit_side: if body.hit_dir.dot(right) >= 0.0 { 1.0 } else { -1.0 },
+                    dead,
+                },
+            )
+        })
+        .collect();
     let t = time.elapsed_secs();
     for (mut tf, limb) in &mut limbs {
-        let Some(&(stride, gait)) = state.get(&limb.owner) else {
-            continue;
-        };
-        let effort = (gait / wolf::CHASE_SPEED).clamp(0.0, 1.0);
+        let Some(p) = state.get(&limb.owner) else { continue };
+        let effort = (p.gait / wolf::CHASE_SPEED).clamp(0.0, 1.0);
         if limb.tail {
             let wag = (t * (3.0 + 6.0 * effort)).sin() * (0.15 + 0.35 * effort);
-            tf.rotation = Quat::from_rotation_x(0.5 - 0.4 * effort) * Quat::from_rotation_y(wag);
+            // Streams out behind a galloping wolf, tucks when it is hit.
+            let carry = 0.5 - 0.4 * effort - 0.35 * p.gallop + 0.9 * p.flinch;
+            tf.rotation = Quat::from_rotation_x(carry) * Quat::from_rotation_y(wag);
         } else {
-            let amp = 0.15 + 0.55 * effort;
-            let swing = if gait > 0.2 {
-                (stride + limb.phase).sin() * amp
-            } else {
-                0.0
-            };
-            tf.rotation = Quat::from_rotation_x(swing);
+            let phase = limb.trot_phase + (limb.gallop_phase - limb.trot_phase) * p.gallop;
+            let amp = (0.15 + 0.55 * effort) * (1.0 + 0.4 * p.gallop);
+            let swing = if p.gait > 0.2 { (p.stride + phase).sin() * amp } else { 0.0 };
+            // Forelegs reach forward in a lunge.
+            tf.rotation = Quat::from_rotation_x(swing - p.lunge * 0.6 * if limb.gallop_phase < 1.0 { 1.0 } else { -0.3 });
         }
+    }
+    for (mut tf, rig) in &mut rigs {
+        let Some(p) = state.get(&rig.owner) else { continue };
+        if p.dead {
+            tf.translation = Vec3::ZERO;
+            tf.rotation = Quat::IDENTITY;
+            continue;
+        }
+        // Bounding: the body rises and dips, the nose rocks, once per stride.
+        let bob = p.gallop * 0.07 * (0.5 + 0.5 * (p.stride * 2.0).sin());
+        let rock = p.gallop * 0.1 * (p.stride + 0.8).sin();
+        // A lunge drives the head forward and down; a hit rears it back and
+        // twists it away from the blow.
+        let pitch = rock + p.lunge * 0.32 - p.flinch * 0.35;
+        let roll = p.flinch * 0.22 * p.hit_side;
+        let breathe = 1.0 + 0.012 * (t * 2.4 + p.stride).sin();
+        tf.translation = Vec3::new(0.0, bob, p.lunge * 0.45 - p.flinch * 0.18);
+        tf.rotation = Quat::from_rotation_x(pitch) * Quat::from_rotation_z(roll);
+        tf.scale = Vec3::new(1.0, breathe, 1.0);
     }
 }

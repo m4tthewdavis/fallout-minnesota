@@ -746,8 +746,12 @@ pub fn dead_branches(height: f32, seed: u64) -> MeshData {
     m
 }
 
-/// Frostfang wolf body (torso + neck), facing +Z, feet at y = 0.
-pub fn wolf_body() -> MeshData {
+/// How many distinct Frostfang looks there are.
+pub const WOLF_VARIANTS: u32 = 4;
+
+/// Frostfang wolf body (torso + neck), facing +Z, feet at y = 0. Variant 0 is
+/// plain; 1 is scarred; 2 has a dark saddle and mask; 3 is mangy and patchy.
+pub fn wolf_body_variant(variant: u32) -> MeshData {
     let s = 2.3;
     let mut m = loft_z(
         &[
@@ -766,11 +770,18 @@ pub fn wolf_body() -> MeshData {
         1.0,
     );
     shade_fur(&mut m);
+    wolf_pattern(&mut m, variant);
     m
 }
 
-/// Wolf head with muzzle and ears, facing +Z.
-pub fn wolf_head() -> MeshData {
+pub fn wolf_body() -> MeshData {
+    wolf_body_variant(0)
+}
+
+/// Wolf head with muzzle and ears, facing +Z. The variant changes the ears
+/// (1: one ear torn short, 2: tall and alert, 3: ragged and tilted) and the
+/// markings.
+pub fn wolf_head_variant(variant: u32) -> MeshData {
     let s = 2.2;
     let mut m = loft_z(
         &[
@@ -786,15 +797,27 @@ pub fn wolf_head() -> MeshData {
         14,
         1.0,
     );
-    for x in [-0.085f32, 0.085] {
-        let ear = lathe(&[(0.055, 0.0), (0.035, 0.07), (0.0, 0.14)], 6, 1.0, false, false)
+    // (height scale, outward lean) for the left and right ear.
+    let ears: [(f32, f32); 2] = match variant % WOLF_VARIANTS {
+        1 => [(0.45, 0.25), (1.0, 0.25)],
+        2 => [(1.35, 0.1), (1.35, 0.1)],
+        3 => [(0.9, 0.7), (0.75, -0.2)],
+        _ => [(1.0, 0.25), (1.0, 0.25)],
+    };
+    for (x, (h, lean)) in [-0.085f32, 0.085].into_iter().zip(ears) {
+        let ear = lathe(&[(0.055, 0.0), (0.035, 0.07 * h), (0.0, 0.14 * h)], 6, 1.0, false, false)
             .scaled([1.0, 1.0, 0.55])
-            .rotated_z(-x.signum() * 0.25)
+            .rotated_z(-x.signum() * lean)
             .translated([x, 1.18, 0.8]);
         m.append(&ear);
     }
     shade_fur(&mut m);
+    wolf_pattern(&mut m, variant);
     m
+}
+
+pub fn wolf_head() -> MeshData {
+    wolf_head_variant(0)
 }
 
 /// Tapered leg hanging from its pivot (y = 0) down to the paw (y = -0.62).
@@ -837,6 +860,163 @@ fn shade_fur(m: &mut MeshData) {
         let g = 0.9 - 0.35 * saddle + 0.08 * belly;
         m.colors[i] = [g * 0.95, g * 0.98, g, 1.0];
     }
+}
+
+/// Markings on top of the basic countershading.
+fn wolf_pattern(m: &mut MeshData, variant: u32) {
+    let v = variant % WOLF_VARIANTS;
+    if v == 0 {
+        return;
+    }
+    for i in 0..m.positions.len() {
+        let p = m.positions[i];
+        let n = m.normals[i];
+        let c = &mut m.colors[i];
+        match v {
+            1 => {
+                // Pale scar streaks across the flank and a raw patch on the shoulder.
+                if (p[2] * 9.0 + p[1] * 6.0).sin() > 0.94 && p[0].abs() > 0.1 {
+                    *c = lerp4(*c, [1.0, 0.82, 0.8, 1.0], 0.85);
+                }
+                if p[0].abs() > 0.15 && (p[2] - 0.3).abs() < 0.1 && (p[1] - 0.85).abs() < 0.1 {
+                    *c = lerp4(*c, [0.85, 0.55, 0.55, 1.0], 0.7);
+                }
+            }
+            2 => {
+                // A dark saddle, darker legs-and-mask.
+                let saddle = smoothstep(0.3, 0.9, n[1]);
+                let f = 1.0 - 0.38 * saddle;
+                *c = [c[0] * f, c[1] * f, c[2] * f, 1.0];
+                if p[2] > 0.95 && p[1] < 1.07 {
+                    *c = [c[0] * 0.55, c[1] * 0.55, c[2] * 0.58, 1.0];
+                }
+            }
+            _ => {
+                // Mange: pale, pinkish bald patches and a duller coat.
+                let patch = wobble(7.0, p[0] * 6.0 + p[2] * 4.0, p[1] * 7.0);
+                if patch < -0.25 {
+                    *c = lerp4(*c, [0.95, 0.78, 0.74, 1.0], 0.75);
+                } else {
+                    *c = [c[0] * 0.82, c[1] * 0.82, c[2] * 0.84, 1.0];
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The Glowmoose
+// ---------------------------------------------------------------------------
+
+const MOOSE_FUR_TOP: [f32; 4] = [0.2, 0.15, 0.11, 1.0];
+const MOOSE_FUR_BELLY: [f32; 4] = [0.36, 0.3, 0.24, 1.0];
+
+/// Dark top, paler belly, snow dusted along the back.
+fn shade_moose(m: &mut MeshData) {
+    for i in 0..m.positions.len() {
+        let (n, p) = (m.normals[i], m.positions[i]);
+        let belly = smoothstep(0.2, -0.8, n[1]);
+        let mut c = lerp4(MOOSE_FUR_TOP, MOOSE_FUR_BELLY, belly);
+        // Pale "stockings" on the lower legs.
+        if p[1] < 0.8 {
+            c = lerp4(c, [0.5, 0.46, 0.4, 1.0], smoothstep(0.8, 0.3, p[1]) * 0.7);
+        }
+        let dust = smoothstep(0.65, 0.95, n[1]) * smoothstep(1.4, 1.8, p[1]) * (0.5 + 0.5 * wobble(3.0, p[0] * 5.0, p[2] * 4.0));
+        c = lerp4(c, SNOW, dust.clamp(0.0, 0.8));
+        m.colors[i] = c;
+    }
+}
+
+/// Barrel body with a shoulder hump, facing +Z, feet at y = 0 (shoulder ~1.7 m).
+pub fn moose_body() -> MeshData {
+    let s = 2.4;
+    let mut m = loft_z(
+        &[
+            sec(-1.2, 1.5, 0.28, 0.36, s),
+            sec(-0.98, 1.52, 0.44, 0.52, s),
+            sec(-0.4, 1.5, 0.5, 0.58, s),
+            sec(0.2, 1.56, 0.52, 0.64, s),
+            sec(0.7, 1.68, 0.47, 0.67, s),
+            sec(1.05, 1.72, 0.36, 0.52, s),
+            sec(1.2, 1.74, 0.24, 0.34, s),
+        ],
+        18,
+        1.0,
+    );
+    shade_moose(&mut m);
+    m
+}
+
+/// Neck, long head, bulbous nose and the hanging "bell" under the chin.
+pub fn moose_head() -> MeshData {
+    let s = 2.3;
+    let mut m = loft_z(
+        &[
+            sec(1.0, 1.72, 0.3, 0.4, s),
+            sec(1.35, 1.86, 0.21, 0.3, s),
+            sec(1.65, 1.82, 0.18, 0.25, s),
+            sec(2.0, 1.72, 0.19, 0.25, s),
+            sec(2.4, 1.56, 0.13, 0.18, s),
+            sec(2.62, 1.49, 0.16, 0.2, s),
+            sec(2.72, 1.48, 0.06, 0.09, s),
+        ],
+        14,
+        1.0,
+    );
+    m.append(&blob(0.12, 1.6, 0.1, 17, 1.0).scaled([0.7, 1.0, 0.7]).translated([0.0, 1.4, 1.95]));
+    for x in [-0.13f32, 0.13] {
+        m.append(&lathe(&[(0.05, 0.0), (0.03, 0.09), (0.0, 0.2)], 6, 1.0, false, false).scaled([1.0, 1.0, 0.5]).rotated_z(-x.signum() * 0.9).translated([x, 1.93, 1.8]));
+    }
+    shade_moose(&mut m);
+    m
+}
+
+/// A long hanging leg from the hip pivot (y = 0) down to the hoof (y = -1.1).
+pub fn moose_leg() -> MeshData {
+    let mut m = lathe(
+        &[(0.06, -1.1), (0.05, -1.0), (0.045, -0.9), (0.055, -0.5), (0.1, -0.2), (0.15, 0.0), (0.12, 0.08)],
+        10,
+        1.0,
+        true,
+        true,
+    );
+    // Dark split hooves.
+    for i in 0..m.positions.len() {
+        if m.positions[i][1] < -1.0 {
+            m.colors[i] = [0.05, 0.04, 0.04, 1.0];
+        } else {
+            m.colors[i] = lerp4(MOOSE_FUR_TOP, [0.5, 0.46, 0.4, 1.0], smoothstep(-0.2, -0.9, m.positions[i][1]) * 0.8);
+        }
+    }
+    m
+}
+
+/// One palmate antler for `side` (-1 left, +1 right): a beam, a broad palm
+/// and five tines. Returns the mesh and the points where the tines end, which
+/// get glowing tips.
+pub fn moose_antler(side: f32) -> (MeshData, Vec<V3>) {
+    let mut m = MeshData::default();
+    let beam = [[side * 0.1, 1.95, 1.85], [side * 0.5, 2.12, 1.82], [side * 0.85, 2.28, 1.86]];
+    m.append(&tube(&beam, 0.045, 7));
+    // The palm: a flattened, slightly cupped plate.
+    let palm = blob(1.0, 0.05, 0.1, 29, 1.0).scaled([0.5, 0.05, 0.42]).rotated_z(side * 0.25).translated([side * 1.1, 2.38, 1.88]);
+    m.append(&palm);
+    let mut tips = Vec::new();
+    for k in 0..5 {
+        let f = k as f32 / 4.0;
+        let start = [side * (0.85 + 0.55 * f), 2.35 + 0.02 * k as f32, 1.5 + 0.38 * (1.0 - (2.0 * f - 1.0).abs()) * 0.0 + 0.19 * k as f32];
+        let end = [start[0] + side * (0.12 + 0.1 * f), start[1] + 0.35 + 0.12 * (1.0 - f), start[2] + 0.28 + 0.05 * k as f32];
+        m.append(&tube(&[start, end], 0.03, 6));
+        tips.push(end);
+    }
+    // A brow tine pointing forward from the base.
+    let brow_end = [side * 0.35, 2.25, 2.25];
+    m.append(&tube(&[[side * 0.3, 2.08, 1.9], brow_end], 0.035, 6));
+    tips.push(brow_end);
+    for i in 0..m.colors.len() {
+        m.colors[i] = [0.82, 0.76, 0.64, 1.0];
+    }
+    (m, tips)
 }
 
 /// Lower body of a rounded 1950s sedan, along Z (front +Z), wheels' ground at y = 0.
@@ -1073,5 +1253,69 @@ mod tests {
         assert!(m.is_valid());
         let (lo, hi) = m.bounds();
         assert!(lo[1] > 1.0 && hi[1] < 8.0);
+    }
+
+    #[test]
+    fn wolf_variants_look_different_but_share_a_shape() {
+        let base = wolf_body_variant(0);
+        for v in 0..WOLF_VARIANTS {
+            let b = wolf_body_variant(v);
+            let h = wolf_head_variant(v);
+            assert!(b.is_valid() && h.is_valid(), "variant {v}");
+            assert_eq!(b.positions, base.positions, "same body shape");
+            if v > 0 {
+                assert_ne!(b.colors, base.colors, "variant {v} has its own markings");
+            }
+        }
+        // Ears differ: variant 2 stands taller than variant 1's torn ear.
+        let top = |m: &MeshData| m.bounds().1[1];
+        assert!(top(&wolf_head_variant(2)) > top(&wolf_head_variant(1)) + 0.02);
+        // Variant numbers wrap rather than panic.
+        assert_eq!(wolf_head_variant(WOLF_VARIANTS).colors, wolf_head_variant(0).colors);
+    }
+
+    #[test]
+    fn wolf_patterns_keep_colours_in_range() {
+        for v in 0..WOLF_VARIANTS {
+            for m in [wolf_body_variant(v), wolf_head_variant(v)] {
+                assert!(m.colors.iter().all(|c| c.iter().all(|x| (0.0..=1.001).contains(x))), "variant {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_moose_is_big_and_hangs_together() {
+        let body = moose_body();
+        let head = moose_head();
+        let leg = moose_leg();
+        for m in [&body, &head, &leg] {
+            assert!(m.is_valid());
+        }
+        closed_and_outward(&body, [0.0, 1.55, 0.0]);
+        let (blo, bhi) = body.bounds();
+        assert!(bhi[2] - blo[2] > 2.3, "over 2 m long");
+        assert!(bhi[1] > 2.0 && blo[1] > 0.8, "belly clears the snow, back is well above it");
+        // The head starts inside the body's front and reaches well past it.
+        let (hlo, hhi) = head.bounds();
+        assert!(hlo[2] < bhi[2] && hhi[2] > bhi[2] + 1.2);
+        // Legs reach from the body down to the snow: hip pivot at ~1.1.
+        let (llo, lhi) = leg.bounds();
+        assert!((llo[1] + 1.1).abs() < 1e-4 && lhi[1] > 0.0);
+    }
+
+    #[test]
+    fn antlers_are_wide_mirror_images_with_tips() {
+        let (l, lt) = moose_antler(-1.0);
+        let (r, rt) = moose_antler(1.0);
+        assert!(l.is_valid() && r.is_valid());
+        assert_eq!(lt.len(), 6);
+        assert_eq!(lt.len(), rt.len());
+        for (a, b) in lt.iter().zip(&rt) {
+            assert!((a[0] + b[0]).abs() < 1e-5 && a[1] == b[1] && a[2] == b[2], "mirror images");
+        }
+        let (_, rhi) = r.bounds();
+        assert!(rhi[0] > 1.2, "palms spread wide: {}", rhi[0]);
+        // Tips stand above the head and nowhere near the ground.
+        assert!(rt.iter().all(|t| t[1] > 2.1));
     }
 }
