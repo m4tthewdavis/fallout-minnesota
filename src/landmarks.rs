@@ -75,23 +75,43 @@ pub fn spawn_landmarks(
     // ================= Vault 143 =================
     let (vx, vz) = VAULT_POS;
     let vy = ground(vx, vz - 8.0);
-    // Rocky hillside the door is cut into, rounded off with boulders and snow.
-    let hill = meshgen::cuboid([26.0, 14.0, 10.0], 3.0);
+    // A poured-concrete portal set into a rocky, snow-capped hillside.
+    let facade = meshgen::cuboid([24.0, 11.0, 3.0], 2.5);
     commands.spawn((
-        Mesh3d(meshes.add(to_mesh_tangents(&hill))),
-        MeshMaterial3d(assets.rock_wall.clone()),
-        Transform::from_xyz(vx, vy + 5.0, vz + 4.0),
+        Mesh3d(meshes.add(to_mesh_tangents(&facade))),
+        MeshMaterial3d(assets.concrete.clone()),
+        Transform::from_xyz(vx, vy + 4.7, vz + 0.5),
     ));
+    // Pilasters and a lintel overhang give the face some depth.
+    for x in [-11.4f32, 11.4] {
+        commands.spawn((
+            Mesh3d(meshes.add(to_mesh_tangents(&meshgen::cuboid([1.4, 11.0, 0.8], 2.5)))),
+            MeshMaterial3d(assets.concrete.clone()),
+            Transform::from_xyz(vx + x, vy + 4.7, vz - 1.3),
+        ));
+    }
+    commands.spawn((
+        Mesh3d(meshes.add(to_mesh_tangents(&meshgen::cuboid([26.0, 1.0, 3.4], 2.5)))),
+        MeshMaterial3d(assets.concrete.clone()),
+        Transform::from_xyz(vx, vy + 10.6, vz - 0.8),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(to_mesh_tangents(&meshgen::blob(1.0, 0.25, 0.2, 9, 2.0).scaled([13.2, 1.0, 1.9])))),
+        MeshMaterial3d(assets.snow.clone()),
+        Transform::from_xyz(vx, vy + 11.1, vz - 0.8),
+    ));
+    // Boulders heaped around and over the portal, capped with snow.
     for (i, (x, y, z, r)) in [
-        (-11.0, 8.0, 6.0, 6.5),
-        (-4.0, 11.0, 8.0, 6.0),
-        (4.0, 11.5, 7.0, 6.5),
-        (11.0, 8.5, 6.0, 6.0),
-        (-14.0, 2.0, 2.0, 5.0),
-        (14.0, 2.5, 2.0, 5.0),
-        (0.0, 8.0, 12.0, 8.0),
-        (-9.0, 4.0, 11.0, 7.0),
-        (9.0, 4.0, 11.0, 7.0),
+        (-17.0, 3.0, 5.0, 7.0),
+        (17.0, 3.0, 5.0, 7.0),
+        (-20.0, 1.0, 10.0, 7.0),
+        (20.0, 1.0, 10.0, 7.0),
+        (-8.0, 11.5, 6.0, 7.5),
+        (8.0, 11.5, 6.0, 7.5),
+        (0.0, 12.5, 8.0, 8.0),
+        (0.0, 6.0, 14.0, 11.0),
+        (-13.0, 7.0, 11.0, 8.0),
+        (13.0, 7.0, 11.0, 8.0),
     ]
     .into_iter()
     .enumerate()
@@ -102,17 +122,15 @@ pub fn spawn_landmarks(
             MeshMaterial3d(assets.rock_wall.clone()),
             Transform::from_xyz(vx + x, vy + y, vz + z),
         ));
-        if y > 6.0 {
-            commands.spawn((
-                Mesh3d(meshes.add(to_mesh_tangents(&snow_cap(r * 0.85, 60 + i as u64)))),
-                MeshMaterial3d(assets.snow.clone()),
-                Transform::from_xyz(vx + x, vy + y + r * 0.5, vz + z),
-            ));
-        }
+        commands.spawn((
+            Mesh3d(meshes.add(to_mesh_tangents(&snow_cap(r * 0.85, 60 + i as u64)))),
+            MeshMaterial3d(assets.snow.clone()),
+            Transform::from_xyz(vx + x, vy + y + r * 0.5, vz + z),
+        ));
     }
     solid.push(Shape::rect_centered(vx, vz + 4.0, 26.0, 10.0));
-    solid.push(Shape::Circle { x: vx - 14.0, z: vz + 2.0, r: 4.5 });
-    solid.push(Shape::Circle { x: vx + 14.0, z: vz + 2.0, r: 4.5 });
+    solid.push(Shape::Circle { x: vx - 17.0, z: vz + 5.0, r: 6.0 });
+    solid.push(Shape::Circle { x: vx + 17.0, z: vz + 5.0, r: 6.0 });
     solid.push(Shape::Rect {
         x0: vx + 4.5,
         z0: vz - 1.9,
@@ -167,23 +185,26 @@ pub fn spawn_landmarks(
         MeshMaterial3d(tunnel),
         Transform::from_xyz(vx, vy + 4.2, vz - 1.04).with_rotation(Quat::from_rotation_y(PI)),
     ));
-    // Corridor glimpsed through the door: a lit floor ramp and two ceiling
-    // lamps receding into the hill (offset downwards to fake perspective).
-    let corridor_floor = mat(&mut materials, Color::srgb(0.18, 0.17, 0.15));
+    // The tunnel beyond: a floor ramp and the faint glow of the lit
+    // atrium at the far end, low in the opening as perspective would put it.
+    let corridor_floor = mat(&mut materials, Color::srgb(0.16, 0.15, 0.13));
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(5.0, 0.6, 0.05))),
+        Mesh3d(meshes.add(Cuboid::new(5.6, 0.7, 0.05))),
         MeshMaterial3d(corridor_floor),
-        Transform::from_xyz(vx, vy + 0.9, vz - 1.05),
+        Transform::from_xyz(vx, vy + 0.6, vz - 1.05),
     ));
-    let tunnel_lamp = glow(&mut materials, Color::srgb(0.3, 0.25, 0.15), LinearRgba::rgb(3.0, 2.4, 1.2));
-    for (i, (w, y)) in [(1.4f32, 6.6f32), (0.8, 5.6)].into_iter().enumerate() {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(w, 0.12 - i as f32 * 0.04, 0.02))),
-            MeshMaterial3d(tunnel_lamp.clone()),
-            Transform::from_xyz(vx, vy + y, vz - 1.07),
-            NotShadowCaster,
-        ));
-    }
+    let far_end = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.05, 0.045, 0.04),
+        emissive: LinearRgba::rgb(0.09, 0.07, 0.04),
+        perceptual_roughness: 1.0,
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(meshes.add(Ellipse::new(1.3, 0.9))),
+        MeshMaterial3d(far_end),
+        Transform::from_xyz(vx, vy + 2.4, vz - 1.045).with_rotation(Quat::from_rotation_y(PI)),
+        NotShadowCaster,
+    ));
     commands.spawn((
         PointLight {
             color: Color::srgb(1.0, 0.85, 0.5),
@@ -204,13 +225,13 @@ pub fn spawn_landmarks(
             shadows_enabled: false,
             ..default()
         },
-        Transform::from_xyz(vx, vy + 10.0, vz - 2.0).looking_at(Vec3::new(vx, vy, vz - 14.0), Vec3::Y),
+        Transform::from_xyz(vx, vy + 9.6, vz - 2.6).looking_at(Vec3::new(vx, vy, vz - 14.0), Vec3::Y),
     ));
     let lamp_housing = mat(&mut materials, Color::srgb(0.2, 0.2, 0.22));
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.2, 0.4, 0.6))),
         MeshMaterial3d(lamp_housing.clone()),
-        Transform::from_xyz(vx, vy + 10.1, vz - 1.4),
+        Transform::from_xyz(vx, vy + 9.9, vz - 2.2),
     ));
     sign(
         &mut commands,
