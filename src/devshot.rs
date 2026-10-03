@@ -2,7 +2,7 @@
 //! headless machine). Does nothing unless `FMN_SHOT` is set:
 //!
 //! ```text
-//! FMN_SHOT="x,z,yaw_deg,pitch_deg,hour[,blizzard[,aim[,reload]]]" FMN_SHOT_OUT=shot.png cargo run
+//! FMN_SHOT="x,z,yaw_deg,pitch_deg,hour[,blizzard[,aim[,reload[,weapon[,upgrades[,recoil[,swing]]]]]]]]" FMN_SHOT_OUT=shot.png cargo run
 //! ```
 //!
 //! `FMN_SHOT_SIZE="2461,1154"` also resizes the window first.
@@ -18,6 +18,7 @@ use crate::gun::ForceAim;
 use crate::player::{Player, EYE_HEIGHT};
 use crate::sim::terrain;
 use crate::sim::weather::Phase;
+use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::state::{ClockRes, Game, WeatherRes};
 
 #[derive(Resource)]
@@ -30,6 +31,12 @@ struct Shot {
     blizzard: bool,
     aim: bool,
     reload: Option<f32>,
+    /// Weapon slot to hold (0-3); all weapons are unlocked in screenshot mode.
+    weapon: Option<usize>,
+    upgrades: bool,
+    /// Freeze a pose: recoil strength 0..1, or an axe swing progress.
+    recoil: f32,
+    swing: Option<f32>,
     out: String,
     /// Real seconds to wait for assets to load before shooting.
     wait: f32,
@@ -58,6 +65,10 @@ impl Plugin for DevShotPlugin {
             blizzard: v.get(5).is_some_and(|b| *b > 0.0),
             aim: v.get(6).is_some_and(|b| *b > 0.0),
             reload: v.get(7).copied().filter(|r| *r > 0.0),
+            weapon: v.get(8).map(|w| *w as usize),
+            upgrades: v.get(9).is_some_and(|u| *u > 0.0),
+            recoil: v.get(10).copied().unwrap_or(0.0),
+            swing: v.get(11).copied().filter(|r| *r > 0.0),
             out,
             wait: std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0),
             taken: None,
@@ -94,9 +105,32 @@ fn take_shot(
         weather.weather.timer = 60.0;
     }
     aim.0 = shot.aim;
+    if let Some(slot) = shot.weapon {
+        for k in WeaponKind::ALL {
+            game.arsenal.unlock(k);
+        }
+        if game.arsenal.current != slot.min(3) {
+            game.arsenal.current = slot.min(3);
+        }
+        game.arsenal.draw = 0.0;
+        if shot.upgrades {
+            for w in game.arsenal.weapons.iter_mut() {
+                for up in Upgrade::ALL {
+                    let _ = w.apply_upgrade(up);
+                }
+            }
+        }
+    }
     if let Some(r) = shot.reload {
         let w = game.weapon_mut();
         w.busy = w.reload_time * (1.0 - r);
+    }
+    if shot.recoil > 0.0 {
+        game.recoil = shot.recoil;
+    }
+    if let Some(p) = shot.swing {
+        let w = game.weapon_mut();
+        w.cooldown = w.fire_interval * (1.0 - p);
     }
     if let Ok((mut tf, mut p)) = player.single_mut() {
         p.yaw = shot.yaw;

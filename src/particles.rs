@@ -264,26 +264,45 @@ fn spawn_requested_fx(
                     emit(&mut commands, &pa, Spec::new(Look::Snow, p + Vec3::Y * 0.05, v, rng.0.range(0.5, 0.8), (0.1, 0.4)).gravity(1.0).drag(2.0));
                 }
             }
-            Fx::Muzzle(p, dir, right) => {
+            Fx::Muzzle(p, dir, right, brass) => {
                 emit(&mut commands, &pa, Spec::new(Look::Flash, p, dir * 2.0, 0.06, (0.35, 0.5)));
                 for k in 0..3 {
                     let v = dir * (1.0 + k as f32 * 0.6) + Vec3::Y * 0.3 + rand_dir(&mut rng) * 0.2;
                     emit(&mut commands, &pa, Spec::new(Look::Smoke, p + dir * 0.05 * k as f32, v, rng.0.range(0.8, 1.3), (0.08, 0.7)).drag(2.5).windy());
                 }
-                // Brass flies out of the ejection port to the right.
-                let port = p - dir * 0.5 + Vec3::Y * 0.03;
-                commands.spawn((
-                    Mesh3d(pa.casing.clone()),
-                    MeshMaterial3d(pa.casing_mat.clone()),
-                    Transform::from_translation(port),
-                    NotShadowCaster,
-                    Casing {
-                        vel: right * rng.0.range(2.0, 3.0) + Vec3::Y * rng.0.range(1.2, 2.0) - dir * 0.5,
-                        spin: Vec3::new(rng.0.range(8.0, 20.0), rng.0.range(-5.0, 5.0), rng.0.range(8.0, 20.0)),
-                        bounced: false,
-                    },
-                    Lifetime(12.0),
-                ));
+                if brass {
+                    // Brass flies out of the ejection port to the right.
+                    let port = p - dir * 0.5 + Vec3::Y * 0.03;
+                    commands.spawn((
+                        Mesh3d(pa.casing.clone()),
+                        MeshMaterial3d(pa.casing_mat.clone()),
+                        Transform::from_translation(port),
+                        NotShadowCaster,
+                        Casing {
+                            vel: right * rng.0.range(2.0, 3.0) + Vec3::Y * rng.0.range(1.2, 2.0) - dir * 0.5,
+                            spin: Vec3::new(rng.0.range(8.0, 20.0), rng.0.range(-5.0, 5.0), rng.0.range(8.0, 20.0)),
+                            bounced: false,
+                        },
+                        Lifetime(12.0),
+                    ));
+
+                }
+            }
+            Fx::Brass(p, count) => {
+                for _ in 0..count {
+                    commands.spawn((
+                        Mesh3d(pa.casing.clone()),
+                        MeshMaterial3d(pa.casing_mat.clone()),
+                        Transform::from_translation(p + rand_dir(&mut rng) * 0.03),
+                        NotShadowCaster,
+                        Casing {
+                            vel: Vec3::new(rng.0.range(-0.5, 0.5), rng.0.range(-0.2, 0.4), rng.0.range(-0.5, 0.5)),
+                            spin: Vec3::new(rng.0.range(6.0, 16.0), rng.0.range(-5.0, 5.0), rng.0.range(6.0, 16.0)),
+                            bounced: false,
+                        },
+                        Lifetime(12.0),
+                    ));
+                }
             }
             Fx::WolfHit(p, dir) => {
                 for _ in 0..8 {

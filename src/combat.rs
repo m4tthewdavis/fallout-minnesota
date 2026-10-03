@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::enemy::{Body, Dying, Species};
-use crate::gun::{muzzle_local, GunModel, VIEW_LAYER};
+use crate::gun::{breech_local, muzzle_local, GunModel, VIEW_LAYER};
 use crate::particles::ground_hit;
 use crate::player::{cursor_locked, Player};
 use crate::sim::combat::{ray_sphere, FireResult, WeaponKind};
@@ -106,20 +106,42 @@ fn reload(keys: Res<ButtonInput<KeyCode>>, mut game: ResMut<Game>, mut msgs: Res
 
 /// Plays the clunks and clacks of a reload (or unjam) as the animation
 /// reaches them.
-fn reload_cues(game: Res<Game>, mut sfx: ResMut<SfxQueue>, mut last: Local<Option<(f32, bool, WeaponKind)>>) {
+fn reload_cues(
+    game: Res<Game>,
+    mut sfx: ResMut<SfxQueue>,
+    mut fxq: ResMut<FxQueue>,
+    gun: Query<&GlobalTransform, With<GunModel>>,
+    mut last: Local<Option<(f32, bool, WeaponKind)>>,
+) {
     let w = game.weapon();
+    // Revolvers and shotguns dump their spent brass when the first clunk sounds.
+    let dump = |sounds: &[Sound], kind: WeaponKind, unjam: bool, fxq: &mut FxQueue| {
+        if unjam || !matches!(kind, WeaponKind::ScrapShotgun | WeaponKind::Revolver) {
+            return;
+        }
+        if sounds.contains(&Sound::ClunkOut) {
+            if let Ok(g) = gun.single() {
+                let spent = (w.mag_size - w.mag).min(6);
+                fxq.spawn(Fx::Brass(g.transform_point(breech_local(kind)), spent));
+            }
+        }
+    };
     match (w.reload_progress(), *last) {
         // Switching weapons mid-reload isn't allowed, so the kind never changes here.
         (Some(p), prev) => {
             let (from, unjam, kind) = prev.unwrap_or((-0.001, w.jammed, w.kind));
-            for sound in sfx::cues_between(&sfx::cues(kind, unjam), from, p) {
+            let sounds = sfx::cues_between(&sfx::cues(kind, unjam), from, p);
+            dump(&sounds, kind, unjam, &mut fxq);
+            for sound in sounds {
                 sfx.play(sound);
             }
             *last = Some((p, unjam, kind));
         }
         // Finished since last frame: play whatever cues remained.
         (None, Some((from, unjam, kind))) => {
-            for sound in sfx::cues_between(&sfx::cues(kind, unjam), from, 1.0) {
+            let sounds = sfx::cues_between(&sfx::cues(kind, unjam), from, 1.0);
+            dump(&sounds, kind, unjam, &mut fxq);
+            for sound in sounds {
                 sfx.play(sound);
             }
             *last = None;
@@ -243,7 +265,7 @@ fn fire(
         .single()
         .map(|g| g.transform_point(muzzle_local(kind)))
         .unwrap_or(origin + right * 0.25 - up * 0.18 + dir * 0.8);
-    fxq.spawn(Fx::Muzzle(muzzle, dir, right));
+    fxq.spawn(Fx::Muzzle(muzzle, dir, right, kind == WeaponKind::PipeRifle));
 
     let mut strikes: Vec<Strike> = Vec::new();
     let mut ricochets = 0;

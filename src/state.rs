@@ -107,8 +107,11 @@ pub fn random_point_around(from: Vec3, dist: f32, rng: &mut Rng) -> Vec3 {
 pub enum Fx {
     /// Snow kicked up by a footstep.
     Footstep(Vec3),
-    /// Muzzle flash, smoke and an ejected casing: (muzzle, aim direction, gun right).
-    Muzzle(Vec3, Vec3, Vec3),
+    /// Muzzle flash and smoke, plus an ejected casing if the last field is true:
+    /// (muzzle, aim direction, gun right, ejects brass).
+    Muzzle(Vec3, Vec3, Vec3, bool),
+    /// Spent casings dumped during a reload: (breech position, how many).
+    Brass(Vec3, u32),
     /// A bullet striking a Frostfang: (hit point, bullet direction).
     WolfHit(Vec3, Vec3),
     /// A Frostfang dropping dead: (body centre, size).
