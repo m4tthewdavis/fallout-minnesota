@@ -10,6 +10,7 @@ pub mod collision;
 pub mod combat;
 pub mod daynight;
 pub mod loot;
+pub mod mapdata;
 pub mod meshgen;
 pub mod mipmaps;
 pub mod moose;

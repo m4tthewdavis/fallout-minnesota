@@ -45,6 +45,7 @@ pub fn spawn_nature(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rng: ResMut<RngRes>,
     mut colliders: ResMut<Colliders>,
+    mut tree_positions: ResMut<crate::state::TreePositions>,
 ) {
     let solid = &mut colliders.0;
 
@@ -79,6 +80,7 @@ pub fn spawn_nature(
         tries += 1;
         let Some((x, z)) = open_spot(&mut rng, solid, 1.0) else { continue };
         placed += 1;
+        tree_positions.0.push((x, z));
         let yaw = rng.0.range(0.0, std::f32::consts::TAU);
         let snag = rng.0.chance(0.12);
         let scale = rng.0.range(0.75, 1.35);

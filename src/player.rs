@@ -122,7 +122,7 @@ fn spawn_player(
         });
 }
 
-fn set_grab(window: &mut Window, locked: bool) {
+pub fn set_grab(window: &mut Window, locked: bool) {
     window.cursor_options.grab_mode = if locked {
         CursorGrabMode::Locked
     } else {
@@ -138,10 +138,15 @@ fn grab_cursor(mut windows: Query<&mut Window, With<PrimaryWindow>>) {
 }
 
 fn toggle_cursor(
+    pip: Res<crate::state::PipOpen>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
+    // The Pip-Boy owns the mouse while it is open.
+    if pip.0 {
+        return;
+    }
     let Ok(mut window) = windows.single_mut() else { return };
     if keys.just_pressed(KeyCode::Escape) {
         set_grab(&mut window, false);

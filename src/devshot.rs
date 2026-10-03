@@ -80,7 +80,12 @@ impl Plugin for DevShotPlugin {
 }
 
 /// FMN_LINEUP=wolves|moose spawns a row of stationary creatures to look at.
-fn spawn_extras(mut commands: Commands) {
+/// Screenshot mode also turns off anti-aliasing: software rendering at
+/// 4x MSAA takes gigabytes on a small machine.
+fn spawn_extras(mut commands: Commands, cameras: Query<Entity, With<Camera3d>>) {
+    for e in &cameras {
+        commands.entity(e).insert(Msaa::Off);
+    }
     match std::env::var("FMN_LINEUP").as_deref() {
         Ok("wolves") => {
             commands.run_system_cached(crate::wolves::spawn_lineup);

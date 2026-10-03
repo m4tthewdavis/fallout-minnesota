@@ -354,7 +354,9 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
 /// screens so it stays readable (1.6x on a 1154-pixel-tall display).
 fn scale_ui(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut scale: ResMut<UiScale>) {
     let Ok(window) = windows.single() else { return };
-    let s = (window.height() / 720.0).clamp(1.0, 2.5);
+    // FMN_UI_SCALE lets screenshot mode render small windows with a matching UI.
+    let forced = std::env::var("FMN_UI_SCALE").ok().and_then(|v| v.parse::<f32>().ok());
+    let s = forced.unwrap_or_else(|| (window.height() / 720.0).clamp(1.0, 2.5));
     if (scale.0 - s).abs() > 0.01 {
         scale.0 = s;
     }

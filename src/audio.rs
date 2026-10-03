@@ -144,6 +144,11 @@ impl Plugin for SoundPlugin {
 /// Generate every clip on background threads, a few at a time.
 fn start_generators(mut commands: Commands) {
     let (tx, rx) = mpsc::channel();
+    // Screenshot mode has no audio device and wants every core for rendering.
+    if std::env::var("FMN_SHOT").is_ok() {
+        commands.insert_resource(BankLoader(Mutex::new(rx)));
+        return;
+    }
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 3);
     for t in 0..threads {
         let tx = tx.clone();

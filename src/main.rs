@@ -20,6 +20,7 @@ mod meshes;
 mod moose;
 mod nature;
 mod particles;
+mod pipboy;
 mod player;
 mod props;
 mod sim;
@@ -73,6 +74,7 @@ fn main() {
             gun::GunPlugin,
             particles::ParticlePlugin,
             hud::HudPlugin,
+            pipboy::PipboyPlugin,
             devshot::DevShotPlugin,
         ))
         .run();
