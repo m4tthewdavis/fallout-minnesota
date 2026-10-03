@@ -1,7 +1,9 @@
 //! First-person controller, survival ticking, item use and respawning.
 
+use bevy::core_pipeline::bloom::Bloom;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::AccumulatedMouseMotion;
-use bevy::pbr::{DistanceFog, FogFalloff, NotShadowCaster};
+use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 
@@ -11,7 +13,8 @@ use crate::sim::survival::{Exposure, Survival};
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE, PLAYER_SPAWN};
 use crate::sim::weather::Weather;
-use crate::state::{alive, ClockRes, Colliders, Game, Messages, SfxQueue, WeatherRes};
+use crate::assets::GameAssets;
+use crate::state::{alive, ClockRes, Colliders, Fx, FxQueue, Game, Messages, SfxQueue, WeatherRes};
 use crate::wolves::Wolf;
 
 pub const EYE_HEIGHT: f32 = 1.7;
@@ -86,26 +89,23 @@ fn spawn_point() -> Vec3 {
 
 fn spawn_player(
     mut commands: Commands,
+    assets: Res<GameAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let player = Player::new();
-    let metal = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.30, 0.30, 0.32),
-        metallic: 0.8,
-        perceptual_roughness: 0.5,
-        ..default()
-    });
-    let wood = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.40, 0.26, 0.15),
-        perceptual_roughness: 0.8,
-        ..default()
-    });
-    let rest = Vec3::new(0.25, -0.22, -0.45);
+    let rest = Vec3::new(0.2, -0.19, -0.42);
 
     commands
         .spawn((
             Camera3d::default(),
+            // HDR so emissive glows (eyes, fires, the warhead) can bloom.
+            Camera {
+                hdr: true,
+                ..default()
+            },
+            Bloom::NATURAL,
+            Tonemapping::TonyMcMapface,
             Projection::from(PerspectiveProjection {
                 fov: 75.0_f32.to_radians(),
                 ..default()
@@ -125,39 +125,12 @@ fn spawn_player(
         ))
         .with_children(|cam| {
             cam.spawn((
-                Transform::from_translation(rest),
+                Transform::from_translation(rest).with_scale(Vec3::splat(0.8)),
                 Visibility::default(),
                 GunModel { rest },
             ))
             .with_children(|gun| {
-                // Receiver
-                gun.spawn((
-                    Mesh3d(meshes.add(Cuboid::new(0.07, 0.10, 0.32))),
-                    MeshMaterial3d(metal.clone()),
-                    Transform::default(),
-                    NotShadowCaster,
-                ));
-                // Pipe barrel
-                gun.spawn((
-                    Mesh3d(meshes.add(Cylinder::new(0.022, 0.55))),
-                    MeshMaterial3d(metal.clone()),
-                    Transform::from_xyz(0.0, 0.02, -0.40)
-                        .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
-                    NotShadowCaster,
-                ));
-                // Wooden stock and grip
-                gun.spawn((
-                    Mesh3d(meshes.add(Cuboid::new(0.06, 0.12, 0.26))),
-                    MeshMaterial3d(wood.clone()),
-                    Transform::from_xyz(0.0, -0.03, 0.27),
-                    NotShadowCaster,
-                ));
-                gun.spawn((
-                    Mesh3d(meshes.add(Cuboid::new(0.05, 0.14, 0.06))),
-                    MeshMaterial3d(wood.clone()),
-                    Transform::from_xyz(0.0, -0.10, 0.06),
-                    NotShadowCaster,
-                ));
+                crate::combat::build_pipe_rifle(gun, &mut meshes, &mut materials, &assets);
             });
         });
 }
@@ -216,6 +189,7 @@ fn move_player(
     keys: Res<ButtonInput<KeyCode>>,
     colliders: Res<Colliders>,
     mut sfx: ResMut<SfxQueue>,
+    mut fx: ResMut<FxQueue>,
     mut q: Query<(&mut Transform, &mut Player)>,
 ) {
     let dt = time.delta_secs();
@@ -263,6 +237,7 @@ fn move_player(
                 1 => Sound::Step2,
                 _ => Sound::Step3,
             });
+            fx.spawn(Fx::Footstep(crate::particles::feet(tf.translation) + wish.normalize() * 0.3));
         }
     } else {
         p.step_timer = 0.0;
@@ -285,6 +260,7 @@ fn move_player(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn survival_tick(
     time: Res<Time>,
     mut game: ResMut<Game>,
@@ -292,6 +268,7 @@ fn survival_tick(
     clock: Res<ClockRes>,
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
+    mut fx: ResMut<FxQueue>,
     mut q: Query<(&mut Transform, &mut Player)>,
 ) {
     let dt = time.delta_secs();
@@ -309,6 +286,7 @@ fn survival_tick(
         }
         if p.ice_strain >= ICE_CRACK_SECS {
             p.ice_strain = 0.0;
+            fx.spawn(Fx::IceBreak(Vec3::new(x, terrain::ICE_LEVEL, z)));
             game.survival.warm(-45.0);
             game.survival.rads = (game.survival.rads + 80.0).min(Survival::MAX_RADS);
             let (sx, sz) = terrain::shore_point(lake, x, z);
@@ -320,6 +298,7 @@ fn survival_tick(
                 4.0,
             );
         } else if p.ice_strain > 0.9 && msgs.timer <= 0.0 {
+            sfx.play(Sound::IceCreak);
             msgs.show("The ice groans under your boots... stop sprinting!", 1.5);
         }
     } else {

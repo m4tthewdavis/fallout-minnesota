@@ -6,7 +6,9 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
+use crate::meshes::to_mesh;
 use crate::player::Player;
+use crate::sim::meshgen;
 use crate::sim::collision;
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
@@ -60,7 +62,6 @@ struct WolfLimb {
 struct WolfAssets {
     body: Handle<Mesh>,
     head: Handle<Mesh>,
-    snout: Handle<Mesh>,
     leg: Handle<Mesh>,
     tail: Handle<Mesh>,
     eye: Handle<Mesh>,
@@ -95,29 +96,34 @@ fn setup_wolf_assets(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     commands.insert_resource(WolfAssets {
-        body: meshes.add(Cuboid::new(0.6, 0.6, 1.4)),
-        head: meshes.add(Cuboid::new(0.42, 0.42, 0.5)),
-        snout: meshes.add(Cuboid::new(0.22, 0.2, 0.3)),
-        leg: meshes.add(Cuboid::new(0.14, 0.6, 0.14)),
-        tail: meshes.add(Cuboid::new(0.12, 0.12, 0.6)),
-        eye: meshes.add(Sphere::new(0.05)),
+        // Smooth procedural bodies (see sim::meshgen), countershaded with
+        // vertex colours: a dusky saddle and a pale belly.
+        body: meshes.add(to_mesh(&meshgen::wolf_body())),
+        head: meshes.add(to_mesh(&meshgen::wolf_head())),
+        leg: meshes.add(to_mesh(&meshgen::wolf_leg())),
+        tail: meshes.add(to_mesh(&meshgen::wolf_tail())),
+        eye: meshes.add(Sphere::new(0.032)),
         // "Translucent fur that blends into snow."
         fur: materials.add(StandardMaterial {
             base_color: Color::srgba(0.86, 0.90, 0.95, 0.72),
             alpha_mode: AlphaMode::Blend,
             perceptual_roughness: 0.9,
+            double_sided: true,
+            cull_mode: None,
             ..default()
         }),
         alpha_fur: materials.add(StandardMaterial {
             base_color: Color::srgba(0.55, 0.60, 0.68, 0.85),
             alpha_mode: AlphaMode::Blend,
             perceptual_roughness: 0.9,
+            double_sided: true,
+            cull_mode: None,
             ..default()
         }),
         // Glowing eyes are the only tell in a whiteout.
         eye_mat: materials.add(StandardMaterial {
             base_color: Color::srgb(0.4, 0.9, 1.0),
-            emissive: LinearRgba::rgb(1.5, 6.0, 8.0),
+            emissive: LinearRgba::rgb(4.0, 16.0, 22.0),
             unlit: true,
             ..default()
         }),
@@ -155,26 +161,13 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
         .id();
 
     commands.entity(id).with_children(|w| {
-        w.spawn((
-            Mesh3d(assets.body.clone()),
-            MeshMaterial3d(fur.clone()),
-            Transform::from_xyz(0.0, 0.75, 0.0),
-        ));
-        w.spawn((
-            Mesh3d(assets.head.clone()),
-            MeshMaterial3d(fur.clone()),
-            Transform::from_xyz(0.0, 1.0, 0.85),
-        ));
-        w.spawn((
-            Mesh3d(assets.snout.clone()),
-            MeshMaterial3d(fur.clone()),
-            Transform::from_xyz(0.0, 0.92, 1.2),
-        ));
-        for x in [-0.12, 0.12] {
+        w.spawn((Mesh3d(assets.body.clone()), MeshMaterial3d(fur.clone())));
+        w.spawn((Mesh3d(assets.head.clone()), MeshMaterial3d(fur.clone())));
+        for x in [-0.075, 0.075] {
             w.spawn((
                 Mesh3d(assets.eye.clone()),
                 MeshMaterial3d(assets.eye_mat.clone()),
-                Transform::from_xyz(x, 1.08, 1.11),
+                Transform::from_xyz(x, 1.11, 1.02),
             ));
         }
 
@@ -189,11 +182,7 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
             },
         ))
         .with_children(|t| {
-            t.spawn((
-                Mesh3d(assets.tail.clone()),
-                MeshMaterial3d(fur.clone()),
-                Transform::from_xyz(0.0, 0.0, -0.3),
-            ));
+            t.spawn((Mesh3d(assets.tail.clone()), MeshMaterial3d(fur.clone())));
         });
 
         // Legs pivot at the hip/shoulder; diagonal pairs move together (a trot).
@@ -209,11 +198,7 @@ fn spawn_wolf(commands: &mut Commands, assets: &WolfAssets, pos: Vec2, alpha: bo
                 },
             ))
             .with_children(|leg| {
-                leg.spawn((
-                    Mesh3d(assets.leg.clone()),
-                    MeshMaterial3d(fur.clone()),
-                    Transform::from_xyz(0.0, -0.3, 0.0),
-                ));
+                leg.spawn((Mesh3d(assets.leg.clone()), MeshMaterial3d(fur.clone())));
             });
         }
     });
@@ -360,7 +345,17 @@ fn wolf_ai(
         // Pack calls while hunting.
         if (mode == WolfMode::Stalk || (mode == WolfMode::Chase && dist > 15.0)) && w.howl_cd <= 0.0 {
             w.howl_cd = rng.0.range(12.0, 25.0);
-            sfx.play(if dist < 40.0 { Sound::HowlNear } else { Sound::HowlFar });
+            sfx.play(if dist < 18.0 {
+                Sound::Growl
+            } else if dist < 40.0 {
+                if rng.0.chance(0.5) {
+                    Sound::HowlNear
+                } else {
+                    Sound::HowlNear2
+                }
+            } else {
+                Sound::HowlFar
+            });
         }
 
         // Bite.
