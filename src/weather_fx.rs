@@ -5,6 +5,7 @@
 use bevy::pbr::{DistanceFog, FogFalloff, NotShadowCaster};
 use bevy::prelude::*;
 
+use crate::assets::GameAssets;
 use crate::player::Player;
 use crate::sim::weather::{Phase, Weather};
 use crate::state::{ClockRes, Messages, RngRes, WeatherRes};
@@ -18,6 +19,10 @@ struct Flake {
     index: usize,
     fall: f32,
 }
+
+/// The snowflake material, tinted green during rad-blizzards.
+#[derive(Resource, Default)]
+struct FlakeMaterial(Handle<StandardMaterial>);
 
 /// Smoothed visual weather values so changes fade in instead of popping.
 #[derive(Resource)]
@@ -43,6 +48,7 @@ impl Plugin for WeatherPlugin {
             sick: 0.0,
         })
         .add_systems(Startup, spawn_flakes)
+        .init_resource::<FlakeMaterial>()
         .add_systems(
             Update,
             (update_weather, smooth_visuals, apply_atmosphere, move_flakes).chain(),
@@ -52,16 +58,24 @@ impl Plugin for WeatherPlugin {
 
 fn spawn_flakes(
     mut commands: Commands,
+    assets: Res<GameAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rng: ResMut<RngRes>,
+    mut flake_mat: ResMut<FlakeMaterial>,
 ) {
-    let mesh = meshes.add(Cuboid::new(0.07, 0.07, 0.07));
+    // Soft round flakes; they turn to face the camera as they fall.
+    let mesh = meshes.add(Rectangle::new(0.11, 0.11));
     let material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.95, 0.97, 1.0),
+        base_color: Color::srgba(0.95, 0.97, 1.0, 0.9),
+        base_color_texture: Some(assets.soft.clone()),
+        alpha_mode: AlphaMode::Blend,
         unlit: true,
+        double_sided: true,
+        cull_mode: None,
         ..default()
     });
+    flake_mat.0 = material.clone();
     let (sx, sz) = crate::sim::terrain::PLAYER_SPAWN;
     for index in 0..FLAKES {
         let pos = Vec3::new(
@@ -191,11 +205,22 @@ fn move_flakes(
     time: Res<Time>,
     vis: Res<VisualWeather>,
     mut rng: ResMut<RngRes>,
+    flake_mat: Res<FlakeMaterial>,
+    clock: Res<ClockRes>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     player: Query<&Transform, With<Player>>,
     mut flakes: Query<(&mut Transform, &mut Visibility, &Flake), Without<Player>>,
 ) {
     let Ok(ptf) = player.single() else { return };
     let cam = ptf.translation;
+    let facing = ptf.rotation;
+    if let Some(m) = materials.get_mut(&flake_mat.0) {
+        // Radioactive snow glows faintly green.
+        // Unlit, so dim them by hand at night.
+        let light = 0.2 + 0.8 * clock.0.sky().daylight.clamp(0.0, 1.0);
+        let c = Vec3::new(0.95, 0.97, 1.0).lerp(Vec3::new(0.7, 1.3, 0.7), vis.sick) * light;
+        m.base_color = Color::LinearRgba(LinearRgba::new(c.x, c.y, c.z, 0.9));
+    }
     let dt = time.delta_secs();
     let active = (vis.snow * FLAKES as f32) as usize;
     let speed_mul = 1.0 + vis.snow * 1.5;
@@ -212,6 +237,7 @@ fn move_flakes(
         if flake.index >= active {
             continue;
         }
+        tf.rotation = facing;
         tf.translation.y -= flake.fall * speed_mul * dt;
         tf.translation.x += vis.wind * dt;
         tf.translation.z += vis.wind * 0.4 * dt;

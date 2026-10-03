@@ -17,6 +17,7 @@ mod nature;
 mod particles;
 mod player;
 mod sim;
+mod sky;
 mod state;
 mod weather_fx;
 mod wolves;
@@ -46,6 +47,7 @@ fn main() {
             audio::SoundPlugin,
             world::WorldPlugin,
             player::PlayerPlugin,
+            sky::SkyPlugin,
             weather_fx::WeatherPlugin,
             wolves::WolfPlugin,
             combat::CombatPlugin,
