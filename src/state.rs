@@ -65,6 +65,33 @@ impl SfxQueue {
     }
 }
 
+/// A visual effect requested by gameplay code; the particle plugin spawns it.
+#[derive(Clone, Copy, Debug)]
+pub enum Fx {
+    /// Snow kicked up by a footstep.
+    Footstep(Vec3),
+    /// Muzzle flash, smoke and an ejected casing: (muzzle, aim direction, gun right).
+    Muzzle(Vec3, Vec3, Vec3),
+    /// A bullet striking a Frostfang: (hit point, bullet direction).
+    WolfHit(Vec3, Vec3),
+    /// A Frostfang dropping dead: (body centre, size).
+    WolfDeath(Vec3, f32),
+    /// A bullet kicking up snow where it lands.
+    Ricochet(Vec3),
+    /// Nuclear ice giving way.
+    IceBreak(Vec3),
+}
+
+/// Effects requested this frame; the particle plugin spawns and clears them.
+#[derive(Resource, Default)]
+pub struct FxQueue(pub Vec<Fx>);
+
+impl FxQueue {
+    pub fn spawn(&mut self, fx: Fx) {
+        self.0.push(fx);
+    }
+}
+
 /// One line of text shown at the top of the screen for a few seconds.
 #[derive(Resource, Default)]
 pub struct Messages {
@@ -113,6 +140,7 @@ impl Plugin for StatePlugin {
             .init_resource::<ClockRes>()
             .init_resource::<Colliders>()
             .init_resource::<SfxQueue>()
+            .init_resource::<FxQueue>()
             .add_systems(Update, (tick_messages, tick_lifetimes));
     }
 }

@@ -11,7 +11,10 @@ mod assets;
 mod audio;
 mod combat;
 mod hud;
+mod landmarks;
 mod meshes;
+mod nature;
+mod particles;
 mod player;
 mod sim;
 mod state;
@@ -46,6 +49,7 @@ fn main() {
             weather_fx::WeatherPlugin,
             wolves::WolfPlugin,
             combat::CombatPlugin,
+            particles::ParticlePlugin,
             hud::HudPlugin,
         ))
         .run();
