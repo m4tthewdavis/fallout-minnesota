@@ -34,6 +34,7 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | Shift | Sprint (keeps you warmer, but cracks nuclear ice) |
 | Space | Jump |
 | Left mouse | Fire pipe rifle |
+| Right mouse | Aim down the sights |
 | R | Reload, or clear a cold-weather jam. When dead, respawn |
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |

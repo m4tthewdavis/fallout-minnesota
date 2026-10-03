@@ -57,12 +57,15 @@ struct RadOverlay;
 struct HelpText;
 #[derive(Component)]
 struct MissingBanner;
+#[derive(Component)]
+struct Crosshair;
 
 pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_hud).add_systems(Update, (update_hud, missing_banner));
+        app.add_systems(Startup, spawn_hud)
+            .add_systems(Update, (update_hud, missing_banner, fade_crosshair, scale_ui));
     }
 }
 
@@ -127,14 +130,16 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
 
     // Crosshair.
     commands.spawn(full_screen()).with_children(|p| {
-        p.spawn((Text::new("+"), font(24.0), TextColor(PIP_GREEN.with_alpha(0.85))));
+        p.spawn((Text::new("+"), font(24.0), TextColor(PIP_GREEN.with_alpha(0.85)), Crosshair));
     });
 
     // Controls reminder (fades after the first minute).
     commands.spawn((
         Text::new(
-            "WASD move  SHIFT sprint  SPACE jump  LMB fire  R reload/unjam\n\
-             H stimpak  X RadAway  F hotdish  C craft coat (at shelter)  ESC free mouse",
+            "WASD move  SHIFT sprint  SPACE jump\n\
+             LMB fire  RMB aim  R reload/unjam\n\
+             H stimpak  X RadAway  F hotdish\n\
+             C craft coat (at shelter)  ESC free mouse",
         ),
         font(13.0),
         TextColor(PIP_GREEN.with_alpha(0.6)),
@@ -142,6 +147,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             position_type: PositionType::Absolute,
             left: Val::Px(12.0),
             top: Val::Px(10.0),
+            max_width: Val::Percent(24.0),
             ..default()
         },
         HelpText,
@@ -319,6 +325,23 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             DeathText,
         ));
     });
+}
+
+/// The HUD is laid out for a 720-pixel-tall window; scale it up on bigger
+/// screens so it stays readable (1.6x on a 1154-pixel-tall display).
+fn scale_ui(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut scale: ResMut<UiScale>) {
+    let Ok(window) = windows.single() else { return };
+    let s = (window.height() / 720.0).clamp(1.0, 2.5);
+    if (scale.0 - s).abs() > 0.01 {
+        scale.0 = s;
+    }
+}
+
+/// The iron sights replace the crosshair while aiming.
+fn fade_crosshair(aim: Res<crate::gun::AimAmount>, mut q: Query<&mut TextColor, With<Crosshair>>) {
+    for mut c in &mut q {
+        c.0 = PIP_GREEN.with_alpha(0.85 * (1.0 - aim.0 * 1.5).clamp(0.0, 1.0));
+    }
 }
 
 fn missing_banner(
