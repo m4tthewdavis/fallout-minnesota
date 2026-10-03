@@ -54,11 +54,14 @@ Fetched by `tools/fetch_assets.py`. License: <https://polyhaven.com/license>.
 Generated from code by `tools/gen_textures.py` (original work, same license as the game):
 
 - `textures/generated/`: cracked nuclear-ice colour and glow maps, crater scorch decal, soft particle and
-  muzzle-flash sprites, starfield, aurora curtain, and the Bullseye-Mart, Mille Lacs road, Golden Atomic Mills
-  and Fallout Shelter signs.
+  muzzle-flash sprites, starfield, aurora curtain, the Bullseye-Mart, Mille Lacs road, Golden Atomic Mills,
+  Fallout Shelter, speed limit, welcome and bait shop signs, the Frost Cola vending-machine front and glow, a
+  chain-link fence mesh, and the worn steel and scratched wood used on the weapons.
 - `ui/`: HUD icons (health, Body Heat, radiation), CRT scanlines, vignette and the frost overlay.
 - `textures/snow_02/diff_clean.jpg`: derived from Poly Haven's CC0 `snow_02` with the dark twig marks removed.
 
-Procedural at runtime (no files): pines, dead snags and shrubs, Frostfang wolves, 1950s cars, fish houses, silos,
-the vault gear door, rocks/snowdrifts, the pipe rifle, the sky dome, and every sound effect and the music
-(`src/sim/meshgen.rs`, `src/sim/synth.rs`).
+Procedural at runtime (no files): pines, dead snags and shrubs, the four Frostfang looks, the Glowmoose and its
+antlers, 1950s cars, snowmobiles, sleds, tents, shopping carts, mailboxes, fish houses, silos, the vault gear door,
+rocks and snowdrifts, all four weapons (pipe rifle, scrap shotgun, frontier revolver, ice axe), the sky dome, the
+Pip-Boy map picture, and every sound effect and the music (`src/sim/meshgen.rs`, `src/sim/synth.rs`,
+`src/sim/mapdata.rs`). No audio files are used, so there is no audio to credit.

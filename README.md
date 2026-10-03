@@ -1,4 +1,4 @@
-# Fallout: Minnesota — Prototype (Milestone 3)
+# Fallout: Minnesota — Prototype (Milestone 4)
 
 A first-person cold-survival prototype made with **Rust + Bevy 0.16**. It is based on the *Fallout: Minnesota* design doc.
 
@@ -33,9 +33,13 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | WASD / Mouse | Move / look |
 | Shift | Sprint (keeps you warmer, but cracks nuclear ice) |
 | Space | Jump |
-| Left mouse | Fire pipe rifle |
+| Left mouse | Fire (hold for the rifle; click for the shotgun and revolver) / swing the ice axe |
 | Right mouse | Aim down the sights |
+| 1 2 3 4 / mouse wheel | Pipe rifle / scrap shotgun / revolver / ice axe (once found) |
 | R | Reload, or clear a cold-weather jam. When dead, respawn |
+| E | Open a container (crates, footlockers, tackle boxes) |
+| B | At a shelter workbench: fit the next upgrade to your weapon (costs scrap) |
+| Tab or M | Pip-Boy: map, stats, inventory (pauses the game) |
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
 | Esc | Free the mouse (click to recapture) |
@@ -61,6 +65,15 @@ If the build reports an error, copy the error text back to Claude and it will fi
 - **Sound**: every sound is synthesised in code, so there are no audio files. You'll hear calm wind, a howling blizzard gale, the air-raid siren before a storm, footsteps crunching in snow, gunshots, jams, reloads, wolf howls, snarls and yelps, cracking ice, and Pip-Boy pickup blips.
 - **Day/night cycle**: a full day lasts 12 real minutes. The sun moves and casts moving shadows, sunrise and sunset glow orange, and nights are dark blue with moonlight. Nights are up to 12°F colder, and distant howls carry across the ice. The HUD shows the day and clock.
 - **Animated wolves**: Frostfangs trot with swinging legs (diagonal pairs, like a real trot). Their stride speeds up when they chase, and their tails wag harder on the hunt.
+
+## What's new in Milestone 4
+
+- **Sound, rebuilt.** Before changing anything I measured every sound. The worst offenders were the Geiger counter (it clicked 15 times a second through a whole blizzard), footsteps (three near-identical clips in a fixed 1-2-3 order), wolf howls (every wolf on its own timer, so packs stacked), and wind and fire (short, obvious loops). Now: every frequent sound has 3-6 variants and is never repeated back to back, with random pitch and volume; footsteps differ on snow, ice, road, concrete and wooden decks; wind is three loops of 23, 29 and 37 seconds plus random gusts, muffled in shelters; fires crackle from their own barrels; wolves, fires and brass are positioned in 3D (they pan and fade); howls share one 18-second cooldown and quick repeats get quieter; the Geiger counter is gentle (about 2 clicks a second in a blizzard) and G turns it off; music has calm, tense and danger moods that crossfade and leaves long silences. Volume keys are in the controls table. Still all synthesised in code.
+- **Three new weapons, found not given.** The scrap shotgun (7 pellets, breaks open to reload) is in a military footlocker inside the Bullseye-Mart ruin; the frontier revolver (heavy, rarely jams in the cold) is in an armoury crate at the Golden Atomic Mills; the ice axe (melee) is in a tackle box at a fish house. Each has its own model, aim point, recoil, reload animation and sounds. Spent revolver and shotgun brass is dumped when you reload.
+- **Scrap and upgrades.** Containers and creatures hold scrap. At a workbench beside any fish house, press B to fit an insulated action (never jams), extended magazine, choke or heavy loads. Fitted upgrades show on the models.
+- **More props.** Shelter workbenches and stashes, supply caches, two abandoned camps with tents and cold fire pits, snowmobiles, sleds, shopping carts, flickering Frost Cola vending machines, mailboxes, street lamps, chain-link fences, ice-fishing sets on the lakes, more road signs.
+- **Enemies with variety and life.** Frostfangs come in four fur patterns (plain, scarred, dark-masked, mangy), three coats and different ears and proportions; they gallop when they chase, lunge as they bite, flinch when hit, breathe glowing vapour and fall over when killed. New: the Glowmoose, a van-sized mutated moose with glowing antlers that paws the snow, bellows and charges at where you *were*. You can't outrun it, but you can dodge it, or lead it into a tree to stun it.
+- **The Pip-Boy.** Tab or M pauses the game and opens a map drawn from the real terrain (contours, nuclear ice, highway, radiation zones, buildings, forest), fogged until you explore. Your position and heading, named places once found, zoom and pan, plus Stats and Inventory tabs.
 
 ## What's new in Milestone 3
 
@@ -89,7 +102,12 @@ src/
   main.rs        App setup
   sim/           Pure game rules, no Bevy (unit-tested)
     collision.rs Circles and rectangles that push movers out
-    meshgen.rs   Procedural geometry (pines, wolves, cars, sheds, gear door...)
+    meshgen.rs   Procedural geometry (pines, wolves, moose, cars, sheds, gear door...)
+    sfx.rs       Sound rules: variants, cooldowns, mixer, music director, Geiger
+    loot.rs      What containers hold; weapon finds
+    moose.rs     Glowmoose behaviour: graze, stare, wind up, charge, crash
+    viewmodel.rs First-person weapon pose maths (hold, aim, recoil, reloads)
+    mapdata.rs   Pip-Boy map picture, landmarks and fog of war
     mipmaps.rs   Mipmap chains for loaded textures
     daynight.rs  Clock, sun/moon position, night chill
     synth.rs     Procedural sound effects and WAV encoding
@@ -113,6 +131,12 @@ src/
   wolves.rs      Wolf spawning, AI and bites
   combat.rs      Shooting, tracers, gun animation
   audio.rs       Plays sound effects and weather ambience
+  gun.rs         First-person weapon models and animation (own camera)
+  enemy.rs       Shared enemy Body (health, hit sphere) and death animation
+  moose.rs       The Glowmoose
+  interact.rs    Containers (E) and workbenches (B), prompts
+  props.rs       Camps, vehicles, vending machines, fences, lamps, caches
+  pipboy.rs      The Pip-Boy screen (map, stats, inventory)
   hud.rs         Pip-Boy green HUD and overlays
 assets/          Models, textures, font, HUD images (see assets/CREDITS.md)
 tools/           Scripts that download and generate the assets
@@ -123,6 +147,8 @@ tools/           Scripts that download and generate the assets
 - A real interior for Vault 143
 - Dialogue system and the first faction (the Skyfolk or the Lockkeepers' Compact)
 - Save/load and false-thaw events
-- Animated, rigged wolf model (skeletal animation instead of swinging limbs)
-- Interiors you can enter (the fish houses, Bullseye-Mart)
+- Interiors you can enter (the Vault 143 lobby, the fish houses, Bullseye-Mart)
+- Skeletal animation and hand models for the first-person weapons
+- More enemy types (rad-crow flocks, frozen raiders) and a save/load system
+- A quest or two: why did the Overseer open the door?
 - Distance LODs for trees and a settings menu (shadow quality, view distance)
