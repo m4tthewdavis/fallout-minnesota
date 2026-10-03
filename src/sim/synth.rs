@@ -27,10 +27,18 @@ pub enum Sound {
     IceCrack,
     Pickup,
     Craft,
+    Geiger1,
+    Geiger2,
+    FireCrackle,
+    Music,
+    HowlNear2,
+    Growl,
+    IceCreak,
+    ShellTink,
 }
 
 impl Sound {
-    pub const ALL: [Sound; 17] = [
+    pub const ALL: [Sound; 25] = [
         Sound::WindCalm,
         Sound::WindStorm,
         Sound::Siren,
@@ -48,6 +56,14 @@ impl Sound {
         Sound::IceCrack,
         Sound::Pickup,
         Sound::Craft,
+        Sound::Geiger1,
+        Sound::Geiger2,
+        Sound::FireCrackle,
+        Sound::Music,
+        Sound::HowlNear2,
+        Sound::Growl,
+        Sound::IceCreak,
+        Sound::ShellTink,
     ];
 
     /// Mono samples in -1..=1.
@@ -65,11 +81,19 @@ impl Sound {
             Sound::Step3 => step(23),
             Sound::HowlNear => howl(0.55, false),
             Sound::HowlFar => howl(0.22, true),
+            Sound::HowlNear2 => howl_rising(0.5),
             Sound::Snarl => snarl(),
             Sound::Yelp => yelp(),
             Sound::IceCrack => ice_crack(),
             Sound::Pickup => blips(&[880.0, 1320.0]),
             Sound::Craft => blips(&[660.0, 880.0, 1320.0]),
+            Sound::Geiger1 => geiger(101),
+            Sound::Geiger2 => geiger(102),
+            Sound::FireCrackle => fire_crackle(),
+            Sound::Music => long_winter(),
+            Sound::Growl => growl(),
+            Sound::IceCreak => ice_creak(),
+            Sound::ShellTink => shell_tink(),
         }
     }
 
@@ -265,6 +289,177 @@ fn howl(amp: f32, far: bool) -> Vec<f32> {
         .collect()
 }
 
+/// A second, higher howl that wavers at the top, so packs don't sound cloned.
+fn howl_rising(amp: f32) -> Vec<f32> {
+    let mut rng = Rng::new(73);
+    let total = len(2.6);
+    let mut phase = 0.0;
+    let mut lp = LowPass::new(2600.0);
+    (0..total)
+        .map(|i| {
+            let t = i as f32 / SR;
+            let base = if t < 0.5 {
+                450.0 + 330.0 * (t / 0.5)
+            } else if t < 1.9 {
+                780.0 + 25.0 * (TAU * 1.3 * t).sin()
+            } else {
+                780.0 - 330.0 * (t - 1.9) / 0.7
+            };
+            let f = base + 14.0 * (TAU * 6.5 * t).sin();
+            phase += TAU * f / SR;
+            let tone = phase.sin() + 0.2 * (2.0 * phase).sin();
+            let envelope = (t / 0.25).min(1.0) * ((2.6 - t) / 0.5).clamp(0.0, 1.0);
+            lp.run(tone + noise(&mut rng) * 0.06) * envelope * amp
+        })
+        .collect()
+}
+
+/// Low, rumbling growl of a Frostfang circling close.
+fn growl() -> Vec<f32> {
+    let mut rng = Rng::new(83);
+    let mut lp = LowPass::new(500.0);
+    let total = len(1.3);
+    (0..total)
+        .map(|i| {
+            let t = i as f32 / SR;
+            let rattle = 0.55 + 0.45 * (TAU * (24.0 + 6.0 * (TAU * 0.8 * t).sin()) * t).sin();
+            let body = (TAU * 85.0 * t).sin() * 0.5 + (TAU * 128.0 * t).sin().signum() * 0.2;
+            let envelope = (t / 0.15).min(1.0) * ((1.3 - t) / 0.3).clamp(0.0, 1.0);
+            (lp.run(noise(&mut rng)) * 2.2 + body) * rattle * envelope * 0.45
+        })
+        .collect()
+}
+
+/// One Geiger counter click: a sharp tick with a little ring.
+fn geiger(seed: u64) -> Vec<f32> {
+    let mut rng = Rng::new(seed);
+    let f = if seed % 2 == 0 { 3400.0 } else { 2900.0 };
+    (0..len(0.025))
+        .map(|i| {
+            let t = i as f32 / SR;
+            (noise(&mut rng) * 0.8 + (TAU * f * t).sin() * 0.6) * env(t, 0.0002, 300.0) * 0.55
+        })
+        .collect()
+}
+
+/// Looping fire-barrel crackle: a soft roar with random pops and snaps.
+fn fire_crackle() -> Vec<f32> {
+    let mut rng = Rng::new(111);
+    let total = len(5.0);
+    let mut lp = LowPass::new(350.0);
+    let mut out: Vec<f32> = (0..total)
+        .map(|i| {
+            let t = i as f32 / SR;
+            let flutter = 0.7 + 0.3 * (TAU * 0.9 * t).sin() * (TAU * 1.7 * t).cos();
+            lp.run(noise(&mut rng)) * 0.9 * flutter
+        })
+        .collect();
+    for _ in 0..90 {
+        let start = (rng.f32() * total as f32) as usize;
+        let a = rng.range(0.08, 0.45);
+        let decay = rng.range(150.0, 500.0);
+        for j in 0..len(0.03) {
+            if let Some(o) = out.get_mut(start + j) {
+                let t = j as f32 / SR;
+                *o += noise(&mut rng) * env(t, 0.0003, decay) * a;
+            }
+        }
+    }
+    let out: Vec<f32> = out.into_iter().map(|v| v.clamp(-1.0, 1.0) * 0.6).collect();
+    make_loopable(out, 0.5)
+}
+
+/// "The Long Winter": a slow, cold ambient pad in D minor with sparse glassy
+/// notes on top. Loops seamlessly.
+fn long_winter() -> Vec<f32> {
+    let note = |semitones_from_a4: f32| 440.0 * 2f32.powf(semitones_from_a4 / 12.0);
+    // Dm, Bb, F/A, C - eight seconds each.
+    let chords: [[f32; 4]; 4] = [
+        [-31.0, -19.0, -16.0, -12.0], // D2 D3 F3 A3
+        [-35.0, -23.0, -19.0, -16.0], // Bb1 Bb2 D3 F3
+        [-36.0, -24.0, -16.0, -12.0], // A1 A2 F3 A3 (F over A)
+        [-33.0, -21.0, -17.0, -14.0], // C2 C3 E3 G3
+    ];
+    let chord_secs = 8.0;
+    let total_secs = chord_secs * chords.len() as f32;
+    let total = len(total_secs + 2.0);
+    let mut rng = Rng::new(143);
+    let mut out = vec![0.0f32; total];
+    let mut lp = LowPass::new(900.0);
+    let mut phases = [[0.0f32; 2]; 4];
+    for (i, o) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let pos = (t / chord_secs) % chords.len() as f32;
+        let idx = pos as usize % chords.len();
+        let next = (idx + 1) % chords.len();
+        // Glide between chords over the last 1.5 s.
+        let frac = pos - pos.floor();
+        let blend = ((frac * chord_secs - (chord_secs - 1.5)) / 1.5).clamp(0.0, 1.0);
+        let mut v = 0.0;
+        for k in 0..4 {
+            let f = note(chords[idx][k] + (chords[next][k] - chords[idx][k]) * blend);
+            for (d, detune) in [0.997f32, 1.003].iter().enumerate() {
+                phases[k][d] = (phases[k][d] + f * detune / SR).fract();
+                let p = phases[k][d];
+                // Soft saw.
+                v += (2.0 * p - 1.0) * if k == 0 { 0.7 } else { 0.45 };
+            }
+        }
+        let breathe = 0.75 + 0.25 * (TAU * t / 16.0).sin();
+        lp.set(500.0 + 450.0 * breathe);
+        *o = lp.run(v) * 0.09 * breathe;
+    }
+    // Sparse glass notes from D minor pentatonic.
+    let scale = [-7.0, -4.0, -2.0, 0.0, 3.0, 5.0, 8.0];
+    let mut t = 1.5;
+    while t < total_secs - 1.0 {
+        let f = note(scale[(rng.f32() * scale.len() as f32) as usize % scale.len()] + 12.0);
+        let start = len(t);
+        for j in 0..len(2.5) {
+            if let Some(o) = out.get_mut(start + j) {
+                let tt = j as f32 / SR;
+                let tone = (TAU * f * tt).sin() + 0.3 * (TAU * f * 2.01 * tt).sin();
+                *o += tone * env(tt, 0.004, 2.2) * 0.07;
+            }
+        }
+        t += rng.range(2.0, 5.0);
+    }
+    make_loopable(out, 2.0)
+}
+
+/// The nuclear ice groaning under your boots.
+fn ice_creak() -> Vec<f32> {
+    let mut rng = Rng::new(121);
+    let mut lp = LowPass::new(1400.0);
+    let mut phase = 0.0;
+    (0..len(0.9))
+        .map(|i| {
+            let t = i as f32 / SR;
+            let f = 180.0 + 120.0 * (t / 0.9) + 30.0 * (TAU * 7.0 * t).sin();
+            phase += TAU * f / SR;
+            let stick = if rng.chance(0.15) { 1.0 } else { 0.4 };
+            let tone = (phase.sin() * 3.0).tanh() * stick;
+            let envelope = (t / 0.08).min(1.0) * ((0.9 - t) / 0.3).clamp(0.0, 1.0);
+            lp.run(tone + noise(&mut rng) * 0.2) * envelope * 0.35
+        })
+        .collect()
+}
+
+/// A brass casing bouncing on frozen ground.
+fn shell_tink() -> Vec<f32> {
+    let mut out = vec![0.0; len(0.35)];
+    for (offset, a) in [(0.0, 0.25), (0.11, 0.14), (0.19, 0.07)] {
+        let start = len(offset);
+        for j in 0..len(0.12) {
+            if let Some(o) = out.get_mut(start + j) {
+                let t = j as f32 / SR;
+                *o += ((TAU * 3300.0 * t).sin() + 0.6 * (TAU * 5150.0 * t).sin()) * env(t, 0.0005, 45.0) * a;
+            }
+        }
+    }
+    out
+}
+
 fn snarl() -> Vec<f32> {
     let mut rng = Rng::new(81);
     let mut lp = LowPass::new(1200.0);
@@ -374,6 +569,23 @@ mod tests {
             assert!(peak > 0.02, "{sound:?} is silent (peak {peak})");
             assert!(peak <= 1.0 + 1e-3, "{sound:?} clips (peak {peak})");
         }
+    }
+
+    #[test]
+    fn loops_are_long_and_music_is_quiet() {
+        let secs = |s: Sound| s.samples().len() as f32 / SAMPLE_RATE as f32;
+        assert!(secs(Sound::Music) > 30.0);
+        assert!(secs(Sound::FireCrackle) > 4.0);
+        let peak = |s: Sound| s.samples().iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(peak(Sound::Music) < 0.6, "music sits under the effects");
+        assert!(secs(Sound::Geiger1) < 0.05, "Geiger clicks are short ticks");
+    }
+
+    #[test]
+    fn music_loop_is_seamless() {
+        let s = Sound::Music.samples();
+        let (first, last) = (s[0], s[s.len() - 1]);
+        assert!((first - last).abs() < 0.05, "{first} vs {last}");
     }
 
     #[test]

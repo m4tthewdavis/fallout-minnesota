@@ -26,6 +26,21 @@ pub const SHELTER_RADIUS: f32 = 5.0;
 /// Radiation hot spots: (x, z, radius, rads/sec at centre).
 pub const RAD_SOURCES: [(f32, f32, f32, f32); 2] = [(-120.0, 120.0, 18.0, 15.0), (140.0, -140.0, 14.0, 10.0)];
 
+/// The old US-169 highway: a polyline (x, z) running east-west across the map,
+/// past the abandoned cars.
+pub const ROAD: [(f32, f32); 9] = [
+    (-205.0, 90.0),
+    (-150.0, 93.0),
+    (-100.0, 97.0),
+    (-50.0, 99.0),
+    (0.0, 97.0),
+    (50.0, 93.0),
+    (100.0, 96.0),
+    (150.0, 100.0),
+    (205.0, 104.0),
+];
+pub const ROAD_HALF_WIDTH: f32 = 3.5;
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -130,6 +145,33 @@ pub fn shore_point(lake: usize, x: f32, z: f32) -> (f32, f32) {
     (lx + dx * out, lz + dz * out)
 }
 
+/// Distance from a point to the centre line of the highway.
+pub fn road_distance(x: f32, z: f32) -> f32 {
+    ROAD.windows(2)
+        .map(|w| {
+            let ((ax, az), (bx, bz)) = (w[0], w[1]);
+            let (dx, dz) = (bx - ax, bz - az);
+            let t = (((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)).clamp(0.0, 1.0);
+            dist(x, z, ax + dx * t, az + dz * t)
+        })
+        .fold(f32::MAX, f32::min)
+}
+
+/// Z coordinate of the highway centre line at `x` (for placing things along it).
+pub fn road_z(x: f32) -> f32 {
+    for w in ROAD.windows(2) {
+        let ((ax, az), (bx, bz)) = (w[0], w[1]);
+        if x >= ax && x <= bx {
+            return az + (bz - az) * (x - ax) / (bx - ax);
+        }
+    }
+    if x < ROAD[0].0 {
+        ROAD[0].1
+    } else {
+        ROAD[ROAD.len() - 1].1
+    }
+}
+
 /// True if a tree or prop can go here without blocking key locations.
 pub fn is_open_ground(x: f32, z: f32) -> bool {
     if x.abs() > HALF_SIZE - 4.0 || z.abs() > HALF_SIZE - 4.0 {
@@ -142,6 +184,9 @@ pub fn is_open_ground(x: f32, z: f32) -> bool {
         return false;
     }
     if RAD_SOURCES.iter().any(|&(cx, cz, r, _)| dist(x, z, cx, cz) < r * 0.6) {
+        return false;
+    }
+    if road_distance(x, z) < ROAD_HALF_WIDTH + 2.5 {
         return false;
     }
     dist(x, z, VAULT_POS.0, VAULT_POS.1) > 22.0
@@ -192,6 +237,24 @@ mod tests {
             assert!((len - 1.0).abs() < 1e-4);
             assert!(n[1] > 0.0);
         }
+    }
+
+    #[test]
+    fn highway_runs_past_the_cars_and_keeps_clear() {
+        for &(x, z) in &ROAD {
+            assert!(road_distance(x, z) < 1e-4);
+        }
+        assert!((road_z(25.0) - 95.0).abs() < 1e-4);
+        assert!((road_distance(25.0, 105.0) - 10.0).abs() < 0.2);
+        assert!(!is_open_ground(25.0, road_z(25.0)), "no trees on the road");
+        // The road stays off the ice, the shelters and the vault.
+        for &(lx, lz, r) in &LAKES {
+            assert!(road_distance(lx, lz) > r * 1.2);
+        }
+        for &(sx, sz) in &SHELTERS {
+            assert!(road_distance(sx, sz) > SHELTER_RADIUS + ROAD_HALF_WIDTH);
+        }
+        assert!(road_distance(VAULT_POS.0, VAULT_POS.1) > 40.0);
     }
 
     #[test]

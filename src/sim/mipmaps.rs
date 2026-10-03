@@ -1,0 +1,115 @@
+//! Mipmap chains for RGBA8 textures.
+//!
+//! Bevy uploads PNG/JPEG textures with a single mip level, so tiled textures
+//! (snow, bark, rust) shimmer and sparkle in the distance. This builds the
+//! smaller levels with a 2x2 box filter, averaging colour textures in linear
+//! light so they don't darken.
+
+/// Number of levels down to 1x1.
+pub fn level_count(width: u32, height: u32) -> u32 {
+    32 - width.max(height).max(1).leading_zeros()
+}
+
+fn to_linear_table() -> [f32; 256] {
+    let mut t = [0.0; 256];
+    for (i, v) in t.iter_mut().enumerate() {
+        let c = i as f32 / 255.0;
+        *v = if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
+    }
+    t
+}
+
+fn to_srgb(l: f32) -> u8 {
+    let c = if l <= 0.0031308 { l * 12.92 } else { 1.055 * l.powf(1.0 / 2.4) - 0.055 };
+    (c * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// Returns every level, largest first, concatenated (the layout wgpu expects
+/// for one layer), plus the level count. `rgba` is `width * height * 4` bytes.
+pub fn build_chain(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>, u32) {
+    let levels = level_count(width, height);
+    let lin = to_linear_table();
+    let mut out = rgba.to_vec();
+    let (mut w, mut h) = (width as usize, height as usize);
+    let mut prev_start = 0;
+    for _ in 1..levels {
+        let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        let start = out.len();
+        out.reserve(nw * nh * 4);
+        for y in 0..nh {
+            for x in 0..nw {
+                let mut acc = [0.0f32; 4];
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    let sx = (x * 2 + dx).min(w - 1);
+                    let sy = (y * 2 + dy).min(h - 1);
+                    let i = prev_start + (sy * w + sx) * 4;
+                    for c in 0..4 {
+                        let v = out[i + c];
+                        acc[c] += if srgb && c < 3 { lin[v as usize] } else { v as f32 / 255.0 };
+                    }
+                }
+                for (c, a) in acc.iter().enumerate() {
+                    let avg = a / 4.0;
+                    out.push(if srgb && c < 3 {
+                        to_srgb(avg)
+                    } else {
+                        (avg * 255.0).round() as u8
+                    });
+                }
+            }
+        }
+        prev_start = start;
+        w = nw;
+        h = nh;
+    }
+    (out, levels)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_counts() {
+        assert_eq!(level_count(1, 1), 1);
+        assert_eq!(level_count(4, 4), 3);
+        assert_eq!(level_count(1024, 1024), 11);
+        assert_eq!(level_count(512, 256), 10);
+        assert_eq!(level_count(3, 5), 3);
+    }
+
+    #[test]
+    fn chain_has_every_level() {
+        let src = vec![200u8; 4 * 4 * 4];
+        let (out, levels) = build_chain(4, 4, &src, true);
+        assert_eq!(levels, 3);
+        assert_eq!(out.len(), (16 + 4 + 1) * 4);
+        // A flat colour stays the same colour at every level.
+        assert!(out.iter().all(|&v| (v as i32 - 200).abs() <= 1));
+    }
+
+    #[test]
+    fn srgb_averages_in_linear_light() {
+        // Black and white checker: the 1x1 level should be ~mid-grey in light
+        // (sRGB 188), not 128, which would look too dark.
+        let mut src = Vec::new();
+        for i in 0..4 {
+            let v = if i % 3 == 0 { 255 } else { 0 };
+            src.extend_from_slice(&[v, v, v, 255]);
+        }
+        let (out, _) = build_chain(2, 2, &src, true);
+        let last = &out[out.len() - 4..];
+        assert!((last[0] as i32 - 188).abs() <= 2, "{}", last[0]);
+        assert_eq!(last[3], 255);
+        let (lin, _) = build_chain(2, 2, &src, false);
+        assert_eq!(lin[lin.len() - 4], 128);
+    }
+
+    #[test]
+    fn non_square_textures() {
+        let src = vec![10u8; 8 * 2 * 4];
+        let (out, levels) = build_chain(8, 2, &src, false);
+        assert_eq!(levels, 4);
+        assert_eq!(out.len(), (16 + 4 + 2 + 1) * 4);
+    }
+}
