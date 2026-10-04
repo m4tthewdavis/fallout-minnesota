@@ -65,8 +65,43 @@ pub fn build_chain(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>
     (out, levels)
 }
 
+/// Drop the `skip` largest levels of a chain from [`build_chain`] (a cheaper,
+/// blurrier texture for low-memory machines). Never drops below 64 pixels.
+/// Returns (chain, width, height, levels).
+pub fn drop_levels(chain: Vec<u8>, width: u32, height: u32, levels: u32, skip: u32) -> (Vec<u8>, u32, u32, u32) {
+    let (mut w, mut h, mut levels, mut offset) = (width, height, levels, 0usize);
+    for _ in 0..skip {
+        if w.min(h) / 2 < 64 || levels < 2 {
+            break;
+        }
+        offset += (w * h * 4) as usize;
+        w = (w / 2).max(1);
+        h = (h / 2).max(1);
+        levels -= 1;
+    }
+    if offset == 0 {
+        return (chain, width, height, levels);
+    }
+    (chain[offset..].to_vec(), w, h, levels)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dropping_levels_keeps_a_valid_smaller_chain() {
+        let data = vec![200u8; 256 * 128 * 4];
+        let (chain, levels) = build_chain(256, 128, &data, true);
+        let (small, w, h, l) = drop_levels(chain.clone(), 256, 128, levels, 1);
+        assert_eq!((w, h, l), (128, 64, levels - 1));
+        assert_eq!(small.len(), chain.len() - 256 * 128 * 4);
+        let (again, _, _) = (build_chain(128, 64, &vec![200u8; 128 * 64 * 4], true).0, 0, 0);
+        assert_eq!(small.len(), again.len());
+        // Small textures are left alone.
+        let (same, w, _, _) = drop_levels(chain.clone(), 256, 128, levels, 3);
+        assert_eq!(w, 128, "stops at 64 pixels");
+        assert_eq!(same.len(), small.len());
+    }
+
     use super::*;
 
     #[test]

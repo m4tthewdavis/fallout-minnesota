@@ -26,6 +26,7 @@ mod props;
 mod sim;
 mod sky;
 mod state;
+mod vehicles;
 mod weather_fx;
 mod wolves;
 mod world;

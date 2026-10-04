@@ -61,6 +61,7 @@ impl Plugin for WorldPlugin {
             (
                 build_world,
                 crate::landmarks::spawn_landmarks,
+                crate::vehicles::spawn_vehicles,
                 crate::props::spawn_props,
                 crate::nature::spawn_nature,
                 spawn_loot,
@@ -145,7 +146,7 @@ fn build_world(
     let solid = &mut colliders.0;
 
     // ---------- Terrain ----------
-    let terrain_data = meshgen::ground_patch(0.0, 0.0, HALF_SIZE, 200, 0.0, Some(4.0), &terrain::height);
+    let terrain_data = meshgen::ground_patch(0.0, 0.0, HALF_SIZE, terrain::MESH_RES, 0.0, Some(4.0), &terrain::height);
     let mut terrain_data = MeshData {
         normals: terrain_data
             .positions

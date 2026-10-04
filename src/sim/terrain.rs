@@ -118,6 +118,30 @@ pub fn walk_height(x: f32, z: f32) -> f32 {
     }
 }
 
+/// Grid cells per side of the rendered terrain mesh.
+pub const MESH_RES: usize = 200;
+
+/// Height of the rendered terrain: the triangulated grid the player actually
+/// sees, which cuts corners off the smooth [`height`] field between grid
+/// points. Props set down with this touch the visible snow exactly.
+pub fn mesh_height(x: f32, z: f32) -> f32 {
+    let cell = 2.0 * HALF_SIZE / MESH_RES as f32;
+    let fx = ((x + HALF_SIZE) / cell).clamp(0.0, MESH_RES as f32 - 1e-3);
+    let fz = ((z + HALF_SIZE) / cell).clamp(0.0, MESH_RES as f32 - 1e-3);
+    let (i, j) = (fx.floor(), fz.floor());
+    let (tx, tz) = (fx - i, fz - j);
+    let at = |di: f32, dj: f32| height(-HALF_SIZE + (i + di) * cell, -HALF_SIZE + (j + dj) * cell);
+    let (h00, h11) = (at(0.0, 0.0), at(1.0, 1.0));
+    // Same diagonal as meshgen::ground_patch: (i, j) to (i + 1, j + 1).
+    if tz >= tx {
+        let h01 = at(0.0, 1.0);
+        h00 + tz * (h01 - h00) + tx * (h11 - h01)
+    } else {
+        let h10 = at(1.0, 0.0);
+        h00 + tx * (h10 - h00) + tz * (h11 - h10)
+    }
+}
+
 /// Approximate surface normal from finite differences.
 pub fn normal(x: f32, z: f32) -> [f32; 3] {
     let e = 0.5;
@@ -237,6 +261,21 @@ pub fn is_open_ground(x: f32, z: f32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mesh_height_matches_the_grid_and_stays_close_to_the_field() {
+        let cell = 2.0 * HALF_SIZE / MESH_RES as f32;
+        for (i, j) in [(10, 20), (100, 100), (57, 133)] {
+            let (x, z) = (-HALF_SIZE + i as f32 * cell, -HALF_SIZE + j as f32 * cell);
+            assert!((mesh_height(x, z) - height(x, z)).abs() < 1e-3);
+        }
+        let mut worst = 0.0f32;
+        for k in 0..400 {
+            let (x, z) = ((k as f32 * 7.31) % 380.0 - 190.0, (k as f32 * 3.77) % 380.0 - 190.0);
+            worst = worst.max((mesh_height(x, z) - height(x, z)).abs());
+        }
+        assert!(worst < 0.6, "the grid follows the field: {worst}");
+    }
+
     use super::*;
 
     #[test]

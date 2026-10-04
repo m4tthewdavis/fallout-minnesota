@@ -20,5 +20,6 @@ pub mod survival;
 pub mod synth;
 pub mod viewmodel;
 pub mod terrain;
+pub mod vehicles;
 pub mod weather;
 pub mod wolf;

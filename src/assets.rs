@@ -167,7 +167,7 @@ fn repeat_sampler() -> ImageSampler {
 }
 
 /// A tiling texture; `srgb` is false for normal and roughness/metal maps.
-fn tiled(server: &AssetServer, path: String, srgb: bool) -> Handle<Image> {
+pub(crate) fn tiled(server: &AssetServer, path: String, srgb: bool) -> Handle<Image> {
     server.load_with_settings(path, move |s: &mut ImageLoaderSettings| {
         s.is_srgb = srgb;
         s.sampler = repeat_sampler();
@@ -335,6 +335,17 @@ fn load_assets(
 
 /// Builds a full mip chain for every 8-bit RGBA texture as it finishes loading
 /// (including the textures inside the glTF models).
+/// How many of the largest texture levels to skip: `FMN_TEX_LOD=1` halves
+/// every texture (a quarter of the memory) for low-memory machines.
+/// Screenshot mode does this by default.
+fn texture_lod() -> u32 {
+    static LOD: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *LOD.get_or_init(|| {
+        let default = if std::env::var("FMN_SHOT").is_ok() { 1 } else { 0 };
+        std::env::var("FMN_TEX_LOD").ok().and_then(|v| v.parse().ok()).unwrap_or(default).min(3)
+    })
+}
+
 fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<Assets<Image>>) {
     for event in events.read() {
         let AssetEvent::LoadedWithDependencies { id } = event else {
@@ -356,7 +367,10 @@ fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<As
             continue;
         }
         let (chain, levels) = mipmaps::build_chain(w, h, data, srgb);
+        let (chain, w, h, levels) = mipmaps::drop_levels(chain, w, h, levels, texture_lod());
         image.data = Some(chain);
+        image.texture_descriptor.size.width = w;
+        image.texture_descriptor.size.height = h;
         image.texture_descriptor.mip_level_count = levels;
         // Make sure the sampler actually blends between the new levels.
         if let ImageSampler::Descriptor(d) = &mut image.sampler {

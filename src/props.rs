@@ -19,7 +19,7 @@ use crate::sim::loot;
 use crate::sim::meshgen::{self, sec, MeshData};
 use crate::sim::terrain::{self, HALF_SIZE, LAKES, RAD_SOURCES, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
 use crate::state::{Colliders, RngRes};
-use crate::world::{glow, ground, mat, prop, FireLight};
+use crate::world::{ground, mat, prop, FireLight};
 
 const CACHES: usize = 12;
 
@@ -109,12 +109,6 @@ pub fn spawn_props(
         ..default()
     });
     let black = mat(&mut materials, Color::srgb(0.04, 0.04, 0.045));
-    let glass = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.08, 0.1, 0.12),
-        perceptual_roughness: 0.15,
-        reflectance: 0.8,
-        ..default()
-    });
     let paint = |materials: &mut Assets<StandardMaterial>, c: Color| {
         materials.add(StandardMaterial {
             base_color: c,
@@ -318,51 +312,6 @@ pub fn spawn_props(
             cache,
         );
     }
-    // ================= Snowmobiles =================
-    let sno_body = meshes.add(to_mesh_tangents(&meshgen::loft_z(
-        &[
-            sec(-1.3, 0.55, 0.3, 0.2, 3.0),
-            sec(-0.6, 0.62, 0.4, 0.3, 3.0),
-            sec(0.3, 0.6, 0.39, 0.28, 3.0),
-            sec(1.0, 0.52, 0.3, 0.18, 3.0),
-            sec(1.38, 0.42, 0.1, 0.08, 3.0),
-        ],
-        18,
-        1.5,
-    )));
-    let ski = meshes.add(Cuboid::new(0.13, 0.03, 1.1));
-    let ski_tip = meshes.add(Cuboid::new(0.13, 0.03, 0.3));
-    let track = meshes.add(Cuboid::new(0.42, 0.22, 1.5));
-    let sno_snow = meshes.add(to_mesh_tangents(&meshgen::blob(1.0, 0.2, 0.2, 77, 1.5).scaled([0.38, 1.0, 0.7])));
-    let paints = [Color::srgb(0.85, 0.7, 0.15), Color::srgb(0.75, 0.2, 0.15), Color::srgb(0.2, 0.45, 0.65)];
-    let sno_spots = [(118.0f32, 68.0f32, 0.8f32), (-70.0, -28.0, -0.6), (165.0, 62.0, 2.2)];
-    for (i, &(x, z, yaw)) in sno_spots.iter().enumerate() {
-        if terrain::lake_at(x, z).is_some() || collision::blocked(x, z, 1.0, solid) {
-            continue;
-        }
-        let body_mat = paint(&mut materials, paints[i % paints.len()]);
-        let gy = ground(x, z);
-        commands
-            .spawn((Transform::from_xyz(x, gy, z).with_rotation(Quat::from_rotation_y(yaw)), Visibility::default()))
-            .with_children(|s| {
-                s.spawn((Mesh3d(sno_body.clone()), MeshMaterial3d(body_mat.clone())));
-                s.spawn((Mesh3d(meshes.add(Cuboid::new(0.5, 0.3, 0.03))), MeshMaterial3d(glass.clone()), Transform::from_xyz(0.0, 1.0, 0.5).with_rotation(Quat::from_rotation_x(-0.7))));
-                s.spawn((Mesh3d(meshes.add(Cuboid::new(0.42, 0.1, 0.85))), MeshMaterial3d(black.clone()), Transform::from_xyz(0.0, 0.85, -0.55)));
-                s.spawn((Mesh3d(meshes.add(Cuboid::new(0.75, 0.04, 0.04))), MeshMaterial3d(metal.clone()), Transform::from_xyz(0.0, 1.0, 0.25)));
-                s.spawn((Mesh3d(track.clone()), MeshMaterial3d(black.clone()), Transform::from_xyz(0.0, 0.2, -0.55)));
-                for x in [-0.5f32, 0.5] {
-                    s.spawn((Mesh3d(ski.clone()), MeshMaterial3d(metal.clone()), Transform::from_xyz(x, 0.1, 0.85)));
-                    s.spawn((Mesh3d(ski_tip.clone()), MeshMaterial3d(metal.clone()), Transform::from_xyz(x, 0.16, 1.5).with_rotation(Quat::from_rotation_x(0.45))));
-                    s.spawn((Mesh3d(meshes.add(Cylinder::new(0.025, 0.5))), MeshMaterial3d(metal.clone()), Transform::from_xyz(x * 0.8, 0.35, 0.8).with_rotation(Quat::from_rotation_z(x.signum() * 0.35))));
-                }
-                s.spawn((Mesh3d(meshes.add(Cuboid::new(0.2, 0.06, 0.03))), MeshMaterial3d(glow(&mut materials, Color::srgb(0.9, 0.1, 0.05), LinearRgba::rgb(2.0, 0.1, 0.05))), Transform::from_xyz(0.0, 0.7, -1.33), NotShadowCaster));
-                s.spawn((Mesh3d(sno_snow.clone()), MeshMaterial3d(assets.snow.clone()), Transform::from_xyz(0.0, 0.82, -0.55), NotShadowCaster));
-            });
-        let (ax, az) = (yaw.sin() * 0.6, yaw.cos() * 0.6);
-        solid.push(Shape::Circle { x: x + ax, z: z + az, r: 0.7 });
-        solid.push(Shape::Circle { x: x - ax, z: z - az, r: 0.7 });
-    }
-
     // ================= Shopping carts around the Bullseye-Mart =================
     let cart_mesh = {
         let mut m = MeshData::default();

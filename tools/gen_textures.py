@@ -224,6 +224,7 @@ SIGNS = [
     ("sign_speed.png", [("SPEED", 0.13), ("LIMIT", 0.13), ("55", 0.32)], (256, 320), (240, 240, 235), (20, 20, 20), (20, 20, 20), 0.3),
     ("sign_bait.png", [("BAIT &", 0.22), ("TACKLE", 0.22), ("OPEN 24 HRS", 0.1)], (512, 256), (230, 190, 40), (30, 25, 20), (30, 25, 20), 0.45),
     ("sign_welcome.png", [("WELCOME TO", 0.2), ("MILLE LACS", 0.3), ("Pop. 1,143", 0.14)], (512, 256), (30, 95, 50), (240, 240, 235), (240, 240, 235), 0.3),
+    ("plate.png", [("MINNESOTA 2077", 0.15), ("LKS-143", 0.4), ("10,000 LAKES", 0.13)], (256, 128), (30, 42, 88), (235, 225, 190), (235, 225, 190), 0.25),
     ("sign_fallout_shelter.png", [("FALLOUT", 0.3), ("SHELTER", 0.3)], (256, 256), (230, 190, 30), (25, 25, 25), (25, 25, 25), 0.3),
 ]
 
@@ -320,6 +321,78 @@ def gun_textures():
     length = np.sqrt(nx * nx + ny * ny + nz * nz)
     nor = np.stack([nx / length, ny / length, nz / length], -1) * 0.5 + 0.5
     save(Image.fromarray((nor * 255).astype(np.uint8)), GEN, "gun_wood_nor.png")
+
+
+def normal_from_height(hgt, strength):
+    """Tangent-space normal map (OpenGL convention) from a tileable height field."""
+    gx = (np.roll(hgt, -1, 1) - np.roll(hgt, 1, 1)) * 0.5
+    gy = (np.roll(hgt, -1, 0) - np.roll(hgt, 1, 0)) * 0.5
+    nx, ny, nz = -gx * strength, gy * strength, np.ones_like(hgt)
+    length = np.sqrt(nx * nx + ny * ny + nz * nz)
+    return np.stack([nx / length, ny / length, nz / length], -1) * 0.5 + 0.5
+
+
+def wrap_blur(arr, r):
+    """Gaussian blur of a float array, wrapping at the edges so it still tiles."""
+    h, w = arr.shape
+    fy = np.fft.fftfreq(h)[:, None]
+    fx = np.fft.fftfreq(w)[None, :]
+    kernel = np.exp(-2 * (math.pi * r) ** 2 * (fx * fx + fy * fy))
+    return np.real(np.fft.ifft2(np.fft.fft2(arr) * kernel))
+
+
+def vehicle_textures():
+    """Faded car paint eaten by rust: one diffuse per paint colour, plus a
+    shared normal map and AO/roughness/metal map. Rust colour and grain come
+    from Poly Haven's CC0 rusty_metal_02 photo; the paint, blistering,
+    scratches and grime are generated."""
+    n = 512
+    src = os.path.join(ASSETS, "textures", "rusty_metal_02", "diff.jpg")
+    photo = np.asarray(Image.open(src).convert("RGB").resize((n, n), Image.LANCZOS), float) / 255
+    rust_lum = photo.mean(-1)
+    # Rust from dark brown to orange, with the photo's grain on top.
+    tone = np.clip(value_noise(n, 16, 3) * 0.7 + rust_lum * 0.6 - 0.15, 0, 1)[..., None]
+    rust_photo = (np.array([0.22, 0.1, 0.05]) * (1 - tone) + np.array([0.58, 0.3, 0.12]) * tone) * (0.75 + 0.5 * rust_lum[..., None])
+    # Where the paint has failed: big patches plus pitting and scratches.
+    patches = value_noise(n, 5, 5)
+    pits = value_noise(n, 40, 2)
+    scratch_img = Image.fromarray(np.zeros((n, n), np.uint8))
+    d = ImageDraw.Draw(scratch_img)
+    for _ in range(25):
+        x0, y0 = rng.random(2) * n
+        ang = rng.normal(0, 0.5)
+        length = rng.uniform(10, 50)
+        d.line([x0, y0, x0 + math.cos(ang) * length, y0 + math.sin(ang) * length], fill=int(rng.integers(120, 255)), width=1)
+    scratches = np.asarray(scratch_img, float) / 255
+    rust = np.clip((patches - 0.52) * 6 + (pits - 0.74) * 5, 0, 1)
+    rust = np.clip(rust + scratches * 0.5, 0, 1)
+    rust = np.clip(wrap_blur(rust, 0.8), 0, 1)
+    # Blistered paint: a dark ring where the paint meets the rust.
+    halo = np.clip((wrap_blur(rust, 3.0) - rust) * 2.5, 0, 1)
+    fade = value_noise(n, 3, 3)
+    grime = np.clip((value_noise(n, 8, 4) - 0.45) * 2, 0, 1)
+    paints = [(0.62, 0.17, 0.13), (0.36, 0.55, 0.6), (0.84, 0.76, 0.56), (0.42, 0.52, 0.37)]
+    for k, col in enumerate(paints):
+        base = np.array(col)[None, None, :] * np.ones((n, n, 1))
+        # Chalky, sun-faded paint is lighter and greyer.
+        chalk = (fade * 0.35)[..., None]
+        base = base * (1 - chalk) + np.array([0.72, 0.72, 0.7]) * chalk
+        base = base * (0.92 + 0.08 * pits[..., None])
+        base = base * (1 - 0.45 * halo[..., None])
+        base = base * (1 - 0.25 * grime[..., None])
+        out = base * (1 - rust[..., None]) + rust_photo * rust[..., None]
+        Image.fromarray((np.clip(out, 0, 1) * 255).astype(np.uint8)).save(os.path.join(GEN, f"car_paint_{k}.jpg"), quality=88)
+        print(f"   textures/generated/car_paint_{k}.jpg")
+    hgt = (1 - rust) * 0.6 + rust * rust_lum * 0.8 + halo * 0.25 - scratches * 0.2
+    nor = normal_from_height(hgt, 6.0)
+    Image.fromarray((nor * 255).astype(np.uint8)).save(os.path.join(GEN, "car_paint_nor.jpg"), quality=92)
+    print("   textures/generated/car_paint_nor.jpg")
+    rough = 0.42 + 0.25 * fade + 0.15 * grime
+    rough = rough * (1 - rust) + (0.82 + 0.15 * rust_lum) * rust
+    metal = 0.05 * (1 - rust) + 0.35 * rust
+    arm = np.stack([1 - 0.35 * halo, np.clip(rough, 0, 1), metal], -1)
+    Image.fromarray((np.clip(arm, 0, 1) * 255).astype(np.uint8)).save(os.path.join(GEN, "car_paint_arm.jpg"), quality=92)
+    print("   textures/generated/car_paint_arm.jpg")
 
 
 def vending_front():
@@ -453,16 +526,23 @@ def main():
     clean_snow()
     gun_textures()
     ui_icons()
+    vehicle_textures()
 
 
 def signs_only():
-    print("generating signs")
     for spec in SIGNS:
         sign(*spec)
 
 
+# Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures}
+
 if __name__ == "__main__":
     import sys
 
-    # `gen_textures.py signs` regenerates just the signs.
-    signs_only() if sys.argv[1:] == ["signs"] else main()
+    if sys.argv[1:]:
+        for name in sys.argv[1:]:
+            print("generating", name)
+            GROUPS[name]()
+    else:
+        main()

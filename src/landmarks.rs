@@ -575,16 +575,6 @@ pub fn spawn_landmarks(
             Transform::from_xyz(bx - 8.0, by + 10.0, bz + 8.6 + dz).with_rotation(Quat::from_rotation_x(FRAC_PI_2)),
         ));
     }
-    // A tarp-covered car left in the parking lot.
-    let (px, pz) = (bx + 5.0, bz + 15.0);
-    prop(&mut commands, &assets.covered_car, Vec3::new(px, ground(px, pz) + 0.3, pz), 0.4, 1.0);
-    for s in [-1.2f32, 1.2] {
-        solid.push(Shape::Circle {
-            x: px + 0.4f32.sin() * s,
-            z: pz + 0.4f32.cos() * s,
-            r: 1.0,
-        });
-    }
 
     // ================= US-169 highway =================
     let mut path = Vec::new();
@@ -623,91 +613,6 @@ pub fn spawn_landmarks(
             Transform::from_xyz(x, ground(x, z) - 0.15, z),
             NotShadowCaster,
         ));
-    }
-
-    // Rusted 1950s sedans.
-    let body = meshes.add(to_mesh_tangents(&meshgen::car_body(1.5)));
-    let cabin = meshes.add(to_mesh(&meshgen::car_cabin(1.5)));
-    let glass = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.08, 0.1, 0.12),
-        metallic: 0.2,
-        perceptual_roughness: 0.15,
-        reflectance: 0.8,
-        ..default()
-    });
-    let chrome = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.55, 0.5, 0.45),
-        metallic: 0.9,
-        perceptual_roughness: 0.45,
-        ..default()
-    });
-    let car_snow = meshes.add(to_mesh_tangents(&meshgen::blob(1.0, 0.18, 0.2, 5, 1.5)));
-    let paints = [
-        Color::srgb(0.75, 0.45, 0.35),
-        Color::srgb(0.45, 0.6, 0.65),
-        Color::srgb(0.8, 0.72, 0.5),
-        Color::srgb(0.55, 0.65, 0.5),
-    ];
-    for (i, (x, z, yaw)) in CARS.iter().enumerate() {
-        let gy = ground(*x, *z);
-        let (ax, az) = (yaw.sin() * 1.2, yaw.cos() * 1.2);
-        solid.push(Shape::Circle { x: x + ax, z: z + az, r: 1.0 });
-        solid.push(Shape::Circle { x: x - ax, z: z - az, r: 1.0 });
-        let paint = materials.add(StandardMaterial {
-            base_color: paints[i % paints.len()],
-            base_color_texture: Some(assets.rust_diff.clone()),
-            normal_map_texture: Some(assets.rust_normal.clone()),
-            perceptual_roughness: 0.8,
-            metallic: 0.3,
-            ..default()
-        });
-        let on_rims = i % 3 == 2;
-        let sink = if on_rims { 0.22 } else { 0.0 };
-        commands
-            .spawn((
-                Transform::from_xyz(*x, gy - sink, *z).with_rotation(Quat::from_rotation_y(*yaw) * Quat::from_rotation_z(if on_rims { 0.04 } else { 0.0 })),
-                Visibility::default(),
-            ))
-            .with_children(|car| {
-                car.spawn((Mesh3d(body.clone()), MeshMaterial3d(paint.clone())));
-                car.spawn((Mesh3d(cabin.clone()), MeshMaterial3d(glass.clone())));
-                // Snow piled on the roof, hood and trunk.
-                for (pos, s) in [
-                    (Vec3::new(0.0, 1.55, -0.12), Vec3::new(0.72, 1.0, 0.95)),
-                    (Vec3::new(0.0, 1.07, 1.6), Vec3::new(0.85, 0.8, 0.7)),
-                    (Vec3::new(0.0, 1.09, -1.75), Vec3::new(0.85, 0.8, 0.55)),
-                ] {
-                    car.spawn((
-                        Mesh3d(car_snow.clone()),
-                        MeshMaterial3d(assets.snow.clone()),
-                        Transform::from_translation(pos).with_scale(s),
-                    ));
-                }
-                for zb in [-2.33f32, 2.33] {
-                    car.spawn((
-                        Mesh3d(meshes.add(Cuboid::new(1.95, 0.14, 0.12))),
-                        MeshMaterial3d(chrome.clone()),
-                        Transform::from_xyz(0.0, 0.58, zb),
-                    ));
-                }
-                for xh in [-0.62f32, 0.62] {
-                    car.spawn((
-                        Mesh3d(meshes.add(Cylinder::new(0.12, 0.05))),
-                        MeshMaterial3d(chrome.clone()),
-                        Transform::from_xyz(xh, 0.78, 2.29).with_rotation(Quat::from_rotation_x(FRAC_PI_2)),
-                    ));
-                }
-                for (wx, wz) in [(-0.86, 1.45), (0.86, 1.45), (-0.86, -1.35), (0.86, -1.35)] {
-                    let scene = if on_rims { assets.rim.clone() } else { assets.tyre.clone() };
-                    let s = if on_rims { 1.3 } else { 1.0 };
-                    car.spawn((
-                        SceneRoot(scene),
-                        Transform::from_xyz(wx, 0.3, wz)
-                            .with_rotation(Quat::from_rotation_y(FRAC_PI_2))
-                            .with_scale(Vec3::splat(s)),
-                    ));
-                }
-            });
     }
 
     // Road sign pointing travellers to Mille Lacs and the vault.
