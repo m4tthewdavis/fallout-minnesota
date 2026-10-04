@@ -55,13 +55,23 @@ Generated from code by `tools/gen_textures.py` (original work, same license as t
 
 - `textures/generated/`: cracked nuclear-ice colour and glow maps, crater scorch decal, soft particle and
   muzzle-flash sprites, starfield, aurora curtain, the Bullseye-Mart, Mille Lacs road, Golden Atomic Mills,
-  Fallout Shelter, speed limit, welcome and bait shop signs, the Frost Cola vending-machine front and glow, a
-  chain-link fence mesh, and the worn steel and scratched wood used on the weapons.
-- `ui/`: HUD icons (health, Body Heat, radiation), CRT scanlines, vignette and the frost overlay.
-- `textures/snow_02/diff_clean.jpg`: derived from Poly Haven's CC0 `snow_02` with the dark twig marks removed.
+  Fallout Shelter, speed limit, welcome and bait shop signs and the Minnesota licence plate, the Frost Cola
+  vending-machine front and glow, a chain-link fence mesh, the worn steel and scratched wood used on the
+  weapons, the snow ground set (colour, normal, roughness), the faded car paint and rust set (the rust grain
+  is taken from Poly Haven's CC0 `rusty_metal_02` photo), boot, paw and hoof prints, the contact shadow and
+  prop grime, the foliage cards (pine and fir sprays, birch twigs, tamarack, prairie grass, reed plumes,
+  snow clumps), birch and aspen bark, and the 8-frame flame flipbook.
+- `ui/`: HUD icons (health, Body Heat, radiation), CRT scanlines, vignette and the frost overlay; the Pip-Boy
+  device art, CRT glass and static frames, and the Vault 143 mascot (an original character, not Bethesda's
+  Vault Boy).
+- `textures/snow_02/diff_clean.jpg`: derived from Poly Haven's CC0 `snow_02` with the dark twig marks removed
+  (kept as the marker the game uses to find this folder).
 
-Procedural at runtime (no files): pines, dead snags and shrubs, the four Frostfang looks, the Glowmoose and its
-antlers, 1950s cars, snowmobiles, sleds, tents, shopping carts, mailboxes, fish houses, silos, the vault gear door,
-rocks and snowdrifts, all four weapons (pipe rifle, scrap shotgun, frontier revolver, ice axe), the sky dome, the
-Pip-Boy map picture, and every sound effect and the music (`src/sim/meshgen.rs`, `src/sim/synth.rs`,
-`src/sim/mapdata.rs`). No audio files are used, so there is no audio to credit.
+Procedural at runtime (no files): the forest (white and red pine, balsam fir, white spruce, paper birch, quaking
+aspen, tamarack), red osier dogwood, staghorn sumac, juniper, prairie grass, cattails and reeds, dead snags,
+the four Frostfang looks, the Glowmoose and its antlers, the 1950s sedans and snowmobiles, gloved hands and
+sleeves, sleds, tents, shopping carts, mailboxes, fish houses, silos, the vault gear door, rocks and
+snowdrifts, all four weapons (pipe rifle, scrap shotgun, frontier revolver, ice axe), the sky dome, the
+snow shader (`src/shaders/snow.wgsl`), the Pip-Boy map picture, and every sound effect and the music
+(`src/sim/meshgen.rs`, `src/sim/vehicles.rs`, `src/sim/flora.rs`, `src/sim/synth.rs`, `src/sim/mapdata.rs`).
+No audio files are used, so there is no audio to credit.

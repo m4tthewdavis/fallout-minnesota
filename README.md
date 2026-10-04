@@ -1,4 +1,4 @@
-# Fallout: Minnesota — Prototype (Milestone 4)
+# Fallout: Minnesota — Prototype (Milestone 5)
 
 A first-person cold-survival prototype made with **Rust + Bevy 0.16**. It is based on the *Fallout: Minnesota* design doc.
 
@@ -39,7 +39,11 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | R | Reload, or clear a cold-weather jam. When dead, respawn |
 | E | Open a container (crates, footlockers, tackle boxes) |
 | B | At a shelter workbench: fit the next upgrade to your weapon (costs scrap) |
-| Tab or M | Pip-Boy: map, stats, inventory (pauses the game) |
+| Tab or M | Raise the Pip-Boy (pauses the game) |
+| In the Pip-Boy: 1 2 3 | STATS / ITEMS / DATA (or click the buttons under the screen) |
+| In the Pip-Boy: Q / E | Previous / next page along the bottom (or click them) |
+| In the Pip-Boy: W S / arrows | Move through a list; on the map, pan (also drag; wheel zooms, C centres) |
+| In the Pip-Boy: Enter | Use the selected aid item |
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
 | Esc | Free the mouse (click to recapture) |
@@ -65,6 +69,16 @@ If the build reports an error, copy the error text back to Claude and it will fi
 - **Sound**: every sound is synthesised in code, so there are no audio files. You'll hear calm wind, a howling blizzard gale, the air-raid siren before a storm, footsteps crunching in snow, gunshots, jams, reloads, wolf howls, snarls and yelps, cracking ice, and Pip-Boy pickup blips.
 - **Day/night cycle**: a full day lasts 12 real minutes. The sun moves and casts moving shadows, sunrise and sunset glow orange, and nights are dark blue with moonlight. Nights are up to 12°F colder, and distant howls carry across the ice. The HUD shows the day and clock.
 - **Animated wolves**: Frostfangs trot with swinging legs (diagonal pairs, like a real trot). Their stride speeds up when they chase, and their tails wag harder on the hunt.
+
+## What's new in Milestone 5
+
+- **Fixes.** Sign lettering always fits inside its border (with a test in CI), and sign posts stand behind the boards. The HUD's status and weapon panels can no longer overlap at any window size. Messages and the HUD hide while the Pip-Boy is up. Cars and snowmobiles no longer float.
+- **Vehicles.** The sedans are rebuilt in detail: real wheel arches, fins, roof and pillars, frosted or smashed glass, chrome bumpers, grille, headlights, door seams and handles, a licence plate, bench seats and a steering wheel, an underbody, and tyres with tread. Faded paint and rust have their own texture, normal and roughness maps. Each wreck is different: flat tyres, bare rims, a missing wheel, doors hanging open, one on its roof. Snowmobiles are one machine with a seat, cowl, windshield, a lugged track on its wheels, and skis on proper suspension. Every vehicle is fitted to the ground under its wheels, skis or track, then sunk a little into the snow.
+- **Snow with depth.** A custom snow shader adds powder, wind-packed and icy-crust areas, wind ripples, scattered pits, sun glints, and hides texture tiling. The twig streaks in the old snow texture are gone. Drifts grow out of the ground behind trees, rocks and fish houses and along the highway. You leave boot prints (wolves and moose leave theirs), old animal trails cross the map, and fresh snow fills prints in. Soft contact shadows sit under trees, rocks, vehicles and buildings, plain props have grime, and calm days are clearer with stronger sunlight.
+- **A Minnesota forest.** White pine, red pine, balsam fir, white spruce, paper birch, quaking aspen and tamarack, built from needle and twig cards with snow on the branches. Conifers grow in groves, birch and aspen in stands, tamarack and spruce by the lakes. Underneath: red osier dogwood, staghorn sumac, juniper, prairie grass, and cattails and reeds round every lake.
+- **The Pip-Boy, New Vegas style.** A physical Pip-Boy on your wrist that raises into view, an amber CRT that powers on with scanlines, curved glass, flicker and static. The pages are STATS (STATUS, S.P.E.C.I.A.L.), ITEMS (WEAPONS, APPAREL, AID) and DATA (WORLD MAP, NOTES), and the header shows level, HP, heat, rads, XP and the date. An original Vault 143 mascot shivers when you're cold, wears a bandage when you're hurt and glows when you're irradiated. It has its own sounds, and the HUD is amber to match.
+- **Hands and reloads you can see.** Gloved hands and sleeves hold every weapon. The left hand pulls the rifle's magazine and seats a fresh one, then works the bolt. It loads shells into the open shotgun one at a time, and swings out and loads the revolver's cylinder. Sounds are timed to the hands. The rifle reload takes 2.2 s (was 1.6 s).
+- **Fire that looks like fire.** Animated flame tongues that flicker and lean in the wind, sparks and showers, embers, smoke, and a warm glow on the snow, all pulsing with the light. One camp's fire is still burning.
 
 ## What's new in Milestone 4
 
@@ -102,11 +116,14 @@ src/
   main.rs        App setup
   sim/           Pure game rules, no Bevy (unit-tested)
     collision.rs Circles and rectangles that push movers out
-    meshgen.rs   Procedural geometry (pines, wolves, moose, cars, sheds, gear door...)
+    meshgen.rs   Procedural geometry (wolves, moose, gloves, drifts, sheds, gear door...)
+    vehicles.rs  Sedans and snowmobiles, and fitting a vehicle to the ground
+    flora.rs     Minnesota trees and undergrowth, and where each grows
+    progress.rs  XP and level
     sfx.rs       Sound rules: variants, cooldowns, mixer, music director, Geiger
     loot.rs      What containers hold; weapon finds
     moose.rs     Glowmoose behaviour: graze, stare, wind up, charge, crash
-    viewmodel.rs First-person weapon pose maths (hold, aim, recoil, reloads)
+    viewmodel.rs First-person weapon and hand poses (hold, aim, recoil, reloads)
     mapdata.rs   Pip-Boy map picture, landmarks and fog of war
     mipmaps.rs   Mipmap chains for loaded textures
     daynight.rs  Clock, sun/moon position, night chill
@@ -120,9 +137,13 @@ src/
   state.rs       Shared resources (Game, weather, messages, effect queue)
   assets.rs      Loads models, textures, font; builds materials and mipmaps
   meshes.rs      Turns sim::meshgen geometry into Bevy meshes
-  world.rs       Terrain, ice, craters, loot, animated lights
-  landmarks.rs   Vault 143, fish houses, silos, Bullseye-Mart, cars, road, power lines
-  nature.rs      Pines, snags, rocks, drifts, shrubs, junk
+  world.rs       Terrain, ice, craters, loot, lights, drifts, contact shadows
+  landmarks.rs   Vault 143, fish houses, silos, Bullseye-Mart, road, power lines
+  vehicles.rs    The wrecked cars and snowmobiles
+  nature.rs      Snags, rocks, drifts, junk
+  flora.rs       Plants the forest, undergrowth and lake shores
+  snow.rs        The snow ground material (shaders/snow.wgsl)
+  tracks.rs      Footprints and old animal trails
   sky.rs         Sky dome, stars, aurora, sun and moon
   particles.rs   Billboard particle effects
   devshot.rs     Screenshot mode for automated previews (FMN_SHOT)
@@ -136,8 +157,8 @@ src/
   moose.rs       The Glowmoose
   interact.rs    Containers (E) and workbenches (B), prompts
   props.rs       Camps, vehicles, vending machines, fences, lamps, caches
-  pipboy.rs      The Pip-Boy screen (map, stats, inventory)
-  hud.rs         Pip-Boy green HUD and overlays
+  pipboy.rs      The Pip-Boy (STATS / ITEMS / DATA)
+  hud.rs         Amber HUD and overlays
 assets/          Models, textures, font, HUD images (see assets/CREDITS.md)
 tools/           Scripts that download and generate the assets
 ```
@@ -148,7 +169,6 @@ tools/           Scripts that download and generate the assets
 - Dialogue system and the first faction (the Skyfolk or the Lockkeepers' Compact)
 - Save/load and false-thaw events
 - Interiors you can enter (the Vault 143 lobby, the fish houses, Bullseye-Mart)
-- Skeletal animation and hand models for the first-person weapons
 - More enemy types (rad-crow flocks, frozen raiders) and a save/load system
 - A quest or two: why did the Overseer open the door?
 - Distance LODs for trees and a settings menu (shadow quality, view distance)
