@@ -72,7 +72,7 @@ pub fn build_chain(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>
 pub fn preserve_coverage(chain: &mut [u8], width: u32, height: u32, levels: u32, cutoff: f32) {
     let coverage = |px: &[u8], scale: f32| -> f32 {
         let n = px.len() / 4;
-        let pass = px.chunks_exact(4).filter(|p| p[3] as f32 / 255.0 * scale > cutoff).count();
+        let pass = px.as_chunks::<4>().0.iter().filter(|p| p[3] as f32 / 255.0 * scale > cutoff).count();
         pass as f32 / n.max(1) as f32
     };
     let (mut w, mut h) = (width as usize, height as usize);
@@ -99,7 +99,7 @@ pub fn preserve_coverage(chain: &mut [u8], width: u32, height: u32, levels: u32,
                 }
                 // Err towards keeping the foliage rather than losing it.
                 let scale = hi;
-                for p in level.chunks_exact_mut(4) {
+                for p in level.as_chunks_mut::<4>().0 {
                     p[3] = (p[3] as f32 * scale).round().min(255.0) as u8;
                 }
             }

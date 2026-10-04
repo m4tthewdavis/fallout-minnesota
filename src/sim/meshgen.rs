@@ -170,16 +170,14 @@ impl MeshData {
     }
 
     pub fn tinted(mut self, c: [f32; 4]) -> Self {
-        for col in &mut self.colors {
-            *col = c;
-        }
+        self.colors.fill(c);
         self
     }
 
     /// Smooth, area-weighted vertex normals from the triangles.
     pub fn recompute_normals(&mut self) {
         let mut acc = vec![[0.0f32; 3]; self.positions.len()];
-        for t in self.indices.chunks_exact(3) {
+        for t in self.indices.as_chunks::<3>().0 {
             let (a, b, c) = (t[0] as usize, t[1] as usize, t[2] as usize);
             let n = cross(
                 sub(self.positions[b], self.positions[a]),
@@ -199,7 +197,7 @@ impl MeshData {
             && self.normals.len() == n
             && self.uvs.len() == n
             && self.colors.len() == n
-            && self.indices.len() % 3 == 0
+            && self.indices.len().is_multiple_of(3)
             && !self.indices.is_empty()
             && self.indices.iter().all(|&i| (i as usize) < n)
             && self.positions.iter().flatten().all(|v| v.is_finite())
@@ -223,7 +221,7 @@ impl MeshData {
     /// means the triangles of a closed, roughly convex shape face outwards.
     pub fn outwardness(&self, centre: V3) -> f32 {
         self.indices
-            .chunks_exact(3)
+            .as_chunks::<3>().0.iter()
             .map(|t| {
                 let (a, b, c) = (
                     self.positions[t[0] as usize],
@@ -503,7 +501,6 @@ pub fn ground_patch(
 /// like real drifts. The rim dips just under the ground so it blends with the
 /// terrain without a seam. `wind` is the direction the wind blows towards.
 /// Positions are in world space; UVs are world xz / `uv_scale` like the terrain.
-#[allow(clippy::too_many_arguments)]
 pub fn drift_patch(
     cx: f32,
     cz: f32,
@@ -685,7 +682,7 @@ pub fn gable_walls(w: f32, h: f32, d: f32, gable: f32, uv_scale: f32) -> MeshDat
     // Drop the bottom face (vertices 12..16 are the cuboid's -Y face).
     let bottom: Vec<u32> = (12..16).collect();
     let mut kept = Vec::with_capacity(m.indices.len());
-    for t in m.indices.chunks_exact(3) {
+    for t in m.indices.as_chunks::<3>().0 {
         if !t.iter().all(|i| bottom.contains(i)) {
             kept.extend_from_slice(t);
         }

@@ -285,7 +285,6 @@ fn start_loops(mut commands: Commands, bank: Res<SoundBank>, mut state: ResMut<A
 
 /// Steer the loops: wind follows the weather (muffled near a shelter), the
 /// siren swells during the warning, and the music director picks the mood.
-#[allow(clippy::too_many_arguments)]
 fn steer_loops(
     real: Res<Time<Real>>,
     weather: Res<WeatherRes>,

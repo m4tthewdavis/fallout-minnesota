@@ -112,7 +112,6 @@ pub fn glow(materials: &mut Assets<StandardMaterial>, color: Color, emissive: Li
 /// A snowdrift growing out of the ground (see [`meshgen::drift_patch`]),
 /// shaded with the same snow shader and tint as the terrain so it blends in.
 /// `along` is the direction its long axis and gentle slope face into.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_drift(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -156,7 +155,7 @@ pub fn spawn_contact_shadow(commands: &mut Commands, meshes: &mut Assets<Mesh>, 
     }
     m.recompute_normals();
     if m.normals[0][1] < 0.0 {
-        for t in m.indices.chunks_exact_mut(3) {
+        for t in m.indices.as_chunks_mut::<3>().0 {
             t.swap(1, 2);
         }
     }

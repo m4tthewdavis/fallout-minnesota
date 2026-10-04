@@ -133,7 +133,6 @@ struct FlameSheet {
 /// A whole fire at `at` (the base of the flames): several tongues, embers,
 /// sparks, smoke, a flickering light and a glow on the ground. `scale` 1 is
 /// a fire-barrel fire.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool) {
     // A big central tongue and smaller ones round it.
     let tongues = [(0.0f32, 0.0f32, 0.55f32, 1.05f32), (0.14, 0.05, 0.38, 0.75), (-0.13, -0.04, 0.36, 0.7), (0.03, -0.13, 0.32, 0.62), (-0.04, 0.13, 0.3, 0.55)];
@@ -179,7 +178,7 @@ pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials:
     }
     m.recompute_normals();
     if m.normals[0][1] < 0.0 {
-        for t in m.indices.chunks_exact_mut(3) {
+        for t in m.indices.as_chunks_mut::<3>().0 {
             t.swap(1, 2);
         }
     }
@@ -631,7 +630,6 @@ fn pulse_glows(time: Res<Time>, glows: Query<(&FireGlow, &MeshMaterial3d<Standar
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn update_particles(
     mut commands: Commands,
     time: Res<Time>,

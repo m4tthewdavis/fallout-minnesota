@@ -80,7 +80,7 @@ pub fn spawn_nature(
     for _ in 0..ROCKS {
         let Some((x, z)) = open_spot(&mut rng, solid, 1.5) else { continue };
         let s = rng.0.range(8.0, 16.0);
-        let yaw = rng.0.range(0.0, 6.28);
+        let yaw = rng.0.range(0.0, std::f32::consts::TAU);
         let gy = ground(x, z);
         prop(&mut commands, &assets.rock, Vec3::new(x, gy - 0.04 * s, z), yaw, s);
         commands.spawn((
@@ -114,7 +114,7 @@ pub fn spawn_nature(
             return;
         }
         let gy = ground(x, z);
-        let yaw = rng.0.range(0.0, 6.28);
+        let yaw = rng.0.range(0.0, std::f32::consts::TAU);
         match (rng.0.f32() * 7.0) as u32 {
             0 => {
                 prop(commands, &assets.barrel, Vec3::new(x, gy, z), yaw, 1.0);
@@ -156,13 +156,13 @@ pub fn spawn_nature(
     };
     for &(cx, cz, _) in &CARS {
         for _ in 0..2 {
-            let a = rng.0.range(0.0, 6.28);
+            let a = rng.0.range(0.0, std::f32::consts::TAU);
             let d = rng.0.range(3.0, 5.0);
             junk_at(&mut commands, &mut rng, solid, cx + a.cos() * d, cz + a.sin() * d);
         }
     }
     for &(sx, sz) in &terrain::SHELTERS {
-        let a = rng.0.range(0.0, 6.28);
+        let a = rng.0.range(0.0, std::f32::consts::TAU);
         junk_at(&mut commands, &mut rng, solid, sx + a.cos() * 4.0, sz + a.sin() * 4.0);
     }
     let (bx, bz, _) = RUINS[0];

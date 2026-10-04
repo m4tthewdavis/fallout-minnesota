@@ -186,7 +186,7 @@ fn spawn_wolf_with(
                 wander_timer: 0.0,
                 speed_jitter: rng.0.range(0.85, 1.05),
                 gait: 0.0,
-                stride: rng.0.range(0.0, 6.28),
+                stride: rng.0.range(0.0, std::f32::consts::TAU),
                 gallop: 0.0,
                 lunge: 0.0,
                 breath_cd: rng.0.range(0.0, 2.0),
@@ -298,7 +298,6 @@ fn blizzard_packs(
     sfx.play_at(Sound::HowlFar, from);
 }
 
-#[allow(clippy::too_many_arguments)]
 fn wolf_ai(
     time: Res<Time>,
     weather: Res<WeatherRes>,
@@ -473,7 +472,6 @@ struct Pose {
     dead: bool,
 }
 
-#[allow(clippy::type_complexity)]
 fn animate_wolves(
     time: Res<Time>,
     wolves: Query<(Entity, &Wolf, &Body, &Transform, Has<Dying>)>,

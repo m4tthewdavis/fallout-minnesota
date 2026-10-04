@@ -44,7 +44,6 @@ fn open_spot(rng: &mut RngRes, solid: &[Shape], clearance: f32) -> Option<(f32, 
 
 /// A fence line of chain-link panels between two points (axis-aligned so it
 /// can be a simple collider).
-#[allow(clippy::too_many_arguments)]
 fn fence(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -190,7 +189,7 @@ pub fn spawn_props(
         let Some((x, z)) = open_spot(&mut rng, solid, 1.5) else { continue };
         let (scene, scale, name) = cache_models[i % cache_models.len()].clone();
         let pos = Vec3::new(x, ground(x, z) + 0.05, z);
-        let yaw = rng.0.range(0.0, 6.28);
+        let yaw = rng.0.range(0.0, std::f32::consts::TAU);
         let cache = loot::roll_cache(&mut rng.0);
         spawn_container(&mut commands, &containers, solid, scene, pos, yaw, scale, name, cache);
         placed += 1;

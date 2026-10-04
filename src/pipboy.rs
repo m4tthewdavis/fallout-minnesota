@@ -709,7 +709,6 @@ fn go_to(st: &mut PipState, sfx: &mut SfxQueue, page: Page) {
     sfx.play(Sound::PipStatic);
 }
 
-#[allow(clippy::too_many_arguments)]
 fn toggle_pipboy(
     keys: Res<ButtonInput<KeyCode>>,
     mut open: ResMut<PipOpen>,
@@ -739,7 +738,7 @@ fn toggle_pipboy(
             let started = std::time::Instant::now();
             let mut data = mapdata::render_base(MAP_PX, &trees.0);
             // The map is drawn in Pip-Boy green; recolour it for the amber screen.
-            for px in data.chunks_exact_mut(4) {
+            for px in data.as_chunks_mut::<4>().0 {
                 let l = px[0].max(px[1]).max(px[2]) as f32;
                 px[0] = l as u8;
                 px[1] = (l * 0.72) as u8;
@@ -790,7 +789,6 @@ fn ease_out(t: f32) -> f32 {
 }
 
 /// Raise and lower the device, power the screen on, and run the CRT effects.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn animate_device(
     real: Res<Time<Real>>,
     mut st: ResMut<PipState>,
@@ -876,7 +874,6 @@ fn animate_device(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn pipboy_input(
     time: Res<Time<Real>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -972,7 +969,6 @@ fn pipboy_input(
 }
 
 /// Mouse: the buttons under the screen, the page tabs and the list rows.
-#[allow(clippy::type_complexity)]
 fn buttons(
     mut st: ResMut<PipState>,
     mut sfx: ResMut<SfxQueue>,
@@ -1004,7 +1000,6 @@ fn buttons(
 }
 
 /// Show the right page layout; mark the active top button and page tab.
-#[allow(clippy::type_complexity)]
 fn show_layout(
     st: Res<PipState>,
     mut layouts: Query<(&mut Node, &LayoutNode)>,
@@ -1077,7 +1072,6 @@ fn update_header(st: Res<PipState>, game: Res<Game>, clock: Res<ClockRes>, mut q
 }
 
 /// STATUS: the mascot shows how you're doing; bars and conditions beside it.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_status(
     real: Res<Time<Real>>,
     st: Res<PipState>,
@@ -1252,7 +1246,6 @@ fn list_items(page: Page, game: &Game) -> Vec<(String, String)> {
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn update_list(
     st: Res<PipState>,
     game: Res<Game>,
@@ -1331,7 +1324,6 @@ fn update_notes(st: Res<PipState>, game: Res<Game>, audio: Res<AudioSettings>, g
 }
 
 /// Place the map, markers, player arrow and cursor for the current zoom and centre.
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_map(
     st: Res<PipState>,
     player: Query<(&Transform, &Player)>,

@@ -129,7 +129,7 @@ pub(crate) fn spawn_moose(commands: &mut Commands, a: &MooseAssets, pos: Vec2, r
             Body::new(Species::Moose, 220.0, 1.6, 1.25),
             MooseAi {
                 brain: Moose::new(&mut rng.0),
-                stride: rng.0.range(0.0, 6.28),
+                stride: rng.0.range(0.0, std::f32::consts::TAU),
                 gait: 0.0,
                 crashed: false,
                 last_beat: 0,
@@ -208,7 +208,6 @@ pub fn spawn_lineup(mut commands: Commands, assets: Res<MooseAssets>, mut rng: R
         .insert((Frozen, Transform::from_xyz(x, terrain::walk_height(x, z), z).with_rotation(Quat::from_rotation_y(std::f32::consts::PI + 0.35))));
 }
 
-#[allow(clippy::too_many_arguments)]
 fn moose_ai(
     time: Res<Time>,
     colliders: Res<Colliders>,
@@ -295,7 +294,6 @@ fn moose_ai(
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn animate_moose(
     time: Res<Time>,
     mut moose: Query<(Entity, &mut MooseAi, &Body, Has<Dying>)>,

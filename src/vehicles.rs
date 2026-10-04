@@ -259,7 +259,6 @@ fn car_kit(server: &AssetServer, meshes: &mut Assets<Mesh>, materials: &mut Asse
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_car(commands: &mut Commands, meshes: &mut Assets<Mesh>, assets: &GameAssets, kit: &CarKit, wreck: &Wreck, seed: u64, x: f32, z: f32, yaw: f32) {
     let wheels = v::sedan_wheels();
     // A flipped car rests on its crumpled roof (and nose) instead of its wheels.
@@ -321,7 +320,7 @@ fn spawn_car(commands: &mut Commands, meshes: &mut Assets<Mesh>, assets: &GameAs
                     Tyre | Flat => {
                         car.spawn((mesh(if w == Flat { &kit.flat } else { &kit.tyre }, &kit.rubber_mat), tf));
                         car.spawn((mesh(&kit.rim, &assets.rust), tf));
-                        if (seed + wz.to_bits() as u64) % 3 != 0 {
+                        if !(seed + wz.to_bits() as u64).is_multiple_of(3) {
                             car.spawn((mesh(&kit.hubcap, &kit.chrome_mat), tf.with_translation(tf.translation + Vec3::X * side * 0.07)));
                         }
                     }
@@ -345,7 +344,7 @@ fn spawn_car(commands: &mut Commands, meshes: &mut Assets<Mesh>, assets: &GameAs
             }
         });
         // Snow drifted against the windward side and banked round the wheels.
-        let windward = if seed % 2 == 0 { -1.0 } else { 1.0 };
+        let windward = if seed.is_multiple_of(2) { -1.0 } else { 1.0 };
         root.spawn((
             Mesh3d(kit.drift.clone()),
             MeshMaterial3d(assets.snow.clone()),

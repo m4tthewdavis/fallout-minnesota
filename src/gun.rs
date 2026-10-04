@@ -256,7 +256,6 @@ fn make_mats(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> M
 }
 
 /// A part that only shows once `up` is fitted to `kind`.
-#[allow(clippy::too_many_arguments)]
 fn upgrade_part(
     p: &mut ChildSpawnerCommands,
     meshes: &mut Assets<Mesh>,
@@ -291,7 +290,7 @@ fn bandolier(p: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Mats, 
 /// Mirror a right-hand mesh into a left hand.
 fn mirrored(m: MeshData) -> MeshData {
     let mut m = m.scaled([-1.0, 1.0, 1.0]);
-    for t in m.indices.chunks_exact_mut(3) {
+    for t in m.indices.as_chunks_mut::<3>().0 {
         t.swap(1, 2);
     }
     m
@@ -340,7 +339,6 @@ fn spawn_arms(cam: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materia
 
 /// Place the hands on the weapon, pick each hand's shape, stretch the
 /// sleeves back to the elbows, and show what the left hand is carrying.
-#[allow(clippy::type_complexity)]
 fn pose_hands(
     last: Res<LastPose>,
     mut roots: Query<(&HandRoot, &mut Transform, &Children), Without<Sleeve>>,
@@ -427,10 +425,10 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
     let t0 = Transform::default();
 
     // ---- Receiver: one solid block every other part bolts on to ----
-    part(gun, meshes, to_mesh_tangents(&meshgen::cuboid([0.072, 0.095, 0.3], 0.12)), &steel, Transform::from_xyz(0.0, 0.0, -0.02), layer);
-    part(gun, meshes, to_mesh_tangents(&meshgen::cuboid([0.06, 0.012, 0.22], 0.12)), &steel, Transform::from_xyz(0.0, 0.0535, -0.03), layer);
+    part(gun, meshes, to_mesh_tangents(&meshgen::cuboid([0.072, 0.095, 0.3], 0.12)), steel, Transform::from_xyz(0.0, 0.0, -0.02), layer);
+    part(gun, meshes, to_mesh_tangents(&meshgen::cuboid([0.06, 0.012, 0.22], 0.12)), steel, Transform::from_xyz(0.0, 0.0535, -0.03), layer);
     // Ejection port and bolt slot on the right.
-    part(gun, meshes, Cuboid::new(0.002, 0.03, 0.075).into(), &black, Transform::from_xyz(0.0365, 0.015, -0.02), layer);
+    part(gun, meshes, Cuboid::new(0.002, 0.03, 0.075).into(), black, Transform::from_xyz(0.0365, 0.015, -0.02), layer);
     // Weld beads along the lower seams and around the barrel joint.
     let mut beads = MeshData::default();
     let mut k = 0;
@@ -446,7 +444,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         let a = i as f32 / 14.0 * 2.0 * PI;
         beads.append(&meshgen::blob(0.006, 1.0, 0.35, 100 + i, 0.05).translated([a.cos() * 0.034, BORE_Y + a.sin() * 0.034, -0.168]));
     }
-    part(gun, meshes, to_mesh(&beads), &weld, t0, layer);
+    part(gun, meshes, to_mesh(&beads), weld, t0, layer);
     // Brass screws holding the side plates and the stock.
     let mut screws = MeshData::default();
     for (y, z) in [(0.025, -0.13), (0.025, 0.08), (-0.028, 0.08), (-0.028, -0.13), (0.0, 0.12)] {
@@ -457,15 +455,15 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             screws.append(&head);
         }
     }
-    part(gun, meshes, to_mesh(&screws), &brass, t0, layer);
+    part(gun, meshes, to_mesh(&screws), brass, t0, layer);
 
     // ---- Barrel: plumbing pipe with hex couplings and a muzzle cap ----
     let barrel_at = |m: MeshData, z: f32| m.translated([0.0, BORE_Y, z]);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.034, 0.0), (0.034, 0.05)], 6), -0.165)), &steel, t0, layer);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.022, 0.0), (0.022, 0.585)], 16), -0.2)), &pipe, t0, layer);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.03, 0.0), (0.031, 0.04)], 6), -0.47)), &steel, t0, layer);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.029, 0.0), (0.029, 0.035), (0.017, 0.042)], 12), -0.765)), &steel, t0, layer);
-    part(gun, meshes, Circle::new(0.012).into(), &black, Transform::from_xyz(0.0, BORE_Y, -0.8075).with_rotation(Quat::from_rotation_y(PI)), layer);
+    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.034, 0.0), (0.034, 0.05)], 6), -0.165)), steel, t0, layer);
+    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.022, 0.0), (0.022, 0.585)], 16), -0.2)), pipe, t0, layer);
+    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.03, 0.0), (0.031, 0.04)], 6), -0.47)), steel, t0, layer);
+    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.029, 0.0), (0.029, 0.035), (0.017, 0.042)], 12), -0.765)), steel, t0, layer);
+    part(gun, meshes, Circle::new(0.012).into(), black, Transform::from_xyz(0.0, BORE_Y, -0.8075).with_rotation(Quat::from_rotation_y(PI)), layer);
 
     // ---- Wooden handguard, lashed on with wire and hose clamps ----
     let handguard = meshgen::loft_z(
@@ -478,11 +476,11 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         14,
         0.12,
     );
-    part(gun, meshes, to_mesh_tangents(&handguard), &wood, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&handguard), wood, t0, layer);
     for z in [-0.29f32, -0.6] {
-        part(gun, meshes, to_mesh(&band(-0.009, 0.033, 0.05, 0.012).translated([0.0, 0.0, z])), &steel, t0, layer);
-        part(gun, meshes, Cuboid::new(0.012, 0.016, 0.016).into(), &steel, Transform::from_xyz(0.035, -0.009, z), layer);
-        part(gun, meshes, Cylinder::new(0.004, 0.012).into(), &brass, Transform::from_xyz(0.035, 0.002, z).with_rotation(Quat::from_rotation_x(0.0)), layer);
+        part(gun, meshes, to_mesh(&band(-0.009, 0.033, 0.05, 0.012).translated([0.0, 0.0, z])), steel, t0, layer);
+        part(gun, meshes, Cuboid::new(0.012, 0.016, 0.016).into(), steel, Transform::from_xyz(0.035, -0.009, z), layer);
+        part(gun, meshes, Cylinder::new(0.004, 0.012).into(), brass, Transform::from_xyz(0.035, 0.002, z).with_rotation(Quat::from_rotation_x(0.0)), layer);
     }
     // Copper wire binding: a helix around barrel and handguard.
     let helix: Vec<[f32; 3]> = (0..=90)
@@ -492,23 +490,23 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             [a.cos() * 0.032, -0.009 + a.sin() * 0.049, -0.4 - t * 0.04]
         })
         .collect();
-    part(gun, meshes, to_mesh(&meshgen::tube(&helix, 0.0022, 5)), &copper, t0, layer);
+    part(gun, meshes, to_mesh(&meshgen::tube(&helix, 0.0022, 5)), copper, t0, layer);
 
     // ---- Sights: rear peep on the cover, front post with guard wings ----
-    part(gun, meshes, Cuboid::new(0.024, 0.006, 0.02).into(), &steel, Transform::from_xyz(0.0, 0.0625, 0.09), layer);
-    part(gun, meshes, Cuboid::new(0.006, 0.008, 0.004).into(), &steel, Transform::from_xyz(0.0, 0.066, 0.09), layer);
+    part(gun, meshes, Cuboid::new(0.024, 0.006, 0.02).into(), steel, Transform::from_xyz(0.0, 0.0625, 0.09), layer);
+    part(gun, meshes, Cuboid::new(0.006, 0.008, 0.004).into(), steel, Transform::from_xyz(0.0, 0.066, 0.09), layer);
     part(
         gun,
         meshes,
         Torus::new(0.0055, 0.0105).into(),
-        &steel,
+        steel,
         Transform::from_xyz(0.0, RIFLE_SIGHT, 0.09).with_rotation(Quat::from_rotation_x(FRAC_PI_2)),
         layer,
     );
-    part(gun, meshes, Cuboid::new(0.02, 0.012, 0.02).into(), &steel, Transform::from_xyz(0.0, 0.04, -0.74), layer);
-    part(gun, meshes, Cuboid::new(0.005, 0.03, 0.005).into(), &steel, Transform::from_xyz(0.0, RIFLE_SIGHT - 0.015, -0.74), layer);
+    part(gun, meshes, Cuboid::new(0.02, 0.012, 0.02).into(), steel, Transform::from_xyz(0.0, 0.04, -0.74), layer);
+    part(gun, meshes, Cuboid::new(0.005, 0.03, 0.005).into(), steel, Transform::from_xyz(0.0, RIFLE_SIGHT - 0.015, -0.74), layer);
     for x in [-0.012f32, 0.012] {
-        part(gun, meshes, Cuboid::new(0.004, 0.028, 0.012).into(), &steel, Transform::from_xyz(x, 0.058, -0.74), layer);
+        part(gun, meshes, Cuboid::new(0.004, 0.028, 0.012).into(), steel, Transform::from_xyz(x, 0.058, -0.74), layer);
     }
 
     // ---- Lower: trigger guard, trigger, grip, magazine ----
@@ -516,20 +514,20 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         gun,
         meshes,
         Torus::new(0.016, 0.021).into(),
-        &steel,
+        steel,
         Transform::from_xyz(0.0, -0.066, 0.03).with_rotation(Quat::from_rotation_z(FRAC_PI_2)),
         layer,
     );
     let trigger_rest = Vec3::new(0.0, -0.048, 0.024);
     gun.spawn((Transform::from_translation(trigger_rest), Visibility::default(), GunTrigger(trigger_rest)))
         .with_children(|t| {
-            part(t, meshes, Cuboid::new(0.005, 0.022, 0.006).into(), &steel, Transform::from_xyz(0.0, -0.011, 0.0).with_rotation(Quat::from_rotation_x(-0.25)), layer);
+            part(t, meshes, Cuboid::new(0.005, 0.022, 0.006).into(), steel, Transform::from_xyz(0.0, -0.011, 0.0).with_rotation(Quat::from_rotation_x(-0.25)), layer);
         });
     part(
         gun,
         meshes,
         to_mesh_tangents(&meshgen::cuboid([0.034, 0.11, 0.046], 0.12)),
-        &wood,
+        wood,
         Transform::from_xyz(0.0, -0.1, 0.088).with_rotation(Quat::from_rotation_x(0.35)),
         layer,
     );
@@ -540,13 +538,13 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
                 m,
                 meshes,
                 to_mesh_tangents(&meshgen::cuboid([0.03, 0.12, 0.05], 0.12)),
-                &steel,
+                steel,
                 Transform::from_xyz(0.0, -0.058, 0.004).with_rotation(Quat::from_rotation_x(-0.12)),
                 layer,
             );
-            part(m, meshes, Cuboid::new(0.034, 0.008, 0.056).into(), &steel, Transform::from_xyz(0.0, -0.118, 0.011).with_rotation(Quat::from_rotation_x(-0.12)), layer);
+            part(m, meshes, Cuboid::new(0.034, 0.008, 0.056).into(), steel, Transform::from_xyz(0.0, -0.118, 0.011).with_rotation(Quat::from_rotation_x(-0.12)), layer);
             // The top round peeking out of the feed lips.
-            part(m, meshes, Cylinder::new(0.0045, 0.03).into(), &brass, Transform::from_xyz(0.0, 0.002, -0.004).with_rotation(Quat::from_rotation_x(FRAC_PI_2)), layer);
+            part(m, meshes, Cylinder::new(0.0045, 0.03).into(), brass, Transform::from_xyz(0.0, 0.002, -0.004).with_rotation(Quat::from_rotation_x(FRAC_PI_2)), layer);
             // Extended magazine: a longer body bolted under the floorplate.
             upgrade_part(
                 m,
@@ -564,14 +562,14 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
     let hammer_rest = Vec3::new(0.0, 0.036, 0.128);
     gun.spawn((Transform::from_translation(hammer_rest), Visibility::default(), GunHammer(hammer_rest)))
         .with_children(|hm| {
-            part(hm, meshes, Cuboid::new(0.01, 0.026, 0.01).into(), &steel, Transform::from_xyz(0.0, 0.013, 0.0), layer);
-            part(hm, meshes, Cuboid::new(0.01, 0.006, 0.018).into(), &steel, Transform::from_xyz(0.0, 0.025, 0.007), layer);
+            part(hm, meshes, Cuboid::new(0.01, 0.026, 0.01).into(), steel, Transform::from_xyz(0.0, 0.013, 0.0), layer);
+            part(hm, meshes, Cuboid::new(0.01, 0.006, 0.018).into(), steel, Transform::from_xyz(0.0, 0.025, 0.007), layer);
         });
     let bolt_rest = Vec3::new(0.037, 0.02, 0.0);
     gun.spawn((Transform::from_translation(bolt_rest), Visibility::default(), GunBolt(bolt_rest)))
         .with_children(|b| {
-            part(b, meshes, Cylinder::new(0.0055, 0.045).into(), &steel, Transform::from_xyz(0.022, 0.0, 0.0).with_rotation(Quat::from_rotation_z(FRAC_PI_2)), layer);
-            part(b, meshes, Sphere::new(0.012).into(), &steel, Transform::from_xyz(0.047, 0.0, 0.0), layer);
+            part(b, meshes, Cylinder::new(0.0055, 0.045).into(), steel, Transform::from_xyz(0.022, 0.0, 0.0).with_rotation(Quat::from_rotation_z(FRAC_PI_2)), layer);
+            part(b, meshes, Sphere::new(0.012).into(), steel, Transform::from_xyz(0.047, 0.0, 0.0), layer);
         });
 
     // ---- Stock: carved wood, taped wrist, rubber butt pad ----
@@ -582,7 +580,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         sec(0.41, -0.065, 0.034, 0.078, 3.0),
         sec(0.43, -0.066, 0.034, 0.079, 3.0),
     ];
-    part(gun, meshes, to_mesh_tangents(&meshgen::loft_z(&stock_secs, 16, 0.12)), &wood, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&meshgen::loft_z(&stock_secs, 16, 0.12)), wood, t0, layer);
     for z in [0.18f32, 0.2, 0.22] {
         // Interpolate the stock's cross-section at this point.
         let t = (z - 0.125) / (0.2 - 0.125);
@@ -592,9 +590,9 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             let t = (z - 0.2) / 0.1;
             (-0.025 - 0.025 * t, 0.028 + 0.003 * t, 0.04 + 0.02 * t)
         };
-        part(gun, meshes, to_mesh(&band(y, rx + 0.002, ry + 0.002, 0.018).translated([0.0, 0.0, z])), &tape, t0, layer);
+        part(gun, meshes, to_mesh(&band(y, rx + 0.002, ry + 0.002, 0.018).translated([0.0, 0.0, z])), tape, t0, layer);
     }
-    part(gun, meshes, Cuboid::new(0.07, 0.16, 0.018).into(), &rubber, Transform::from_xyz(0.0, -0.066, 0.44), layer);
+    part(gun, meshes, Cuboid::new(0.07, 0.16, 0.018).into(), rubber, Transform::from_xyz(0.0, -0.066, 0.44), layer);
 
     // ---- Sling with swivels ----
     let rear = Vec3::new(0.0, -0.152, 0.37);
@@ -604,13 +602,13 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             gun,
             meshes,
             Torus::new(0.006, 0.01).into(),
-            &steel,
+            steel,
             Transform::from_translation(p).with_rotation(Quat::from_rotation_z(FRAC_PI_2)),
             layer,
         );
     }
     let strap = meshgen::catenary((rear - Vec3::Y * 0.01).to_array(), (front - Vec3::Y * 0.01).to_array(), 0.05, 24);
-    part(gun, meshes, to_mesh(&meshgen::tube(&strap, 0.005, 6).scaled([2.4, 1.0, 1.0])), &leather, t0, layer);
+    part(gun, meshes, to_mesh(&meshgen::tube(&strap, 0.005, 6).scaled([2.4, 1.0, 1.0])), leather, t0, layer);
 
     // ---- Upgrade visuals ----
     // Insulated action: a quilted fleece wrap taped round the receiver.
@@ -827,6 +825,7 @@ fn build_revolver(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &M
 
 /// The ice axe: a hickory haft with a leather-wrapped grip, a steel head with
 /// a pick on one side and an adze on the other, a wrist loop, and rime.
+#[allow(clippy::approx_constant)] // 0.318 m is the axe head's height, not 1/pi
 fn build_axe(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Mats, layer: &RenderLayers) {
     let Mats { steel, wood, leather, frost, .. } = m;
     let t0 = Transform::default();
@@ -883,7 +882,6 @@ fn show_upgrades(game: Res<Game>, mut q: Query<(&mut Visibility, &UpgradeVisual)
 
 /// Right mouse: aim down the sights (zooms both cameras). Sprinting, reloading
 /// and being dead cancel it.
-#[allow(clippy::too_many_arguments)]
 fn aim_down_sights(
     time: Res<Time>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -947,7 +945,6 @@ fn aim_down_sights(
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn pose_gun(
     time: Res<Time>,
     mut game: ResMut<Game>,

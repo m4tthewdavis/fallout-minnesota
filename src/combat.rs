@@ -169,7 +169,6 @@ struct Strike {
     dir: Vec3,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn fire(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,

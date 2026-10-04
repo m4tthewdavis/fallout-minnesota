@@ -188,7 +188,6 @@ fn lerp3(a: Vec3, b: Vec3, t: f32) -> Vec3 {
     a + (b - a) * t.clamp(0.0, 1.0)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn update_sky(
     time: Res<Time>,
     clock: Res<ClockRes>,

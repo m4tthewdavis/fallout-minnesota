@@ -7,6 +7,10 @@
 //! wolves, cars and buildings, a sky with stars and aurora, particles, bloom,
 //! a Pip-Boy HUD, music and a Geiger counter.
 
+// Bevy systems take many resources and queries by design, and their query
+// filters are long tuples: these two lints fire on nearly every system.
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 mod assets;
 mod audio;
 mod combat;

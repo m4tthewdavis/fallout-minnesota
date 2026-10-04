@@ -430,7 +430,7 @@ fn normalize(mut s: Vec<f32>, peak: f32) -> Vec<f32> {
 /// A simple echo / room tail: `delay` seconds, `feedback` per repeat.
 fn echo(s: &mut Vec<f32>, delay: f32, feedback: f32, mix: f32, tail: f32) {
     let d = len(delay).max(1);
-    s.extend(std::iter::repeat(0.0).take(len(tail)));
+    s.extend(std::iter::repeat_n(0.0, len(tail)));
     let dry = s.clone();
     let mut fb = vec![0.0f32; s.len()];
     for i in 0..s.len() {

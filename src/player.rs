@@ -251,7 +251,6 @@ fn move_player(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn survival_tick(
     time: Res<Time>,
     mut game: ResMut<Game>,

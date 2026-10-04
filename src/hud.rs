@@ -490,7 +490,6 @@ fn compass_strip(heading: f32, markers: &[(f32, char)]) -> String {
     out
 }
 
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_hud(
     time: Res<Time>,
     game: Res<Game>,

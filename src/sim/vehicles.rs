@@ -255,7 +255,7 @@ fn mirror_x(m: &MeshData) -> MeshData {
     for n in &mut out.normals {
         n[0] = -n[0];
     }
-    for t in out.indices.chunks_exact_mut(3) {
+    for t in out.indices.as_chunks_mut::<3>().0 {
         t.swap(1, 2);
     }
     out
@@ -503,8 +503,8 @@ pub fn window_glass(w: Window) -> MeshData {
         Window::Windshield | Window::Rear => {
             let half = frame.len() / 2;
             let mut m = MeshData::default();
-            for k in 0..half {
-                m.vertex(frame[k], [0.0, 1.0, 0.0], [0.0, 0.0], WHITE);
+            for &p in &frame[..half] {
+                m.vertex(p, [0.0, 1.0, 0.0], [0.0, 0.0], WHITE);
             }
             for k in 0..half {
                 m.vertex(frame[frame.len() - 1 - k], [0.0, 1.0, 0.0], [0.0, 0.0], WHITE);
@@ -672,7 +672,7 @@ pub fn door_opening(side: f32) -> MeshData {
     let pts = [[x, SILL_Y + 0.06, 0.85], [x, SILL_Y + 0.03, -0.21], [x, BELT_Y - 0.02, -0.21], [x, BELT_Y - 0.02, 0.85]];
     let mut m = pane(&pts);
     if dot(m.normals[0], [side, 0.0, 0.0]) < 0.0 {
-        for t in m.indices.chunks_exact_mut(3) {
+        for t in m.indices.as_chunks_mut::<3>().0 {
             t.swap(1, 2);
         }
         m.recompute_normals();
@@ -726,7 +726,7 @@ pub fn tyre(radius: f32, width: f32, flat: f32) -> MeshData {
     m.recompute_normals();
     // Make sure the tread faces out.
     if m.outwardness([0.0; 3]) < 0.0 {
-        for t in m.indices.chunks_exact_mut(3) {
+        for t in m.indices.as_chunks_mut::<3>().0 {
             t.swap(1, 2);
         }
         m.recompute_normals();
@@ -808,9 +808,7 @@ pub fn snowmobile_body() -> MeshData {
     hull.append(&meshgen::cuboid([0.54, 0.04, 1.6], 1.0).translated([0.0, 0.64, -0.82]));
     let plate = extrude_profile(&[(0.0, 0.3), (-1.42, 0.3), (-1.6, 0.44), (-1.6, 0.66), (0.0, 0.66)], 0.014, 0.006, 0.0, 1.0);
     hull.append(&with_mirror(plate.translated([0.26, 0.0, 0.0])));
-    for c in &mut hull.colors {
-        *c = WHITE;
-    }
+    hull.colors.fill(WHITE);
     for (p, c) in hull.positions.iter().zip(hull.colors.iter_mut()) {
         if p[1] < 0.4 || (p[1] < 0.5 && p[2] > -0.1) {
             *c = [0.12, 0.12, 0.13, 1.0];

@@ -125,7 +125,6 @@ fn free(x: f32, z: f32, clearance: f32, solid: &[Shape], avoid: &dyn Fn(f32, f32
     terrain::is_open_ground(x, z) && !avoid(x, z) && !collision::blocked(x, z, clearance, solid)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn plant_forest(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -326,7 +325,7 @@ pub fn plant_forest(
                 continue;
             }
             let y = terrain::height(x, z).max(ICE_LEVEL);
-            let tf = Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(rng.range(0.0, 6.28))).with_scale(Vec3::splat(rng.range(0.85, 1.15)));
+            let tf = Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU))).with_scale(Vec3::splat(rng.range(0.85, 1.15)));
             let (stalks, tops, top_mat) = if rng.chance(0.7) {
                 let (s, h) = &cattail_set[(li + k) % cattail_set.len()];
                 (s, h, &mats.plain)

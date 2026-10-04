@@ -57,7 +57,6 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
 }
 
 /// Spawn a container: a model with loot inside, a collider and a marker ring.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_container(
     commands: &mut Commands,
     assets: &ContainerAssets,
@@ -102,7 +101,6 @@ fn reset_prompt(mut prompt: ResMut<Prompt>) {
     prompt.0.clear();
 }
 
-#[allow(clippy::too_many_arguments)]
 fn interact(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
