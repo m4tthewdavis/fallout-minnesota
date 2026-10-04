@@ -1154,13 +1154,16 @@ fn update_status(
     };
     if let Ok(mut tx) = text.single_mut() {
         tx.0 = format!(
-            "CONDITIONS\n{}\n\nWEATHER\n  {}\n  Air {:.0}F, feels {:.0}F\n\nRADIATION\n  {:.0} rads\n  -{:.0} max HP",
+            "CONDITIONS\n{}\n\nWEATHER\n  {}\n  Air {:.0}F, feels {:.0}F\n\nRADIATION\n  {:.0} rads\n  {}",
             effects.iter().map(|e| format!("  {e}")).collect::<Vec<_>>().join("\n"),
             weather_line,
             air,
             feels,
             s.rads,
-            Survival::BASE_MAX_HEALTH - s.max_health(),
+            match Survival::BASE_MAX_HEALTH - s.max_health() {
+                lost if lost >= 0.5 => format!("Max HP -{lost:.0}"),
+                _ => "Max HP unaffected".to_string(),
+            },
         );
     }
     if let Ok(mut tx) = side.single_mut() {

@@ -777,7 +777,8 @@ def pipboy_art():
     u, v = (xx / w - 0.5) * 2, (yy / h - 0.5) * 2
     r = np.sqrt((u * 0.92) ** 4 + (v * 0.92) ** 4) ** 0.5
     dark = np.clip((r - 0.62) / 0.5, 0, 1) ** 1.6
-    glare = np.exp(-(((u + 0.45) / 0.3) ** 2 + ((v + 0.7) / 0.12) ** 2)) * 0.03
+    # (A glass glare read as a grey smear over the text, so there is none.)
+    glare = np.zeros_like(u)
     rgb = np.ones((h, w, 3)) * (glare[..., None] > dark[..., None])
     alpha = np.clip(dark * 0.95 + glare, 0, 1)
     out = np.dstack([rgb * 255, alpha * 255]).astype(np.uint8)
