@@ -23,7 +23,7 @@ use crate::player::{cursor_locked, Player};
 use crate::sim::collision;
 use crate::sim::meshgen::{self, sec, MeshData};
 use crate::sim::combat::{Upgrade, WeaponKind};
-use crate::sim::viewmodel::{self, Inputs, SCALE};
+use crate::sim::viewmodel::{self, Held, Inputs, Pose, SCALE};
 use crate::state::{Colliders, Game};
 
 /// Render layer for the view model and its camera.
@@ -101,6 +101,33 @@ struct GunState {
     last_pos: Option<Vec3>,
 }
 
+/// The first-person hands and sleeves (hidden with the gun by the Pip-Boy).
+#[derive(Component)]
+pub struct ArmsRig;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Side {
+    Left,
+    Right,
+}
+
+/// A hand's root: placed every frame from the pose.
+#[derive(Component)]
+struct HandRoot(Side);
+/// One of a hand's shapes (open, half, fist); the nearest to the grip shows.
+#[derive(Component)]
+struct HandShape(f32);
+/// A sleeve from the wrist to the (off-screen) elbow.
+#[derive(Component)]
+struct Sleeve(Side);
+/// Shells or rounds carried in the left hand.
+#[derive(Component)]
+struct HeldItem(Held);
+
+/// The pose worked out this frame, for the hands.
+#[derive(Resource, Default)]
+struct LastPose(Option<Pose>);
+
 pub struct GunPlugin;
 
 impl Plugin for GunPlugin {
@@ -108,7 +135,8 @@ impl Plugin for GunPlugin {
         app.init_resource::<GunState>()
             .init_resource::<ForceAim>()
             .init_resource::<AimAmount>()
-            .add_systems(Update, (aim_down_sights, pose_gun, show_current_weapon, show_upgrades).chain());
+            .init_resource::<LastPose>()
+            .add_systems(Update, (aim_down_sights, pose_gun, pose_hands, show_current_weapon, show_upgrades).chain());
     }
 }
 
@@ -140,6 +168,7 @@ pub fn spawn_view_model(
     ));
     let h = viewmodel::hip(WeaponKind::PipeRifle);
     let mats = make_mats(materials, assets);
+    spawn_arms(cam, meshes, materials, &mats, &layer);
     cam.spawn((
         Transform::from_xyz(h[0], h[1], h[2]).with_scale(Vec3::splat(SCALE)),
         Visibility::default(),
@@ -259,6 +288,113 @@ fn bandolier(p: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Mats, 
 }
 
 /// A part of the rifle on the view-model layer.
+/// Mirror a right-hand mesh into a left hand.
+fn mirrored(m: MeshData) -> MeshData {
+    let mut m = m.scaled([-1.0, 1.0, 1.0]);
+    for t in m.indices.chunks_exact_mut(3) {
+        t.swap(1, 2);
+    }
+    m
+}
+
+/// Gloved hands with three grip shapes each, sleeves, and the shells and
+/// rounds the left hand carries while loading.
+fn spawn_arms(cam: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, m: &Mats, layer: &RenderLayers) {
+    let glove = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 0.72,
+        ..default()
+    });
+    let cloth = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 0.95,
+        ..default()
+    });
+    let shapes = [0.0f32, 0.55, 1.0];
+    for side in [Side::Left, Side::Right] {
+        cam.spawn((Transform::default(), Visibility::default(), HandRoot(side), ArmsRig)).with_children(|h| {
+            for g in shapes {
+                let mesh = meshgen::glove(g);
+                let mesh = if side == Side::Left { mirrored(mesh) } else { mesh };
+                h.spawn((Mesh3d(meshes.add(to_mesh(&mesh))), MeshMaterial3d(glove.clone()), Transform::default(), Visibility::Hidden, HandShape(g), NotShadowCaster, layer.clone()));
+            }
+            if side == Side::Left {
+                // Two shotgun shells, and three revolver rounds, held in the fingers.
+                let fist = Vec3::from_array(viewmodel::FIST_CENTRE);
+                h.spawn((Transform::from_translation(fist), Visibility::Hidden, HeldItem(Held::Shells))).with_children(|i| {
+                    for dz in [-0.012f32, 0.012] {
+                        part(i, meshes, Cylinder::new(0.0115, 0.07).into(), &m.red, Transform::from_xyz(0.0, 0.0, dz).with_rotation(Quat::from_rotation_z(FRAC_PI_2)), layer);
+                        part(i, meshes, Cylinder::new(0.012, 0.016).into(), &m.brass, Transform::from_xyz(0.035, 0.0, dz).with_rotation(Quat::from_rotation_z(FRAC_PI_2)), layer);
+                    }
+                });
+                h.spawn((Transform::from_translation(fist), Visibility::Hidden, HeldItem(Held::Rounds))).with_children(|i| {
+                    for dz in [-0.012f32, 0.0, 0.012] {
+                        part(i, meshes, Cylinder::new(0.0055, 0.04).into(), &m.brass, Transform::from_xyz(0.0, 0.0, dz).with_rotation(Quat::from_rotation_z(FRAC_PI_2)), layer);
+                    }
+                });
+            }
+        });
+        cam.spawn((Mesh3d(meshes.add(to_mesh(&meshgen::sleeve()))), MeshMaterial3d(cloth.clone()), Transform::default(), Visibility::default(), Sleeve(side), ArmsRig, NotShadowCaster, layer.clone()));
+    }
+}
+
+/// Place the hands on the weapon, pick each hand's shape, stretch the
+/// sleeves back to the elbows, and show what the left hand is carrying.
+#[allow(clippy::type_complexity)]
+fn pose_hands(
+    last: Res<LastPose>,
+    mut roots: Query<(&HandRoot, &mut Transform, &Children), Without<Sleeve>>,
+    mut shapes: Query<(&HandShape, &mut Visibility), Without<HeldItem>>,
+    mut held: Query<(&HeldItem, &mut Visibility), Without<HandShape>>,
+    mut sleeves: Query<(&Sleeve, &mut Transform), Without<HandRoot>>,
+) {
+    let Some(pose) = last.0 else { return };
+    let gun = Transform::from_translation(Vec3::from_array(pose.pos))
+        .with_rotation(Quat::from_euler(EulerRot::YXZ, pose.rot[1], pose.rot[0], pose.rot[2]))
+        .with_scale(Vec3::splat(SCALE));
+    let mut wrists = [Vec3::ZERO; 2];
+    for (root, mut tf, children) in &mut roots {
+        let hand = if root.0 == Side::Left { pose.left } else { pose.right };
+        let (x, y) = (Vec3::from_array(hand.x), Vec3::from_array(hand.y));
+        let local = Transform::from_translation(Vec3::from_array(hand.pos)).with_rotation(Quat::from_mat3(&Mat3::from_cols(x, y, x.cross(y))));
+        *tf = gun.mul_transform(local);
+        wrists[root.0 as usize] = tf.transform_point(Vec3::new(0.0, 0.0, 0.1));
+        // Show the shape closest to the grip.
+        let mut best = (f32::MAX, 0.0);
+        for &c in children {
+            if let Ok((shape, _)) = shapes.get(c) {
+                let d = (shape.0 - hand.grip).abs();
+                if d < best.0 {
+                    best = (d, shape.0);
+                }
+            }
+        }
+        for &c in children {
+            if let Ok((shape, mut vis)) = shapes.get_mut(c) {
+                let want = if shape.0 == best.1 { Visibility::Inherited } else { Visibility::Hidden };
+                if *vis != want {
+                    *vis = want;
+                }
+            }
+        }
+    }
+    for (item, mut vis) in &mut held {
+        let want = if item.0 == pose.held { Visibility::Inherited } else { Visibility::Hidden };
+        if *vis != want {
+            *vis = want;
+        }
+    }
+    // Forearms hang down and back from the wrists, out past the screen edge.
+    let hang = [Vec3::new(-0.35, -0.8, 0.45).normalize(), Vec3::new(0.3, -0.8, 0.5).normalize()];
+    for (sleeve, mut tf) in &mut sleeves {
+        let i = sleeve.0 as usize;
+        let (wrist, elbow) = (wrists[i], wrists[i] + hang[i] * 0.5);
+        let along = elbow - wrist;
+        let len = along.length().max(0.05);
+        *tf = Transform::from_translation(wrist).with_rotation(Quat::from_rotation_arc(Vec3::Z, along / len)).with_scale(Vec3::new(SCALE, SCALE, len));
+    }
+}
+
 fn part(
     p: &mut ChildSpawnerCommands,
     meshes: &mut Assets<Mesh>,
@@ -816,6 +952,7 @@ fn pose_gun(
     time: Res<Time>,
     mut game: ResMut<Game>,
     state: Res<GunState>,
+    mut last: ResMut<LastPose>,
     player: Query<&Player>,
     mut parts: ParamSet<(
         Query<&mut Transform, With<GunModel>>,
@@ -858,8 +995,17 @@ fn pose_gun(
         tf.translation = b.0 + Vec3::Z * pose.bolt * 0.07;
     }
     for (mut tf, m) in &mut parts.p2() {
-        tf.translation = m.0 - Vec3::Y * pose.mag_drop;
-        tf.rotation = Quat::from_rotation_x(pose.mag_drop * 0.8);
+        match pose.mag_pos {
+            // Out of the gun, in the left hand.
+            Some(at) => {
+                tf.translation = Vec3::from_array(at);
+                tf.rotation = Quat::from_rotation_x(0.25);
+            }
+            None => {
+                tf.translation = m.0 - Vec3::Y * pose.mag_drop;
+                tf.rotation = Quat::from_rotation_x(pose.mag_drop * 0.8);
+            }
+        }
     }
     for (mut tf, hm) in &mut parts.p3() {
         tf.translation = hm.0;
@@ -886,6 +1032,7 @@ fn pose_gun(
             *vis = want;
         }
     }
+    last.0 = Some(pose);
 }
 
 /// Keeps the hip-fire constants honest: the sights sit on the gun's top.

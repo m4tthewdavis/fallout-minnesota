@@ -316,26 +316,27 @@ pub type Cue = (f32, Sound);
 pub fn cues(kind: WeaponKind, unjamming: bool) -> Vec<Cue> {
     if unjamming {
         return match kind {
-            WeaponKind::PipeRifle => vec![(0.04, Sound::Jam), (0.09, Sound::BoltRack), (0.58, Sound::BoltRack)],
+            WeaponKind::PipeRifle => vec![(0.04, Sound::Jam), (0.3, Sound::BoltRack), (0.7, Sound::BoltRack)],
             WeaponKind::ScrapShotgun => vec![(0.04, Sound::Jam), (0.22, Sound::BreakOpen), (0.7, Sound::BreakClose)],
             WeaponKind::Revolver => vec![(0.04, Sound::Jam), (0.3, Sound::CylinderSpin), (0.7, Sound::ClunkIn)],
             WeaponKind::IceAxe => vec![],
         };
     }
     match kind {
-        WeaponKind::PipeRifle => vec![(0.17, Sound::ClunkOut), (0.72, Sound::ClunkIn), (0.78, Sound::BoltRack)],
+        // In step with the hands in sim::viewmodel: magazine out, seated, bolt.
+        WeaponKind::PipeRifle => vec![(0.12, Sound::ClunkOut), (0.7, Sound::ClunkIn), (0.79, Sound::BoltRack)],
         WeaponKind::ScrapShotgun => vec![
-            (0.2, Sound::BreakOpen),
-            (0.36, Sound::ClunkOut),
-            (0.58, Sound::ClunkIn),
-            (0.66, Sound::ClunkIn),
-            (0.84, Sound::BreakClose),
+            (0.17, Sound::BreakOpen),
+            (0.3, Sound::ClunkOut),
+            (0.56, Sound::ClunkIn),
+            (0.64, Sound::ClunkIn),
+            (0.83, Sound::BreakClose),
         ],
         WeaponKind::Revolver => vec![
-            (0.2, Sound::ClunkOut),
-            (0.4, Sound::ClunkOut),
+            (0.18, Sound::ClunkOut),
+            (0.38, Sound::ClunkOut),
             (0.64, Sound::ClunkIn),
-            (0.82, Sound::CylinderSpin),
+            (0.8, Sound::CylinderSpin),
         ],
         WeaponKind::IceAxe => vec![],
     }
@@ -623,8 +624,9 @@ mod tests {
     fn rifle_cues_follow_the_animation() {
         let reload = cues(WeaponKind::PipeRifle, false);
         assert_eq!(reload.iter().map(|c| c.1).collect::<Vec<_>>(), vec![Sound::ClunkOut, Sound::ClunkIn, Sound::BoltRack]);
-        // The magazine leaves at 0.15-0.35 and is back by 0.75 (see viewmodel.rs).
-        assert!(reload[0].0 > 0.15 && reload[0].0 < 0.35);
+        // The hand pulls the magazine at 0.12 and seats a fresh one by 0.72
+        // (see viewmodel.rs, which also checks each cue against the motion).
+        assert!(reload[0].0 >= 0.1 && reload[0].0 < 0.35);
         assert!(reload[1].0 > 0.55 && reload[1].0 <= 0.75);
         assert!(reload[2].0 > reload[1].0 && reload[2].0 < 0.9);
         assert_eq!(cues(WeaponKind::PipeRifle, true).iter().filter(|c| c.1 == Sound::BoltRack).count(), 2);

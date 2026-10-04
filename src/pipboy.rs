@@ -776,7 +776,7 @@ fn toggle_pipboy(
 
 /// Your weapon goes down while your wrist is up. (Hide the model, not its
 /// camera: the UI is drawn by that camera.)
-fn hide_weapon(st: Res<PipState>, mut gun: Query<&mut Visibility, With<crate::gun::GunModel>>) {
+fn hide_weapon(st: Res<PipState>, mut gun: Query<&mut Visibility, Or<(With<crate::gun::GunModel>, With<crate::gun::ArmsRig>)>>) {
     let want = if st.raise < 0.5 { Visibility::Inherited } else { Visibility::Hidden };
     for mut v in &mut gun {
         if *v != want {

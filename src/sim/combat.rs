@@ -170,7 +170,7 @@ impl Weapon {
             falloff: 0.0,
             range: 80.0,
             fire_interval: 0.35,
-            reload_time: 1.6,
+            reload_time: 2.2,
             unjam_time: 1.0,
             jam_mult: 1.0,
             melee: false,
@@ -465,7 +465,8 @@ mod tests {
         assert_eq!(w.try_fire(20.0, &mut rng), FireResult::Empty);
         assert!(w.start_reload(&mut reserve));
         assert_eq!(w.try_fire(20.0, &mut rng), FireResult::Busy);
-        assert!(w.tick(2.0));
+        assert!(!w.tick(1.0), "still reloading");
+        assert!(w.tick(1.5));
         assert_eq!(w.mag, 8);
         assert_eq!(reserve, 2);
     }
