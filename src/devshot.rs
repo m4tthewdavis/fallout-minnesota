@@ -43,6 +43,65 @@ struct Shot {
     taken: Option<f32>,
 }
 
+/// `FMN_KEYS="Escape,ArrowDown,Enter"` presses those keys one after another,
+/// a few frames apart, before the screenshot is taken (to drive menus).
+#[derive(Resource)]
+struct KeyScript {
+    steps: std::collections::VecDeque<KeyCode>,
+    wait: u32,
+    release: Option<KeyCode>,
+    /// Frames left to settle once every key has been pressed.
+    settle: u32,
+}
+
+fn parse_key(name: &str) -> Option<KeyCode> {
+    Some(match name {
+        "Escape" => KeyCode::Escape,
+        "Enter" => KeyCode::Enter,
+        "Tab" => KeyCode::Tab,
+        "Space" => KeyCode::Space,
+        "ArrowUp" => KeyCode::ArrowUp,
+        "ArrowDown" => KeyCode::ArrowDown,
+        "ArrowLeft" => KeyCode::ArrowLeft,
+        "ArrowRight" => KeyCode::ArrowRight,
+        "KeyW" => KeyCode::KeyW,
+        "KeyA" => KeyCode::KeyA,
+        "KeyS" => KeyCode::KeyS,
+        "KeyD" => KeyCode::KeyD,
+        "KeyQ" => KeyCode::KeyQ,
+        "KeyE" => KeyCode::KeyE,
+        "KeyR" => KeyCode::KeyR,
+        "KeyF" => KeyCode::KeyF,
+        "KeyH" => KeyCode::KeyH,
+        "KeyX" => KeyCode::KeyX,
+        "F5" => KeyCode::F5,
+        "F6" => KeyCode::F6,
+        "F9" => KeyCode::F9,
+        "Digit1" => KeyCode::Digit1,
+        "Digit2" => KeyCode::Digit2,
+        "Digit3" => KeyCode::Digit3,
+        _ => return None,
+    })
+}
+
+/// Press the next scripted key, right after Bevy has read the real input.
+fn inject_keys(mut script: ResMut<KeyScript>, mut keys: ResMut<ButtonInput<KeyCode>>) {
+    if let Some(k) = script.release.take() {
+        keys.release(k);
+    }
+    if script.wait > 0 {
+        script.wait -= 1;
+        return;
+    }
+    if let Some(k) = script.steps.pop_front() {
+        keys.press(k);
+        script.release = Some(k);
+        script.wait = 4;
+    } else if script.settle > 0 {
+        script.settle -= 1;
+    }
+}
+
 pub struct DevShotPlugin;
 
 impl Plugin for DevShotPlugin {
@@ -56,6 +115,11 @@ impl Plugin for DevShotPlugin {
         let out = std::env::var("FMN_SHOT_OUT").unwrap_or_else(|_| "shot.png".into());
         // A stale file would make us quit before the new shot is written.
         let _ = std::fs::remove_file(&out);
+        if let Ok(list) = std::env::var("FMN_KEYS") {
+            let steps: Vec<KeyCode> = list.split(',').filter_map(|n| parse_key(n.trim())).collect();
+            // Start well after the world has loaded.
+            app.insert_resource(KeyScript { steps: steps.into(), wait: 12, release: None, settle: 6 });
+        }
         app.insert_resource(Shot {
             x: v[0],
             z: v[1],
@@ -74,6 +138,7 @@ impl Plugin for DevShotPlugin {
             taken: None,
         })
         .add_systems(Update, take_shot)
+        .add_systems(PreUpdate, inject_keys.run_if(resource_exists::<KeyScript>).after(bevy::input::InputSystem))
         .add_systems(PostStartup, spawn_extras)
         .add_systems(Startup, resize_window);
     }
@@ -118,6 +183,7 @@ fn take_shot(
     mut aim: ResMut<ForceAim>,
     mut player: Query<(&mut Transform, &mut Player)>,
     mut exit: EventWriter<AppExit>,
+    script: Option<Res<KeyScript>>,
 ) {
     clock.0.hours = shot.hour;
     if shot.blizzard {
@@ -162,7 +228,8 @@ fn take_shot(
     }
     let now = time.elapsed_secs();
     match shot.taken {
-        None if now > shot.wait => {
+        // With a key script, wait until every key has been pressed and things settled.
+        None if now > shot.wait && script.is_none_or(|s| s.steps.is_empty() && s.settle == 0 && s.release.is_none()) => {
             commands.spawn(Screenshot::primary_window()).observe(save_to_disk(shot.out.clone()));
             shot.taken = Some(now);
         }

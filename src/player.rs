@@ -137,20 +137,19 @@ fn grab_cursor(mut windows: Query<&mut Window, With<PrimaryWindow>>) {
     }
 }
 
+/// Click to take the mouse back (after alt-tabbing, say). The Pip-Boy and the
+/// pause menu own the mouse while they are open.
 fn toggle_cursor(
     pip: Res<crate::state::PipOpen>,
-    keys: Res<ButtonInput<KeyCode>>,
+    paused: Res<crate::state::Paused>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    // The Pip-Boy owns the mouse while it is open.
-    if pip.0 {
+    if pip.0 || paused.0 {
         return;
     }
     let Ok(mut window) = windows.single_mut() else { return };
-    if keys.just_pressed(KeyCode::Escape) {
-        set_grab(&mut window, false);
-    } else if mouse.just_pressed(MouseButton::Left) && window.cursor_options.grab_mode == CursorGrabMode::None {
+    if mouse.just_pressed(MouseButton::Left) && window.cursor_options.grab_mode == CursorGrabMode::None {
         set_grab(&mut window, true);
     }
 }

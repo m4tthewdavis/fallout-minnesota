@@ -147,10 +147,15 @@ pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials:
     commands.spawn((Transform::from_translation(at + Vec3::Y * 0.3 * scale), Emitter::new(EmitterKind::Sparks, 0.09 / scale)));
     commands.spawn((Transform::from_translation(at + Vec3::Y * 0.9 * scale), Emitter::new(EmitterKind::FireSmoke, 0.22 / scale)));
     let base = 400_000.0 * scale;
-    commands.spawn((
-        crate::world::flicker_light(Color::srgb(1.0, 0.55, 0.2), base, 18.0 * scale.max(0.7), shadows, seed),
-        Transform::from_translation(at + Vec3::Y * 0.6),
-    ));
+    let light = commands
+        .spawn((
+            crate::world::flicker_light(Color::srgb(1.0, 0.55, 0.2), base, 18.0 * scale.max(0.7), shadows, seed),
+            Transform::from_translation(at + Vec3::Y * 0.6),
+        ))
+        .id();
+    if shadows {
+        commands.entity(light).insert(crate::world::PointShadows);
+    }
     // Warm glow on the snow, following the ground.
     let r = 3.2 * scale;
     let height = |x: f32, z: f32| terrain::mesh_height(x, z).max(terrain::walk_height(x, z));

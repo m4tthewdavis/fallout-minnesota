@@ -634,6 +634,7 @@ fn page_changed(st: &mut PipState, sfx: &mut SfxQueue) {
 fn toggle_pipboy(
     keys: Res<ButtonInput<KeyCode>>,
     mut open: ResMut<PipOpen>,
+    paused: Res<crate::state::Paused>,
     game: Res<Game>,
     mut st: ResMut<PipState>,
     trees: Res<TreePositions>,
@@ -644,6 +645,9 @@ fn toggle_pipboy(
     mut base: Query<&mut ImageNode, With<MapBase>>,
     player: Query<&Transform, With<Player>>,
 ) {
+    if paused.0 {
+        return;
+    }
     let want_toggle = keys.just_pressed(KeyCode::Tab) || keys.just_pressed(KeyCode::KeyM);
     let want_close = open.0 && keys.just_pressed(KeyCode::Escape);
     if !(want_toggle || want_close) {

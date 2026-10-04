@@ -62,6 +62,10 @@ pub fn open_spot(rng: &mut RngRes, solid: &[collision::Shape], clearance: f32, r
     None
 }
 
+/// A fire light that casts shadows when the shadow quality is high enough.
+#[derive(Component)]
+pub struct PointShadows;
+
 /// A point light that flickers like fire.
 #[derive(Component)]
 pub struct FireLight {

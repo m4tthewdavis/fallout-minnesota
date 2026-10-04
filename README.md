@@ -46,7 +46,7 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | In the Pip-Boy: Enter | Use the selected aid item |
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
-| Esc | Free the mouse (click to recapture) |
+| Esc | Pause menu: Resume, Save, Load, Settings (shadows, view distance, UI size, volume), Quit. Esc also closes the Pip-Boy |
 | G | Geiger counter on / off |
 | F9 | Mute / unmute all sound |
 | F10 / F11 | Master volume down / up |

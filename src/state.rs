@@ -157,14 +157,18 @@ impl Messages {
 #[derive(Resource, Default)]
 pub struct PipOpen(pub bool);
 
+/// True while the pause menu is open (the game is paused).
+#[derive(Resource, Default)]
+pub struct Paused(pub bool);
+
 /// Where the pines stand, for the Pip-Boy map's forest.
 #[derive(Resource, Default)]
 pub struct TreePositions(pub Vec<(f32, f32)>);
 
-/// Run condition: gameplay systems only run while the player is alive and the
-/// Pip-Boy is closed.
-pub fn alive(game: Res<Game>, pip: Res<PipOpen>) -> bool {
-    game.death.is_none() && !pip.0
+/// Run condition: gameplay systems only run while the player is alive and
+/// neither the Pip-Boy nor the pause menu is open.
+pub fn alive(game: Res<Game>, pip: Res<PipOpen>, paused: Res<Paused>) -> bool {
+    game.death.is_none() && !pip.0 && !paused.0
 }
 
 /// Despawns short-lived effects (muzzle flashes, tracers).
@@ -199,6 +203,7 @@ impl Plugin for StatePlugin {
             .init_resource::<FxQueue>()
             .init_resource::<Prompt>()
             .init_resource::<PipOpen>()
+            .init_resource::<Paused>()
             .init_resource::<TreePositions>()
             .add_systems(Update, (tick_messages, tick_lifetimes));
     }

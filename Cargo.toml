@@ -11,6 +11,9 @@ bevy = { version = "0.16", features = ["wav", "jpeg"] }
 # Bevy already depends on blake3. The "pure" feature makes it pure Rust, so it
 # builds without a C compiler (needed for the lighter GNU toolchain on Windows).
 blake3 = { version = "1", features = ["pure"] }
+# Settings and save files are JSON.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Keep debug builds playable: optimize our code a little, dependencies a lot.
 # Debug info is turned off because it is most of the build folder's size

@@ -21,6 +21,7 @@ mod gun;
 mod hud;
 mod interact;
 mod landmarks;
+mod menu;
 mod meshes;
 mod moose;
 mod nature;
@@ -32,6 +33,7 @@ mod sim;
 mod sky;
 mod snow;
 mod state;
+mod storage;
 mod tracks;
 mod vehicles;
 mod weather_fx;
@@ -86,7 +88,7 @@ fn main() {
             particles::ParticlePlugin,
             hud::HudPlugin,
             pipboy::PipboyPlugin,
-            devshot::DevShotPlugin,
         ))
+        .add_plugins((menu::MenuPlugin, devshot::DevShotPlugin))
         .run();
 }

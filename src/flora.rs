@@ -22,8 +22,9 @@ use crate::world::{ground, spawn_contact_shadow, spawn_drift};
 
 const TREES: usize = 300;
 
-/// Beyond this distance (metres) a tree swaps to its cheap model and stops
-/// casting shadows. (A little hysteresis keeps trees at the edge from flickering.)
+/// Beyond this distance (metres) a tree swaps to its cheap model. Shadows and
+/// the draw cutoff follow the player's settings. (A little hysteresis keeps
+/// trees at an edge from flickering.)
 pub const TREE_FAR: f32 = 60.0;
 const TREE_HYSTERESIS: f32 = 4.0;
 
@@ -35,15 +36,25 @@ struct TreeLod {
     near: (Handle<Mesh>, Handle<Mesh>),
     far: (Handle<Mesh>, Handle<Mesh>),
     far_now: bool,
+    /// Currently casting shadows.
+    shadowed: bool,
+    /// Currently hidden because it's past the view distance.
+    hidden: bool,
+}
+
+/// Is `distance` beyond `limit`, given whether it was already beyond it? Near
+/// the limit the answer sticks, so trees don't flicker back and forth.
+pub fn beyond(distance: f32, limit: f32, was_beyond: bool) -> bool {
+    if was_beyond {
+        distance > limit - TREE_HYSTERESIS
+    } else {
+        distance > limit + TREE_HYSTERESIS
+    }
 }
 
 /// Whether a tree at `distance` should be in its far state, given its current one.
 pub fn is_far(distance: f32, was_far: bool) -> bool {
-    if was_far {
-        distance > TREE_FAR - TREE_HYSTERESIS
-    } else {
-        distance > TREE_FAR + TREE_HYSTERESIS
-    }
+    beyond(distance, TREE_FAR, was_far)
 }
 
 pub struct FloraPlugin;
@@ -54,36 +65,49 @@ impl Plugin for FloraPlugin {
     }
 }
 
-/// Four times a second, move trees between their near and far versions.
+/// Four times a second, move trees between their near and far versions, and
+/// apply the shadow and view-distance settings.
 fn tree_lod(
     mut commands: Commands,
     time: Res<Time<Real>>,
+    settings: Res<crate::menu::GameSettings>,
     mut since: Local<f32>,
     cam: Query<&GlobalTransform, With<crate::player::Player>>,
-    mut trees: Query<(&GlobalTransform, &mut TreeLod)>,
+    mut trees: Query<(&GlobalTransform, &mut TreeLod, &mut Visibility)>,
 ) {
     *since += time.delta_secs();
-    if *since < 0.25 {
+    // A settings change should show at once, not a quarter-second later.
+    if *since < 0.25 && !settings.is_changed() {
         return;
     }
     *since = 0.0;
     let Ok(cam) = cam.single() else { return };
     let eye = cam.translation();
-    for (tf, mut tree) in &mut trees {
+    let shadow_limit = settings.0.shadows.tree_shadow_distance();
+    let cull = settings.0.view.tree_cull();
+    for (tf, mut tree, mut vis) in &mut trees {
         let d = (tf.translation() - eye).xz().length();
+        // Past the view distance a tree isn't drawn at all.
+        let hidden = cull.is_some_and(|limit| beyond(d, limit, tree.hidden));
+        if hidden != tree.hidden {
+            tree.hidden = hidden;
+            *vis = if hidden { Visibility::Hidden } else { Visibility::Inherited };
+        }
         let far = is_far(d, tree.far_now);
-        if far == tree.far_now {
+        let shadowed = !beyond(d, shadow_limit, !tree.shadowed);
+        if far == tree.far_now && shadowed == tree.shadowed {
             continue;
         }
         tree.far_now = far;
+        tree.shadowed = shadowed;
         let (bark, foliage) = if far { tree.far.clone() } else { tree.near.clone() };
         for (part, mesh) in [(tree.bark, bark), (tree.foliage, foliage)] {
             let mut e = commands.entity(part);
             e.insert(Mesh3d(mesh));
-            if far {
-                e.insert(NotShadowCaster);
-            } else {
+            if shadowed {
                 e.remove::<NotShadowCaster>();
+            } else {
+                e.insert(NotShadowCaster);
             }
         }
     }
@@ -261,6 +285,8 @@ pub fn plant_forest(
             near: (model.bark.clone(), model.foliage.clone()),
             far: (model.bark_far.clone(), model.foliage_far.clone()),
             far_now: false,
+            shadowed: true,
+            hidden: false,
         });
         let trunk = species.trunk_radius(model.height) * scale;
         solid.push(Shape::Circle { x, z, r: trunk + 0.15 });
@@ -479,5 +505,16 @@ mod tests {
         assert!(!is_far(TREE_FAR + 1.0, false), "stays near until clearly past the line");
         assert!(is_far(TREE_FAR + 1.0, true), "and stays far until clearly inside it");
         assert!(!is_far(TREE_FAR - 10.0, true));
+    }
+
+    #[test]
+    fn the_cutoff_sticks_near_its_edge_for_any_limit() {
+        for limit in [30.0, 60.0, 140.0] {
+            assert!(!beyond(limit - 10.0, limit, false));
+            assert!(beyond(limit + 10.0, limit, false));
+            assert!(beyond(limit + 1.0, limit, true), "already beyond: stays beyond just inside the line");
+            assert!(!beyond(limit + 1.0, limit, false), "inside: stays inside just past the line");
+        }
+        assert!(beyond(10.0, 0.0, false), "a limit of zero (shadows off) puts every nearby tree beyond it");
     }
 }
