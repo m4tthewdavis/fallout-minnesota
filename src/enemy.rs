@@ -114,7 +114,7 @@ impl Dying {
         let ease = 1.0 - (1.0 - x).powi(3);
         let bounce = if x >= 1.0 {
             let b = ((t - FALL_SECS) / 0.25).clamp(0.0, 1.0);
-            0.07 * (1.0 - b) * (b * std::f32::consts::PI * 2.0).sin().abs()
+            0.07 * (1.0 - b) * (b * std::f32::consts::TAU).sin().abs()
         } else {
             0.0
         };

@@ -2,7 +2,7 @@
 //! moving parts sit, given what the player is doing. Pure maths so the
 //! animation can be unit-tested; `gun.rs` applies it to the models.
 
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::TAU;
 
 use super::combat::WeaponKind;
 use super::mathx::lerp;
@@ -459,7 +459,7 @@ fn rifle_unjam(out: &mut Pose, p: f32) {
     let rest = out.left;
     let bolt_hand = Hand::gripping(RIFLE_BOLT_KNOB, [-0.3, -0.3, 0.9], [0.0, -1.0, 0.0], 0.8);
     // Rack the bolt hard, twice.
-    let rack = ((p - 0.2) * 2.0 * PI * 2.0 / 0.8).sin() * 0.5 + 0.5;
+    let rack = ((p - 0.2) * 2.0 * TAU / 0.8).sin() * 0.5 + 0.5;
     let racking = ramp(p, 0.15, 0.22) * (1.0 - ramp(p, 0.82, 0.9));
     out.bolt = rack * racking;
     out.left = keyed(p, &[(0.0, rest), (0.18, bolt_hand), (0.86, bolt_hand), (1.0, rest)]);

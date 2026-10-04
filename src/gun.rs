@@ -7,7 +7,7 @@
 //! against walls - and aim-down-sights on the right mouse button. Fitted
 //! upgrades show up on the models.
 
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::AccumulatedMouseMotion;
@@ -441,7 +441,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         z += 0.016;
     }
     for i in 0..14 {
-        let a = i as f32 / 14.0 * 2.0 * PI;
+        let a = i as f32 / 14.0 * TAU;
         beads.append(&meshgen::blob(0.006, 1.0, 0.35, 100 + i, 0.05).translated([a.cos() * 0.034, BORE_Y + a.sin() * 0.034, -0.168]));
     }
     part(gun, meshes, to_mesh(&beads), weld, t0, layer);
@@ -486,7 +486,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
     let helix: Vec<[f32; 3]> = (0..=90)
         .map(|i| {
             let t = i as f32 / 90.0;
-            let a = t * 6.0 * 2.0 * PI;
+            let a = t * 6.0 * TAU;
             [a.cos() * 0.032, -0.009 + a.sin() * 0.049, -0.4 - t * 0.04]
         })
         .collect();
@@ -707,7 +707,7 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         let helix: Vec<[f32; 3]> = (0..=72)
             .map(|i| {
                 let t = i as f32 / 72.0;
-                let a = t * 5.0 * 2.0 * PI;
+                let a = t * 5.0 * TAU;
                 [a.cos() * 0.0505, BORE_Y + a.sin() * 0.0285, -0.52 - t * 0.05]
             })
             .collect();
@@ -764,7 +764,7 @@ fn build_revolver(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &M
     // Weld beads where the barrel meets the frame.
     let mut beads = MeshData::default();
     for i in 0..10 {
-        let a = i as f32 / 10.0 * 2.0 * PI;
+        let a = i as f32 / 10.0 * TAU;
         beads.append(&meshgen::blob(0.0045, 1.0, 0.35, 400 + i, 0.05).translated([a.cos() * 0.0185, BORE_Y + a.sin() * 0.0185, -0.088]));
     }
     part(w, meshes, to_mesh(&beads), weld, t0, layer);
@@ -783,12 +783,12 @@ fn build_revolver(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &M
         part(c, meshes, to_mesh(&along_z(&[(0.0295, -0.035), (0.0295, 0.035), (0.026, 0.037)], 24)), steel, t0, layer);
         // Flutes between the chambers.
         for i in 0..6 {
-            let a = (i as f32 + 0.5) / 6.0 * 2.0 * PI;
+            let a = (i as f32 + 0.5) / 6.0 * TAU;
             part(c, meshes, Cuboid::new(0.0035, 0.006, 0.05).into(), black, Transform::from_xyz(a.cos() * 0.0295, a.sin() * 0.0295, 0.0).with_rotation(Quat::from_rotation_z(a)), layer);
         }
         // Brass cartridge heads on the back face.
         for i in 0..6 {
-            let a = i as f32 / 6.0 * 2.0 * PI;
+            let a = i as f32 / 6.0 * TAU;
             c.spawn((
                 Mesh3d(meshes.add(Cylinder::new(0.0068, 0.006))),
                 MeshMaterial3d(brass.clone()),
