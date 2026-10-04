@@ -274,7 +274,8 @@ fn conifer_shape(s: Species) -> ConiferShape {
 }
 
 /// A conifer (or tamarack) `height` tall. `snow` 0..1 sets how laden it is.
-fn conifer(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
+fn conifer(species: Species, height: f32, snow: f32, seed: u64, detail: Detail) -> Tree {
+    let lod = detail == Detail::Low;
     let mut rng = Rng::new(seed);
     let shape = conifer_shape(species);
     let mut tree = Tree::default();
@@ -288,7 +289,7 @@ fn conifer(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
             [lean[0] * y + rng.range(-0.03, 0.03) * t, y, lean[2] * y + rng.range(-0.03, 0.03) * t]
         })
         .collect();
-    tree.bark.append(&tapered_tube(&trunk_path, r0, r0 * 0.12, 8, 1.2));
+    tree.bark.append(&tapered_tube(&trunk_path, r0, r0 * 0.12, if lod { 5 } else { 8 }, 1.2));
     let axis = |y: f32| -> V3 { [lean[0] * y, y, lean[2] * y] };
 
     let crown0 = height * shape.crown_start;
@@ -322,16 +323,20 @@ fn conifer(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
             }
             let br = (r0 * 0.35 * (1.0 - t * 0.7)).max(0.012);
             // Mostly hidden by needles, so a light three-sided stem will do.
-            tree.bark.append(&tapered_tube(&[pts[0], pts[2], pts[4]], br, br * 0.3, 3, 0.8));
+            if !lod {
+                tree.bark.append(&tapered_tube(&[pts[0], pts[2], pts[4]], br, br * 0.3, 3, 0.8));
+            }
             // Needle cards along the branch (only near the tip for pines).
             // Big trees carry bigger sprays; pines carry many along the outer branch.
-            let card_len = shape.card_len * (height / 10.0).max(1.0);
+            let card_len = shape.card_len * (height / 10.0).max(1.0) * if lod { 1.5 } else { 1.0 };
             let from = if shape.tufts { 0.3 } else { 0.1 };
             let cards = if shape.tufts {
                 ((len * (1.0 - from) / (card_len * 0.4)).ceil() as usize).clamp(3, 9)
             } else {
                 ((len / (card_len * 0.55)).ceil() as usize).clamp(2, 4)
             };
+            // Far away: a couple of big sprays per branch is enough.
+            let cards = if lod { cards.min(2) } else { cards };
             for c in 0..cards {
                 let f = from + (1.0 - from) * c as f32 / cards as f32;
                 let seg = ((f * steps as f32) as usize).min(steps - 1);
@@ -346,11 +351,11 @@ fn conifer(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
                 // Two crossed cards: one flat, one tipped up.
                 card(&mut tree.foliage, base, cdir, side, clen, w, color);
                 card(&mut tree.foliage, base, cdir, rotate(side, cdir, 1.1), clen, w * 0.8, color);
-                if !shape.tufts {
+                if !shape.tufts && !lod {
                     // Fir and spruce sprays are full: a third card tipped the other way.
                     card(&mut tree.foliage, base, cdir, rotate(side, cdir, -1.1), clen, w * 0.8, color);
                 }
-                if shape.tufts {
+                if shape.tufts && !lod {
                     // Pine tufts splay upwards like a brush.
                     let up = normalize(add(cdir, [0.0, 0.8, 0.0]));
                     card(&mut tree.foliage, base, up, flat_side(up), clen * 0.7, w, color);
@@ -364,7 +369,7 @@ fn conifer(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
             }
         }
         whorl += 1;
-        y += shape.whorl_spacing * rng.range(0.8, 1.2) * if species == Species::WhitePine { 1.0 + t } else { 1.0 };
+        y += shape.whorl_spacing * rng.range(0.8, 1.2) * if species == Species::WhitePine { 1.0 + t } else { 1.0 } * if lod { 1.7 } else { 1.0 };
     }
     // The leader at the very top.
     let top = axis(height * 0.95);
@@ -382,7 +387,8 @@ fn conifer(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
 
 /// Paper birch or quaking aspen: a bare trunk (birch often grows as a clump
 /// of two or three), forking branches, and twig cards at the ends.
-fn hardwood(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
+fn hardwood(species: Species, height: f32, snow: f32, seed: u64, detail: Detail) -> Tree {
+    let lod = detail == Detail::Low;
     let mut rng = Rng::new(seed);
     let mut tree = Tree::default();
     let stems = if species == Species::PaperBirch { 1 + (rng.f32() * 2.6) as usize } else { 1 };
@@ -401,7 +407,7 @@ fn hardwood(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
                 add(add(off, scale(lean_v, y)), add([0.0, y, 0.0], scale(wob, (k > 0) as u8 as f32)))
             })
             .collect();
-        tree.bark.append(&tapered_tube(&path, r0, r0 * 0.15, 8, 1.0));
+        tree.bark.append(&tapered_tube(&path, r0, r0 * 0.15, if lod { 5 } else { 8 }, 1.0));
         // Branches from the upper 60% of the stem, forking once.
         let n_branches = 7 + (rng.f32() * 5.0) as usize;
         for b in 0..n_branches {
@@ -417,11 +423,15 @@ fn hardwood(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
             let mid = add(start, add(scale(dir, len * 0.5), [0.0, len * 0.05, 0.0]));
             let end = add(mid, scale(normalize(add(dir, [0.0, 0.25, 0.0])), len * 0.5));
             let br = (r0 * 0.3 * (1.1 - f)).max(0.015);
-            tree.bark.append(&tapered_tube(&[start, mid, end], br, br * 0.35, 5, 0.6));
+            if !lod {
+                tree.bark.append(&tapered_tube(&[start, mid, end], br, br * 0.35, 5, 0.6));
+            }
             // A fork, and twig cards at both ends.
             let fork_dir = normalize(add(rotate(dir, [0.0, 1.0, 0.0], rng.range(-0.9, 0.9)), [0.0, 0.3, 0.0]));
             let fork_end = add(mid, scale(fork_dir, len * 0.45));
-            tree.bark.append(&tapered_tube(&[mid, fork_end], br * 0.6, br * 0.25, 4, 0.6));
+            if !lod {
+                tree.bark.append(&tapered_tube(&[mid, fork_end], br * 0.6, br * 0.25, 4, 0.6));
+            }
             for (p, d) in [(end, normalize(add(dir, [0.0, 0.4, 0.0]))), (fork_end, fork_dir), (mid, normalize(add(dir, [0.0, 0.8, 0.0])))] {
                 let clen = h * rng.range(0.1, 0.15);
                 let color = jitter(&mut rng, twig_color, 0.15);
@@ -452,9 +462,28 @@ fn hardwood(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
 
 /// A tree of `species`, about `height` tall, base at the origin.
 pub fn tree(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
+    tree_detail(species, height, snow, seed, Detail::High)
+}
+
+/// How much geometry a tree gets.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Detail {
+    /// Near: every branch, stem and card.
+    High,
+    /// Far (beyond ~60 m, usually in fog): trunk only, fewer and bigger
+    /// sprays, a coarser trunk.
+    Low,
+}
+
+/// The same tree as [`tree`] (same species, height and seed) at lower detail.
+pub fn tree_lod(species: Species, height: f32, snow: f32, seed: u64) -> Tree {
+    tree_detail(species, height, snow, seed, Detail::Low)
+}
+
+fn tree_detail(species: Species, height: f32, snow: f32, seed: u64, detail: Detail) -> Tree {
     match species {
-        Species::PaperBirch | Species::QuakingAspen => hardwood(species, height, snow, seed),
-        _ => conifer(species, height, snow, seed),
+        Species::PaperBirch | Species::QuakingAspen => hardwood(species, height, snow, seed, detail),
+        _ => conifer(species, height, snow, seed, detail),
     }
 }
 
@@ -680,6 +709,26 @@ mod tests {
             if s != Species::PaperBirch && s != Species::QuakingAspen {
                 assert!(t.snow.is_valid(), "{s:?} carries snow");
             }
+        }
+    }
+
+    #[test]
+    fn distant_trees_cost_far_fewer_triangles_but_keep_their_size() {
+        for (i, sp) in Species::ALL.into_iter().enumerate() {
+            let (lo, hi) = sp.heights();
+            let h = (lo + hi) * 0.5;
+            let near = tree(sp, h, 0.9, 40 + i as u64);
+            let far = tree_lod(sp, h, 0.9, 40 + i as u64);
+            assert!(far.bark.is_valid() && far.foliage.is_valid(), "{sp:?}");
+            let cost = |t: &Tree| t.bark.triangle_count() + t.foliage.triangle_count();
+            assert!(cost(&far) * 2 < cost(&near), "{sp:?}: {} vs {}", cost(&far), cost(&near));
+            let (_, near_hi) = near.bark.bounds();
+            let (_, far_hi) = far.bark.bounds();
+            assert!((near_hi[1] - far_hi[1]).abs() < h * 0.1, "{sp:?} keeps its height");
+            let (nlo, nhi) = near.foliage.bounds();
+            let (flo, fhi) = far.foliage.bounds();
+            let (nw, fw) = ((nhi[0] - nlo[0]).max(nhi[2] - nlo[2]), (fhi[0] - flo[0]).max(fhi[2] - flo[2]));
+            assert!(fw > nw * 0.6 && fw < nw * 1.5, "{sp:?} crown width {fw} vs {nw}");
         }
     }
 

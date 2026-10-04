@@ -174,6 +174,75 @@ impl Survival {
 
 use super::combat::{Ammo, Upgrade, Weapon};
 
+/// The three aid items you can use from the keyboard or the Pip-Boy.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Aid {
+    Stimpak,
+    RadAway,
+    Hotdish,
+}
+
+impl Aid {
+    pub const ALL: [Aid; 3] = [Aid::Stimpak, Aid::RadAway, Aid::Hotdish];
+}
+
+/// What happened when you tried to use an aid item.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AidResult {
+    /// It was used up; the message says what it did.
+    Used(&'static str),
+    /// Nothing was spent; the message says why.
+    Refused(&'static str),
+}
+
+impl AidResult {
+    pub fn message(self) -> &'static str {
+        match self {
+            AidResult::Used(m) | AidResult::Refused(m) => m,
+        }
+    }
+    pub fn used(self) -> bool {
+        matches!(self, AidResult::Used(_))
+    }
+}
+
+/// Stimpak: +40 HP (not when unhurt). RadAway: -150 rads. Hotdish: +35 Heat
+/// and +5 HP.
+pub fn use_aid(aid: Aid, inv: &mut Inventory, s: &mut Survival) -> AidResult {
+    match aid {
+        Aid::Stimpak => {
+            if inv.stimpaks == 0 {
+                AidResult::Refused("No Stimpaks left.")
+            } else if s.health >= s.max_health() {
+                AidResult::Refused("You're not hurt.")
+            } else {
+                inv.stimpaks -= 1;
+                s.heal(40.0);
+                AidResult::Used("Stimpak used. +40 HP")
+            }
+        }
+        Aid::RadAway => {
+            if inv.radaway == 0 {
+                AidResult::Refused("No RadAway left.")
+            } else {
+                inv.radaway -= 1;
+                s.purge_rads(150.0);
+                AidResult::Used("RadAway used. -150 rads")
+            }
+        }
+        Aid::Hotdish => {
+            if inv.hotdish == 0 {
+                AidResult::Refused("No hotdish left. Uff da.")
+            } else {
+                inv.hotdish -= 1;
+                s.warm(35.0);
+                s.heal(5.0);
+                AidResult::Used("Vault 143 Hotdish: warm, starchy, and only a little radioactive. +35 Heat")
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
     Stimpak,
@@ -448,5 +517,105 @@ mod tests {
         assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::InsulatedAction), Err("Already fitted."));
         assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::Choke), Err("That upgrade doesn't fit this weapon."));
         assert_eq!(inv.scrap, 14, "failed crafts cost nothing");
+    }
+
+    fn hurt(health: f32) -> Survival {
+        Survival { health, ..Survival::new() }
+    }
+
+    #[test]
+    fn a_stimpak_heals_forty_and_is_used_up() {
+        let (mut inv, mut s) = (Inventory::starting_kit(), hurt(30.0));
+        let r = use_aid(Aid::Stimpak, &mut inv, &mut s);
+        assert!(r.used(), "{r:?}");
+        assert_eq!((s.health, inv.stimpaks), (70.0, 1));
+        use_aid(Aid::Stimpak, &mut inv, &mut s);
+        use_aid(Aid::Stimpak, &mut inv, &mut s);
+        assert_eq!((s.health, inv.stimpaks), (100.0, 0), "healing stops at the maximum");
+    }
+
+    #[test]
+    fn a_stimpak_is_not_wasted_on_someone_unhurt_or_when_none_are_left() {
+        let (mut inv, mut s) = (Inventory::starting_kit(), Survival::new());
+        assert_eq!(use_aid(Aid::Stimpak, &mut inv, &mut s), AidResult::Refused("You're not hurt."));
+        assert_eq!(inv.stimpaks, 2, "nothing spent");
+        inv.stimpaks = 0;
+        s.health = 10.0;
+        assert_eq!(use_aid(Aid::Stimpak, &mut inv, &mut s), AidResult::Refused("No Stimpaks left."));
+        assert_eq!(s.health, 10.0);
+    }
+
+    #[test]
+    fn a_stimpak_respects_radiation_lowered_max_health() {
+        let (mut inv, mut s) = (Inventory::starting_kit(), hurt(50.0));
+        s.rads = 500.0;
+        let cap = s.max_health();
+        assert!(cap < 100.0);
+        use_aid(Aid::Stimpak, &mut inv, &mut s);
+        use_aid(Aid::Stimpak, &mut inv, &mut s);
+        assert_eq!(s.health, cap, "can't heal past what the radiation allows");
+    }
+
+    #[test]
+    fn radaway_removes_150_rads_but_never_goes_below_zero() {
+        let (mut inv, mut s) = (Inventory { radaway: 2, ..Inventory::starting_kit() }, Survival::new());
+        s.rads = 400.0;
+        assert!(use_aid(Aid::RadAway, &mut inv, &mut s).used());
+        assert_eq!((s.rads, inv.radaway), (250.0, 1));
+        s.rads = 60.0;
+        use_aid(Aid::RadAway, &mut inv, &mut s);
+        assert_eq!((s.rads, inv.radaway), (0.0, 0));
+        assert_eq!(use_aid(Aid::RadAway, &mut inv, &mut s), AidResult::Refused("No RadAway left."));
+    }
+
+    #[test]
+    fn hotdish_warms_and_heals_a_little() {
+        let (mut inv, mut s) = (Inventory::starting_kit(), hurt(90.0));
+        s.body_heat = 20.0;
+        assert!(use_aid(Aid::Hotdish, &mut inv, &mut s).used());
+        assert_eq!((s.body_heat, s.health, inv.hotdish), (55.0, 95.0, 1));
+        s.body_heat = 90.0;
+        use_aid(Aid::Hotdish, &mut inv, &mut s);
+        assert_eq!(s.body_heat, 100.0, "heat tops out at 100");
+        assert_eq!(use_aid(Aid::Hotdish, &mut inv, &mut s), AidResult::Refused("No hotdish left. Uff da."));
+    }
+
+    #[test]
+    fn every_aid_item_has_a_message_and_only_changes_its_own_pile() {
+        for aid in Aid::ALL {
+            let mut inv = Inventory::starting_kit();
+            let before = inv.clone();
+            let mut s = hurt(40.0);
+            let r = use_aid(aid, &mut inv, &mut s);
+            assert!(!r.message().is_empty());
+            let total = |i: &Inventory| i.stimpaks + i.radaway + i.hotdish;
+            assert_eq!(total(&inv) + 1, total(&before), "{aid:?} spends exactly one item");
+            assert_eq!((inv.ammo_reserve, inv.scrap, inv.pelts), (before.ammo_reserve, before.scrap, before.pelts));
+        }
+    }
+
+    #[test]
+    fn picking_things_up_then_using_them_balances() {
+        let mut inv = Inventory::starting_kit();
+        let mut s = hurt(10.0);
+        inv.add(Item::Stimpak);
+        inv.add(Item::Hotdish);
+        assert_eq!((inv.stimpaks, inv.hotdish), (3, 3));
+        use_aid(Aid::Stimpak, &mut inv, &mut s);
+        use_aid(Aid::Hotdish, &mut inv, &mut s);
+        assert_eq!((inv.stimpaks, inv.hotdish), (2, 2));
+    }
+
+    #[test]
+    fn the_coat_needs_exactly_three_pelts_and_only_once() {
+        let mut inv = Inventory::starting_kit();
+        assert!(inv.craft_coat().is_err());
+        inv.pelts = 4;
+        assert!(inv.craft_coat().is_ok());
+        assert_eq!((inv.pelts, inv.has_frostfang_coat), (1, true));
+        inv.pelts = 3;
+        assert!(inv.craft_coat().is_err(), "already wearing one");
+        assert_eq!(inv.pelts, 3, "pelts kept");
+        assert!(inv.insulation() > 0.5);
     }
 }

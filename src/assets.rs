@@ -105,7 +105,7 @@ pub struct GameAssets {
 }
 
 /// A file every complete `assets` folder contains.
-const MARKER: &str = "textures/snow_02/diff_clean.jpg";
+const MARKER: &str = "textures/generated/snow_diff.jpg";
 
 /// Where to look for the `assets` folder, best first: next to the
 /// executable, one or two folders up (a `cargo build` puts the executable in

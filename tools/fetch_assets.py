@@ -50,7 +50,6 @@ MODELS = [
 # PBR texture sets at 1k: (id, maps, use). "arm" packs AO/roughness/metal, which
 # matches glTF's occlusion + metallic-roughness channel layout.
 TEXTURES = [
-    ("snow_02", ["Diffuse", "nor_gl", "arm"], "terrain snow"),
     ("pine_bark", ["Diffuse", "nor_gl"], "pine trunks"),
     ("rusty_metal_02", ["Diffuse", "nor_gl", "arm"], "wrecked cars"),
     ("rusty_corrugated_iron", ["Diffuse", "nor_gl", "arm"], "Golden Atomic Mills silos"),

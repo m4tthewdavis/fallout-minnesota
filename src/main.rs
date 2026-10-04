@@ -75,6 +75,7 @@ fn main() {
             player::PlayerPlugin,
             sky::SkyPlugin,
             snow::SnowPlugin,
+            flora::FloraPlugin,
             tracks::TracksPlugin,
             weather_fx::WeatherPlugin,
             wolves::WolfPlugin,

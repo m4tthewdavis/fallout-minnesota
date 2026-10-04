@@ -72,7 +72,7 @@ pub struct HudPlugin;
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_hud)
-            .add_systems(Update, (update_hud, missing_banner, fade_crosshair, scale_ui, show_prompt, hide_with_pip));
+            .add_systems(Update, (update_hud.run_if(|pip: Res<crate::state::PipOpen>| !pip.0), missing_banner, fade_crosshair, scale_ui, show_prompt, hide_with_pip));
     }
 }
 
@@ -416,7 +416,7 @@ fn show_prompt(prompt: Res<crate::state::Prompt>, mut q: Query<&mut Text, With<P
 /// The iron sights replace the crosshair while aiming.
 fn fade_crosshair(aim: Res<crate::gun::AimAmount>, mut q: Query<&mut TextColor, With<Crosshair>>) {
     for mut c in &mut q {
-        c.0 = HUD_AMBER.with_alpha(0.85 * (1.0 - aim.0 * 1.5).clamp(0.0, 1.0));
+        c.set_if_neq(TextColor(HUD_AMBER.with_alpha(0.85 * (1.0 - aim.0 * 1.5).clamp(0.0, 1.0))));
     }
 }
 
@@ -490,6 +490,15 @@ fn compass_strip(heading: f32, markers: &[(f32, char)]) -> String {
     out
 }
 
+/// Set a node's width in percent, but only touch it when it changes (a write
+/// marks the node changed and makes Bevy redo its layout).
+fn set_width(node: &mut Mut<Node>, percent: f32) {
+    let w = Val::Percent(percent);
+    if node.width != w {
+        node.width = w;
+    }
+}
+
 fn update_hud(
     time: Res<Time>,
     game: Res<Game>,
@@ -550,18 +559,18 @@ fn update_hud(
             }
             Stat::Rads => (s.rads / Survival::MAX_RADS, if rad_rate > 0.0 { WARN } else { HUD_AMBER }),
         };
-        node.width = Val::Percent(frac.clamp(0.0, 1.0) * 100.0);
+        set_width(&mut node, frac.clamp(0.0, 1.0) * 100.0);
         // Pulse a bar that's in trouble.
         let pulse = if (fill.0 == Stat::Heat && s.body_heat < 30.0) || (fill.0 == Stat::Hp && frac < 0.25) {
             0.6 + 0.4 * (t * 6.0).sin().abs()
         } else {
             1.0
         };
-        bg.0 = color.with_alpha(pulse);
+        bg.set_if_neq(BackgroundColor(color.with_alpha(pulse)));
     }
     if let Ok(mut node) = rad_loss.single_mut() {
         let lost = (Survival::BASE_MAX_HEALTH - s.max_health()) / Survival::BASE_MAX_HEALTH;
-        node.width = Val::Percent(lost.clamp(0.0, 1.0) * 100.0);
+        set_width(&mut node, lost.clamp(0.0, 1.0) * 100.0);
     }
 
     // ---- Values ----
@@ -585,8 +594,8 @@ fn update_hud(
                 (format!("{:>4.0}{}", s.rads, rate), rad_rate > 0.0)
             }
         };
-        text.0 = value;
-        color.0 = if warn { WARN } else { HUD_AMBER };
+        text.set_if_neq(Text::new(value));
+        color.set_if_neq(TextColor(if warn { WARN } else { HUD_AMBER }));
     }
 
     // ---- Conditions line ----
@@ -602,7 +611,7 @@ fn update_hud(
         Phase::Blizzard => format!("RAD-BLIZZARD ({:.0}s left)", w.timer.max(0.0)),
     };
     if let Ok(mut text) = texts.p1().single_mut() {
-        text.0 = format!(
+        text.set_if_neq(Text::new(format!(
             "{:.0}F  feels {:.0}F\n{}\nDay {}  {}  {}",
             air_temp,
             feels,
@@ -610,7 +619,7 @@ fn update_hud(
             clock.0.day,
             clock.0.label(),
             if clock.0.is_night() { "Night" } else { "Day" }
-        );
+        )));
     }
 
     // ---- Weapon + inventory ----
@@ -625,11 +634,11 @@ fn update_hud(
         ""
     };
     if let Ok((mut text, mut color)) = texts.p3().single_mut() {
-        text.0 = match wpn.kind.ammo() {
+        text.set_if_neq(Text::new(match wpn.kind.ammo() {
             Some(ammo) => format!("{:>2} / {}", wpn.mag, game.inv.reserve(ammo)),
             None => "MELEE".to_string(),
-        };
-        color.0 = if wpn.jammed || (wpn.mag == 0 && !wpn.melee) { WARN } else { HUD_AMBER };
+        }));
+        color.set_if_neq(TextColor(if wpn.jammed || (wpn.mag == 0 && !wpn.melee) { WARN } else { HUD_AMBER }));
     }
     let inv = &game.inv;
     let coat = if inv.has_frostfang_coat {
@@ -657,7 +666,7 @@ fn update_hud(
         }
     }
     if let Ok(mut text) = texts.p2().single_mut() {
-        text.0 = format!(
+        text.set_if_neq(Text::new(format!(
             "{}  {}\n{}{}\nStimpak x{}  RadAway x{}\nHotdish x{}  Scrap x{}\n{}  |  Kills {}",
             wpn.name.to_uppercase(),
             wstate,
@@ -669,25 +678,25 @@ fn update_hud(
             inv.scrap,
             coat,
             game.kills,
-        );
+        )));
     }
 
     // ---- Message line ----
     if let Ok((mut text, mut color)) = texts.p4().single_mut() {
         if msgs.timer > 0.0 && game.death.is_none() {
-            text.0 = msgs.text.clone();
-            color.0 = WARN.with_alpha(msgs.timer.clamp(0.0, 1.0));
+            text.set_if_neq(Text::new(msgs.text.clone()));
+            color.set_if_neq(TextColor(WARN.with_alpha(msgs.timer.clamp(0.0, 1.0))));
         } else {
-            text.0.clear();
+            text.set_if_neq(Text::new(""));
         }
     }
 
     // ---- Death screen ----
     if let Ok(mut text) = texts.p5().single_mut() {
-        text.0 = match game.death {
+        text.set_if_neq(Text::new(match game.death {
             Some(cause) => format!("YOU DIED\n\n{}\n\nPress R to return to Vault 143", cause.describe()),
             None => String::new(),
-        };
+        }));
     }
 
     // ---- Compass ----
@@ -701,25 +710,28 @@ fn update_hud(
         markers.push((bearing(sx - pos.x, sz - pos.z), 'H'));
     }
     if let Ok(mut text) = texts.p6().single_mut() {
-        text.0 = compass_strip(heading, &markers);
+        text.set_if_neq(Text::new(compass_strip(heading, &markers)));
     }
     if let Ok(mut text) = texts.p7().single_mut() {
         let deg = (heading.round() as i32).rem_euclid(360);
-        text.0 = format!("{deg:03}   V vault   H shelter");
+        text.set_if_neq(Text::new(format!("{deg:03}   V vault   H shelter")));
     }
 
     if let Ok(mut c) = help.single_mut() {
-        c.0 = HUD_AMBER.with_alpha((0.6 - (t - 45.0) * 0.05).clamp(0.0, 0.6));
+        c.set_if_neq(TextColor(HUD_AMBER.with_alpha((0.6 - (t - 45.0) * 0.05).clamp(0.0, 0.6))));
     }
 
     // ---- Overlays ----
     let hurt_alpha = if game.death.is_some() { 0.45 } else { game.hurt_flash * 0.35 };
     if let Ok(mut bg) = overlays.p0().single_mut() {
-        bg.0 = Color::srgba(0.8, 0.0, 0.0, hurt_alpha);
+        bg.set_if_neq(BackgroundColor(Color::srgba(0.8, 0.0, 0.0, hurt_alpha)));
     }
     let frost_alpha = ((50.0 - s.body_heat) / 50.0).clamp(0.0, 1.0);
     if let Ok(mut img) = overlays.p1().single_mut() {
-        img.color = Color::srgba(1.0, 1.0, 1.0, frost_alpha * 0.9);
+        let c = Color::srgba(1.0, 1.0, 1.0, frost_alpha * 0.9);
+        if img.color != c {
+            img.color = c;
+        }
     }
     let rad_alpha = if rad_rate > 0.0 {
         (rad_rate / 15.0).clamp(0.0, 1.0) * (0.06 + 0.03 * (t * 3.0).sin())
@@ -727,7 +739,7 @@ fn update_hud(
         0.0
     };
     if let Ok(mut bg) = overlays.p2().single_mut() {
-        bg.0 = Color::srgba(0.2, 1.0, 0.2, rad_alpha);
+        bg.set_if_neq(BackgroundColor(Color::srgba(0.2, 1.0, 0.2, rad_alpha)));
     }
 }
 

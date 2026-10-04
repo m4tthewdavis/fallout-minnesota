@@ -126,8 +126,10 @@ impl Plugin for WorldPlugin {
     }
 }
 
+/// Height of the ground you can see: the rendered terrain's triangles, not
+/// the smooth field they approximate, so props rest on the snow exactly.
 pub fn ground(x: f32, z: f32) -> f32 {
-    terrain::height(x, z)
+    terrain::mesh_height(x, z)
 }
 
 /// Weathering laid over every plain-coloured material (see [`mat`]).

@@ -16,6 +16,7 @@ pub mod mapdata;
 pub mod meshgen;
 pub mod mipmaps;
 pub mod moose;
+pub mod pipnav;
 pub mod progress;
 pub mod rng;
 pub mod sfx;

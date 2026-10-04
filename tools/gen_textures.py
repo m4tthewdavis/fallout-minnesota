@@ -236,38 +236,6 @@ SIGNS = [
 ]
 
 
-def clean_snow():
-    """Derived from Poly Haven's CC0 snow_02: remove the dark twig squiggles
-    (they read as dirt when tiled across a whole map) and lift the levels."""
-    src = os.path.join(ASSETS, "textures", "snow_02", "diff.jpg")
-    if not os.path.exists(src):
-        print("   (skipping clean snow: run fetch_assets.py first)")
-        return
-    img = Image.open(src).convert("RGB")
-    w, h = img.size
-    # Filter a 3x3 tiling so the result still tiles seamlessly.
-    big = Image.new("RGB", (w * 3, h * 3))
-    for dx in range(3):
-        for dy in range(3):
-            big.paste(img, (dx * w, dy * h))
-    # Never let a pixel be much darker than its blurred neighbourhood: keeps
-    # the fine grain and bright sparkle, removes dark strokes.
-    def blur(arr, r):
-        return np.asarray(Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(r)), float)
-
-    A = np.asarray(big, float)
-    base = blur(A, 14)
-    # Second pass: average only the pixels that aren't part of a stroke.
-    valid = (A.mean(-1) > base.mean(-1) - 6).astype(float)[..., None]
-    num = blur(A * valid, 14)
-    den = blur(np.repeat(valid * 255, 3, -1), 14) / 255.0
-    base = num / np.maximum(den, 1e-3)
-    out = np.maximum(A, base - 3.0)[h : 2 * h, w : 2 * w]
-    out = np.clip((out - 120) * 1.15 + 150, 0, 255)
-    Image.fromarray(out.astype(np.uint8)).save(os.path.join(ASSETS, "textures", "snow_02", "diff_clean.jpg"), quality=90)
-    print("   textures/snow_02/diff_clean.jpg")
-
-
 def gun_textures():
     """Pipe-rifle materials: worn blued steel with rust gathering in pits and
     seams plus bright scratches, and scratched, grimy wood grain."""
@@ -1073,7 +1041,6 @@ def main():
         sign(*spec)
     vending_front()
     chainlink()
-    clean_snow()
     gun_textures()
     ui_icons()
     vehicle_textures()

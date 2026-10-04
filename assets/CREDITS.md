@@ -33,7 +33,6 @@ Fetched by `tools/fetch_assets.py`. License: <https://polyhaven.com/license>.
 | `models/boombox/` | Boombox | <https://polyhaven.com/a/boombox> | Thomas Paul Mouilleron | a boombox left at an abandoned camp |
 | `models/rusted_spade_01/` | Rusted Spade 01 | <https://polyhaven.com/a/rusted_spade_01> | Blemonade | a spade left in the snow at camp |
 | `models/worn_metal_rack/` | Worn Metal Rack | <https://polyhaven.com/a/worn_metal_rack> | Luca B | shelving in the Bullseye-Mart ruin |
-| `textures/snow_02/` | Snow 02 | <https://polyhaven.com/a/snow_02> | Rob Tuytel | terrain snow |
 | `textures/pine_bark/` | Pine Bark | <https://polyhaven.com/a/pine_bark> | Dimitrios Savva | pine trunks |
 | `textures/rusty_metal_02/` | Rusty Metal 02 | <https://polyhaven.com/a/rusty_metal_02> | Rob Tuytel | wrecked cars |
 | `textures/rusty_corrugated_iron/` | Rusty Corrugated Iron | <https://polyhaven.com/a/rusty_corrugated_iron> | Charlotte Baglioni | Golden Atomic Mills silos |
@@ -64,8 +63,6 @@ Generated from code by `tools/gen_textures.py` (original work, same license as t
 - `ui/`: HUD icons (health, Body Heat, radiation), CRT scanlines, vignette and the frost overlay; the Pip-Boy
   device art, CRT glass and static frames, and the Vault 143 mascot (an original character, not Bethesda's
   Vault Boy).
-- `textures/snow_02/diff_clean.jpg`: derived from Poly Haven's CC0 `snow_02` with the dark twig marks removed
-  (kept as the marker the game uses to find this folder).
 
 Procedural at runtime (no files): the forest (white and red pine, balsam fir, white spruce, paper birch, quaking
 aspen, tamarack), red osier dogwood, staghorn sumac, juniper, prairie grass, cattails and reeds, dead snags,

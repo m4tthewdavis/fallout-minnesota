@@ -42,7 +42,7 @@ jobs:
       - name: Check the package has its game files
         shell: pwsh
         run: |
-          foreach ($f in @("dist/FalloutMinnesota.exe", "dist/assets/textures/snow_02/diff_clean.jpg", "dist/assets/models/barrel_stove/barrel_stove.gltf", "dist/assets/textures/generated/flame_sheet.png", "dist/assets/textures/generated/spray_fir.png", "dist/assets/ui/pip_frame.png", "dist/assets/ui/mascot_idle.png")) {
+          foreach ($f in @("dist/FalloutMinnesota.exe", "dist/assets/textures/generated/snow_diff.jpg", "dist/assets/models/barrel_stove/barrel_stove.gltf", "dist/assets/textures/generated/flame_sheet.png", "dist/assets/textures/generated/spray_fir.png", "dist/assets/ui/pip_frame.png", "dist/assets/ui/mascot_idle.png")) {
             if (-not (Test-Path $f)) { Write-Error "Missing from the package: $f"; exit 1 }
           }
 

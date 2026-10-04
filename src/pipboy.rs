@@ -26,11 +26,12 @@ use bevy::window::PrimaryWindow;
 
 use crate::assets::GameAssets;
 use crate::audio::{AudioSettings, GeigerOn};
-use crate::player::{set_grab, use_aid, Aid, Player};
+use crate::player::{set_grab, use_aid, Player};
 use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::sim::mapdata::{self, Fog, Kind};
+use crate::sim::pipnav::{Layout, Main, Nav, Page};
 use crate::sim::progress;
-use crate::sim::survival::{Exposure, Inventory, Survival};
+use crate::sim::survival::{Aid, Exposure, Inventory, Survival};
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
 use crate::sim::weather::Phase;
@@ -63,90 +64,10 @@ const ROWS: usize = 8;
 const RAISE_SECS: f32 = 0.38;
 const LOWER_SECS: f32 = 0.26;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Main {
-    Stats,
-    Items,
-    Data,
-}
-
-impl Main {
-    const ALL: [Main; 3] = [Main::Stats, Main::Items, Main::Data];
-    fn label(self) -> &'static str {
-        match self {
-            Main::Stats => "STATS",
-            Main::Items => "ITEMS",
-            Main::Data => "DATA",
-        }
-    }
-    fn pages(self) -> &'static [Page] {
-        match self {
-            Main::Stats => &[Page::Status, Page::Special],
-            Main::Items => &[Page::Weapons, Page::Apparel, Page::Aid],
-            Main::Data => &[Page::Map, Page::Notes],
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Page {
-    Status,
-    Special,
-    Weapons,
-    Apparel,
-    Aid,
-    Map,
-    Notes,
-}
-
-impl Page {
-    fn main(self) -> Main {
-        match self {
-            Page::Status | Page::Special => Main::Stats,
-            Page::Weapons | Page::Apparel | Page::Aid => Main::Items,
-            Page::Map | Page::Notes => Main::Data,
-        }
-    }
-    fn label(self) -> &'static str {
-        match self {
-            Page::Status => "STATUS",
-            Page::Special => "S.P.E.C.I.A.L.",
-            Page::Weapons => "WEAPONS",
-            Page::Apparel => "APPAREL",
-            Page::Aid => "AID",
-            Page::Map => "WORLD MAP",
-            Page::Notes => "NOTES",
-        }
-    }
-    fn index(self) -> usize {
-        self as usize
-    }
-    /// Which of the shared page layouts shows this page.
-    fn layout(self) -> Layout {
-        match self {
-            Page::Status => Layout::Status,
-            Page::Special | Page::Weapons | Page::Apparel | Page::Aid => Layout::List,
-            Page::Map => Layout::Map,
-            Page::Notes => Layout::Notes,
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Layout {
-    Status,
-    List,
-    Map,
-    Notes,
-}
-
 #[derive(Resource)]
 struct PipState {
-    page: Page,
-    /// The page each top tab last showed.
-    last: [Page; 3],
-    /// Selected row on each list page.
-    selected: [usize; 7],
+    /// Which page you're on and what's selected (rules in `sim::pipnav`).
+    nav: Nav,
     /// Map zoom (1 = whole map fits the view) and the world point at its centre.
     zoom: f32,
     center: Vec2,
@@ -274,8 +195,7 @@ fn auto_open(real: Res<Time<Real>>, mut stage: Local<u8>, mut keys: ResMut<Butto
             "notes" => Page::Notes,
             _ => Page::Map,
         };
-        st.page = page;
-        st.last[page.main() as usize] = page;
+        st.nav.go_to(page);
         if let Some(z) = std::env::var("FMN_PIP_ZOOM").ok().and_then(|z| z.parse().ok()) {
             st.zoom = z;
         }
@@ -352,9 +272,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
     let arrow = images.add(rgba_image(32, 32, mapdata::arrow_icon(32)));
     let static_frames = [0, 1, 2, 3].map(|k| server.load(format!("ui/pip_static_{k}.png")));
     commands.insert_resource(PipState {
-        page: Page::Status,
-        last: [Page::Status, Page::Weapons, Page::Map],
-        selected: [0; 7],
+        nav: Nav::default(),
         zoom: 1.0,
         center: Vec2::ZERO,
         fog,
@@ -699,11 +617,15 @@ fn update_fog(mut st: ResMut<PipState>, mut images: ResMut<Assets<Image>>, mut m
 
 /// Switch page, with a burst of static.
 fn go_to(st: &mut PipState, sfx: &mut SfxQueue, page: Page) {
-    if st.page == page {
-        return;
+    if st.nav.go_to(page) {
+        st.burst = 0.22;
+        sfx.play(Sound::UiTab);
+        sfx.play(Sound::PipStatic);
     }
-    st.page = page;
-    st.last[page.main() as usize] = page;
+}
+
+/// The static and sound that go with a page change you've already made.
+fn page_changed(st: &mut PipState, sfx: &mut SfxQueue) {
     st.burst = 0.22;
     sfx.play(Sound::UiTab);
     sfx.play(Sound::PipStatic);
@@ -887,36 +809,27 @@ fn pipboy_input(
     player: Query<&Transform, With<Player>>,
 ) {
     for (key, main) in [(KeyCode::Digit1, Main::Stats), (KeyCode::Digit2, Main::Items), (KeyCode::Digit3, Main::Data)] {
-        if keys.just_pressed(key) && st.page.main() != main {
-            let page = st.last[main as usize];
-            go_to(&mut st, &mut sfx, page);
+        if keys.just_pressed(key) && st.nav.switch_main(main) {
+            page_changed(&mut st, &mut sfx);
         }
     }
-    let pages = st.page.main().pages();
-    let at = pages.iter().position(|p| *p == st.page).unwrap_or(0);
-    if keys.just_pressed(KeyCode::KeyQ) && at > 0 {
-        go_to(&mut st, &mut sfx, pages[at - 1]);
+    if keys.just_pressed(KeyCode::KeyQ) && st.nav.step_page(-1) {
+        page_changed(&mut st, &mut sfx);
     }
-    if keys.just_pressed(KeyCode::KeyE) && at + 1 < pages.len() {
-        go_to(&mut st, &mut sfx, pages[at + 1]);
+    if keys.just_pressed(KeyCode::KeyE) && st.nav.step_page(1) {
+        page_changed(&mut st, &mut sfx);
     }
 
-    if st.page.layout() == Layout::List {
-        let count = list_items(st.page, &game).len().max(1);
-        let i = st.page.index();
+    if st.nav.page.layout() == Layout::List {
+        let count = list_items(st.nav.page, &game).len();
         let up = keys.just_pressed(KeyCode::KeyW) || keys.just_pressed(KeyCode::ArrowUp);
         let down = keys.just_pressed(KeyCode::KeyS) || keys.just_pressed(KeyCode::ArrowDown);
-        if up && st.selected[i] > 0 {
-            st.selected[i] -= 1;
+        if (up && st.nav.move_selection(count, -1)) || (down && st.nav.move_selection(count, 1)) {
             sfx.play(Sound::PipScroll);
         }
-        if down && st.selected[i] + 1 < count {
-            st.selected[i] += 1;
-            sfx.play(Sound::PipScroll);
-        }
-        st.selected[i] = st.selected[i].min(count - 1);
-        if st.page == Page::Aid && (keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space)) {
-            let aid = [Aid::Stimpak, Aid::RadAway, Aid::Hotdish][st.selected[i].min(2)];
+        st.nav.clamp_selection(count);
+        if st.nav.page == Page::Aid && (keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space)) {
+            let aid = Aid::ALL[st.nav.selected_row().min(2)];
             if use_aid(aid, &mut game, &mut msgs) {
                 sfx.play(Sound::PickupMed);
             } else {
@@ -925,7 +838,7 @@ fn pipboy_input(
         }
     }
 
-    if st.page != Page::Map {
+    if st.nav.page != Page::Map {
         return;
     }
     let dt = time.delta_secs();
@@ -972,27 +885,25 @@ fn pipboy_input(
 fn buttons(
     mut st: ResMut<PipState>,
     mut sfx: ResMut<SfxQueue>,
+    game: Res<Game>,
     mains: Query<(&Interaction, &MainButton), Changed<Interaction>>,
     subs: Query<(&Interaction, &SubTab), (Changed<Interaction>, Without<MainButton>)>,
     rows: Query<(&Interaction, &ListRow), (Changed<Interaction>, Without<SubTab>, Without<MainButton>)>,
 ) {
     for (interaction, b) in &mains {
-        if *interaction == Interaction::Pressed && st.page.main() != b.0 {
-            let page = st.last[b.0 as usize];
-            go_to(&mut st, &mut sfx, page);
+        if *interaction == Interaction::Pressed && st.nav.switch_main(b.0) {
+            page_changed(&mut st, &mut sfx);
         }
     }
     for (interaction, tab) in &subs {
-        let pages = st.page.main().pages();
-        if *interaction == Interaction::Pressed && tab.0 < pages.len() {
-            go_to(&mut st, &mut sfx, pages[tab.0]);
+        if let (Interaction::Pressed, Some(page)) = (*interaction, st.nav.page_in_tab(tab.0)) {
+            go_to(&mut st, &mut sfx, page);
         }
     }
     for (interaction, row) in &rows {
-        if matches!(interaction, Interaction::Hovered | Interaction::Pressed) && st.page.layout() == Layout::List {
-            let i = st.page.index();
-            if st.selected[i] != row.0 {
-                st.selected[i] = row.0;
+        if matches!(interaction, Interaction::Hovered | Interaction::Pressed) && st.nav.page.layout() == Layout::List {
+            let count = list_items(st.nav.page, &game).len();
+            if st.nav.select_row(row.0, count) {
                 sfx.play(Sound::PipScroll);
             }
         }
@@ -1008,7 +919,7 @@ fn show_layout(
     mut texts: Query<&mut Text, Without<MainTitle>>,
     mut title: Query<&mut Text, With<MainTitle>>,
 ) {
-    let layout = st.page.layout();
+    let layout = st.nav.page.layout();
     for (mut node, l) in &mut layouts {
         let want = if l.0 == layout { Display::Flex } else { Display::None };
         if node.display != want {
@@ -1016,16 +927,16 @@ fn show_layout(
         }
     }
     for (lamp, mut bg) in &mut lamps {
-        bg.0 = if lamp.0 == st.page.main() { AMBER } else { Color::srgba(0.2, 0.15, 0.05, 0.8) };
+        bg.0 = if lamp.0 == st.nav.page.main() { AMBER } else { Color::srgba(0.2, 0.15, 0.05, 0.8) };
     }
-    let pages = st.page.main().pages();
+    let pages = st.nav.page.main().pages();
     for (tab, mut node, mut border, mut bg, children) in &mut subs {
         let Some(page) = pages.get(tab.0) else {
             node.display = Display::None;
             continue;
         };
         node.display = Display::Flex;
-        let active = *page == st.page;
+        let active = *page == st.nav.page;
         border.0 = if active { AMBER } else { Color::NONE };
         bg.0 = if active { AMBER_FAINT } else { Color::NONE };
         if let Some(&child) = children.first() {
@@ -1037,7 +948,7 @@ fn show_layout(
         }
     }
     if let Ok(mut t) = title.single_mut() {
-        t.0 = st.page.main().label().to_string();
+        t.0 = st.nav.page.main().label().to_string();
     }
 }
 
@@ -1086,7 +997,7 @@ fn update_status(
     mut text: Query<&mut Text, (With<StatusText>, Without<StatusSide>)>,
     mut side: Query<&mut Text, (With<StatusSide>, Without<StatusText>)>,
 ) {
-    if st.page != Page::Status {
+    if st.nav.page != Page::Status {
         return;
     }
     let t = real.elapsed_secs();
@@ -1255,11 +1166,11 @@ fn update_list(
     mut detail: Query<&mut Text, With<DetailText>>,
     mut mascot: Query<(&mut ImageNode, &mut Node), (With<DetailMascot>, Without<ListRow>)>,
 ) {
-    if st.page.layout() != Layout::List {
+    if st.nav.page.layout() != Layout::List {
         return;
     }
-    let items = list_items(st.page, &game);
-    let sel = st.selected[st.page.index()].min(items.len().saturating_sub(1));
+    let items = list_items(st.nav.page, &game);
+    let sel = st.nav.selected[st.nav.page.index()].min(items.len().saturating_sub(1));
     for (row, mut node, mut border, mut bg, children) in &mut rows {
         let Some((label, _)) = items.get(row.0) else {
             node.display = Display::None;
@@ -1281,7 +1192,7 @@ fn update_list(
         t.0 = items.get(sel).map(|i| i.1.clone()).unwrap_or_else(|| "Nothing here yet.".to_string());
     }
     if let Ok((mut img, mut node)) = mascot.single_mut() {
-        let show = st.page == Page::Special;
+        let show = st.nav.page == Page::Special;
         node.display = if show { Display::Flex } else { Display::None };
         img.image = art.idle.clone();
     }
@@ -1289,7 +1200,7 @@ fn update_list(
 
 /// NOTES: objectives (ticked as you go), places found, and settings.
 fn update_notes(st: Res<PipState>, game: Res<Game>, audio: Res<AudioSettings>, geiger: Res<GeigerOn>, mut q: Query<&mut Text, With<NotesText>>) {
-    if st.page != Page::Notes {
+    if st.nav.page != Page::Notes {
         return;
     }
     let Ok(mut t) = q.single_mut() else { return };
@@ -1337,7 +1248,7 @@ fn update_map(
     mut info: Query<&mut Text, (With<InfoText>, Without<CursorLabel>)>,
     clock: Res<ClockRes>,
 ) {
-    if st.page != Page::Map {
+    if st.nav.page != Page::Map {
         return;
     }
     let size = VIEW * st.zoom;

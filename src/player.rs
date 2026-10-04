@@ -9,7 +9,7 @@ use bevy::window::{CursorGrabMode, PrimaryWindow};
 
 use crate::sim::collision;
 use crate::sim::daynight::Clock;
-use crate::sim::survival::{Exposure, Survival};
+use crate::sim::survival::{self, Aid, Exposure, Survival};
 use crate::sim::sfx;
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE, PLAYER_SPAWN};
@@ -319,53 +319,12 @@ fn survival_tick(
     }
 }
 
-/// The three aid items you can use from the keyboard or the Pip-Boy.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Aid {
-    Stimpak,
-    RadAway,
-    Hotdish,
-}
-
-/// Use one aid item if you have it (and it would help). Returns true if used.
+/// Use one aid item and tell the player what happened. Returns true if it was used.
 pub fn use_aid(aid: Aid, game: &mut Game, msgs: &mut Messages) -> bool {
-    let Game { survival, inv, .. } = game;
-    match aid {
-        Aid::Stimpak => {
-            if inv.stimpaks == 0 {
-                msgs.show("No Stimpaks left.", 2.0);
-            } else if survival.health >= survival.max_health() {
-                msgs.show("You're not hurt.", 1.5);
-            } else {
-                inv.stimpaks -= 1;
-                survival.heal(40.0);
-                msgs.show("Stimpak used. +40 HP", 2.0);
-                return true;
-            }
-        }
-        Aid::RadAway => {
-            if inv.radaway == 0 {
-                msgs.show("No RadAway left.", 2.0);
-            } else {
-                inv.radaway -= 1;
-                survival.purge_rads(150.0);
-                msgs.show("RadAway used. -150 rads", 2.0);
-                return true;
-            }
-        }
-        Aid::Hotdish => {
-            if inv.hotdish == 0 {
-                msgs.show("No hotdish left. Uff da.", 2.0);
-            } else {
-                inv.hotdish -= 1;
-                survival.warm(35.0);
-                survival.heal(5.0);
-                msgs.show("Vault 143 Hotdish: warm, starchy, and only a little radioactive. +35 Heat", 3.0);
-                return true;
-            }
-        }
-    }
-    false
+    let result = survival::use_aid(aid, &mut game.inv, &mut game.survival);
+    let secs = if result.used() && aid == Aid::Hotdish { 3.0 } else if result.used() { 2.0 } else { 1.5 };
+    msgs.show(result.message(), secs);
+    result.used()
 }
 
 fn use_items(

@@ -22,6 +22,73 @@ use crate::world::{ground, spawn_contact_shadow, spawn_drift};
 
 const TREES: usize = 300;
 
+/// Beyond this distance (metres) a tree swaps to its cheap model and stops
+/// casting shadows. (A little hysteresis keeps trees at the edge from flickering.)
+pub const TREE_FAR: f32 = 60.0;
+const TREE_HYSTERESIS: f32 = 4.0;
+
+/// A tree that switches between detailed and cheap models by distance.
+#[derive(Component)]
+struct TreeLod {
+    bark: Entity,
+    foliage: Entity,
+    near: (Handle<Mesh>, Handle<Mesh>),
+    far: (Handle<Mesh>, Handle<Mesh>),
+    far_now: bool,
+}
+
+/// Whether a tree at `distance` should be in its far state, given its current one.
+pub fn is_far(distance: f32, was_far: bool) -> bool {
+    if was_far {
+        distance > TREE_FAR - TREE_HYSTERESIS
+    } else {
+        distance > TREE_FAR + TREE_HYSTERESIS
+    }
+}
+
+pub struct FloraPlugin;
+
+impl Plugin for FloraPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, tree_lod);
+    }
+}
+
+/// Four times a second, move trees between their near and far versions.
+fn tree_lod(
+    mut commands: Commands,
+    time: Res<Time<Real>>,
+    mut since: Local<f32>,
+    cam: Query<&GlobalTransform, With<crate::player::Player>>,
+    mut trees: Query<(&GlobalTransform, &mut TreeLod)>,
+) {
+    *since += time.delta_secs();
+    if *since < 0.25 {
+        return;
+    }
+    *since = 0.0;
+    let Ok(cam) = cam.single() else { return };
+    let eye = cam.translation();
+    for (tf, mut tree) in &mut trees {
+        let d = (tf.translation() - eye).xz().length();
+        let far = is_far(d, tree.far_now);
+        if far == tree.far_now {
+            continue;
+        }
+        tree.far_now = far;
+        let (bark, foliage) = if far { tree.far.clone() } else { tree.near.clone() };
+        for (part, mesh) in [(tree.bark, bark), (tree.foliage, foliage)] {
+            let mut e = commands.entity(part);
+            e.insert(Mesh3d(mesh));
+            if far {
+                e.insert(NotShadowCaster);
+            } else {
+                e.remove::<NotShadowCaster>();
+            }
+        }
+    }
+}
+
 /// Every tree shape and plant material, kept for screenshot lineups.
 #[derive(Resource, Clone)]
 pub struct FloraKit {
@@ -34,6 +101,9 @@ const VARIANTS: usize = 3;
 struct TreeModel {
     bark: Handle<Mesh>,
     foliage: Handle<Mesh>,
+    /// Cheaper meshes for when the tree is far away.
+    bark_far: Handle<Mesh>,
+    foliage_far: Handle<Mesh>,
     snow: Option<Handle<Mesh>>,
     height: f32,
 }
@@ -146,10 +216,14 @@ pub fn plant_forest(
         let list = (0..VARIANTS)
             .map(|v| {
                 let height = lo + (hi - lo) * (v as f32 + 0.5) / VARIANTS as f32;
-                let t = flora::tree(species, height, 0.9, 1000 + si as u64 * 17 + v as u64);
+                let seed = 1000 + si as u64 * 17 + v as u64;
+                let t = flora::tree(species, height, 0.9, seed);
+                let far = flora::tree_lod(species, height, 0.9, seed);
                 TreeModel {
                     bark: meshes.add(to_mesh_tangents(&t.bark)),
                     foliage: meshes.add(to_mesh(&t.foliage)),
+                    bark_far: meshes.add(to_mesh_tangents(&far.bark)),
+                    foliage_far: meshes.add(to_mesh(&far.foliage)),
                     snow: mesh_or_none(meshes, &t.snow),
                     height,
                 }
@@ -168,12 +242,25 @@ pub fn plant_forest(
         let tf = Transform::from_xyz(x, terrain::mesh_height(x, z) - 0.05, z)
             .with_scale(Vec3::splat(scale))
             .with_rotation(Quat::from_rotation_y(yaw));
-        commands.spawn((tf, Visibility::default())).with_children(|t| {
-            t.spawn((Mesh3d(model.bark.clone()), MeshMaterial3d(mats.barks[&species.bark()].clone())));
-            t.spawn((Mesh3d(model.foliage.clone()), MeshMaterial3d(mats.cards[&species.card()].clone())));
-            if let Some(snow) = &model.snow {
-                t.spawn((Mesh3d(snow.clone()), MeshMaterial3d(mats.snow.clone()), NotShadowCaster));
-            }
+        let mut parts = None;
+        let tree = commands
+            .spawn((tf, Visibility::default()))
+            .with_children(|t| {
+                let bark = t.spawn((Mesh3d(model.bark.clone()), MeshMaterial3d(mats.barks[&species.bark()].clone()))).id();
+                let foliage = t.spawn((Mesh3d(model.foliage.clone()), MeshMaterial3d(mats.cards[&species.card()].clone()))).id();
+                if let Some(snow) = &model.snow {
+                    t.spawn((Mesh3d(snow.clone()), MeshMaterial3d(mats.snow.clone()), NotShadowCaster));
+                }
+                parts = Some((bark, foliage));
+            })
+            .id();
+        let (bark, foliage) = parts.expect("tree parts are spawned above");
+        commands.entity(tree).insert(TreeLod {
+            bark,
+            foliage,
+            near: (model.bark.clone(), model.foliage.clone()),
+            far: (model.bark_far.clone(), model.foliage_far.clone()),
+            far_now: false,
         });
         let trunk = species.trunk_radius(model.height) * scale;
         solid.push(Shape::Circle { x, z, r: trunk + 0.15 });
@@ -324,7 +411,7 @@ pub fn plant_forest(
             if collision::blocked(x, z, 0.5, solid) || avoid(x, z) {
                 continue;
             }
-            let y = terrain::height(x, z).max(ICE_LEVEL);
+            let y = terrain::mesh_height(x, z).max(ICE_LEVEL);
             let tf = Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU))).with_scale(Vec3::splat(rng.range(0.85, 1.15)));
             let (stalks, tops, top_mat) = if rng.chance(0.7) {
                 let (s, h) = &cattail_set[(li + k) % cattail_set.len()];
@@ -378,5 +465,19 @@ pub fn spawn_lineup(mut commands: Commands, kit: Res<FloraKit>, mut meshes: ResM
                 t.spawn((Mesh3d(snow.clone()), MeshMaterial3d(kit.mats.snow.clone())));
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trees_switch_at_sixty_metres_with_hysteresis() {
+        assert!(!is_far(30.0, false));
+        assert!(is_far(100.0, false));
+        assert!(!is_far(TREE_FAR + 1.0, false), "stays near until clearly past the line");
+        assert!(is_far(TREE_FAR + 1.0, true), "and stays far until clearly inside it");
+        assert!(!is_far(TREE_FAR - 10.0, true));
     }
 }
