@@ -120,13 +120,6 @@ impl Weather {
         self.phase == Phase::Blizzard
     }
 
-    pub fn label(&self) -> &'static str {
-        match self.phase {
-            Phase::Calm => "Calm",
-            Phase::Warning => "SIREN: blizzard inbound",
-            Phase::Blizzard => "RAD-BLIZZARD",
-        }
-    }
 }
 
 #[cfg(test)]

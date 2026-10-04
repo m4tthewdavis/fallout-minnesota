@@ -205,6 +205,7 @@ impl Sound {
         }
     }
 
+    #[cfg(test)]
     /// True for sounds that are meant to loop.
     pub fn is_loop(self) -> bool {
         matches!(

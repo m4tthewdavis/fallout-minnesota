@@ -99,6 +99,7 @@ impl MeshData {
         self.tri(a, c, d);
     }
 
+    #[cfg(test)]
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
     }
@@ -191,6 +192,7 @@ impl MeshData {
     }
 
     /// Every index points at a vertex and every attribute has one entry per vertex.
+    #[cfg(test)]
     pub fn is_valid(&self) -> bool {
         let n = self.positions.len();
         n > 0
@@ -205,6 +207,7 @@ impl MeshData {
     }
 
     /// Axis-aligned bounds: (min, max).
+    #[cfg(test)]
     pub fn bounds(&self) -> (V3, V3) {
         let mut lo = [f32::MAX; 3];
         let mut hi = [f32::MIN; 3];
@@ -701,86 +704,7 @@ pub fn gable_walls(w: f32, h: f32, d: f32, gable: f32, uv_scale: f32) -> MeshDat
     m
 }
 
-/// Pine colours.
-const NEEDLES_DARK: [f32; 4] = [0.07, 0.16, 0.11, 1.0];
-const NEEDLES_LIGHT: [f32; 4] = [0.13, 0.27, 0.17, 1.0];
 const SNOW: [f32; 4] = [0.92, 0.95, 1.0, 1.0];
-
-/// Snow-laden Northwoods pine foliage (no trunk), base at y = 0, `height` tall.
-/// Tiers of drooping, jagged branch skirts; vertex colours carry the needle
-/// greens and the snow sitting on top of each tier.
-pub fn pine(height: f32, tiers: usize, snow: f32, seed: u64) -> MeshData {
-    let mut rng = Rng::new(seed);
-    let mut m = MeshData::default();
-    let spikes = 9;
-    let segs = spikes * 2;
-    let bottom = height * 0.18;
-    let span = height - bottom;
-    for k in 0..tiers {
-        let f = k as f32 / tiers as f32;
-        let top = bottom + span * (f + 1.6 / tiers as f32).min(1.0);
-        let base = bottom + span * f;
-        let radius = height * 0.36 * (1.0 - f * 0.82) * rng.range(0.9, 1.1);
-        let droop = radius * 0.28;
-        let twist = rng.range(0.0, TAU);
-        let green = lerp4(NEEDLES_DARK, NEEDLES_LIGHT, rng.f32());
-        // Rings from the trunk outwards: (radius fraction, height).
-        let rings = [(0.08, top), (0.55, base + (top - base) * 0.35), (1.0, base - droop)];
-        let start = m.positions.len() as u32;
-        for (ri, &(rf, y)) in rings.iter().enumerate() {
-            for j in 0..segs {
-                let th = twist + j as f32 / segs as f32 * TAU;
-                let tip = if j % 2 == 0 { 1.0 } else { 0.72 };
-                let jag = if ri == 0 { 1.0 } else { tip * rng.range(0.9, 1.08) };
-                let r = radius * rf * jag;
-                let yy = y + if ri == 2 && j % 2 == 0 { -droop * 0.3 } else { 0.0 };
-                m.vertex([r * th.cos(), yy, -r * th.sin()], [0.0, 1.0, 0.0], [0.0, 0.0], green);
-            }
-        }
-        let s = segs as u32;
-        for ri in 0..2u32 {
-            for j in 0..s {
-                let a = start + ri * s + j;
-                let b = start + ri * s + (j + 1) % s;
-                let c = start + (ri + 1) * s + (j + 1) % s;
-                let d = start + (ri + 1) * s + j;
-                // Outward/upward facing: inner ring -> outer ring.
-                m.quad(a, d, c, b);
-            }
-        }
-        // Underside back to the trunk so the tier isn't hollow from below.
-        let under = m.vertex([0.0, base + (top - base) * 0.15, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0], NEEDLES_DARK);
-        for j in 0..s {
-            let a = start + 2 * s + j;
-            let b = start + 2 * s + (j + 1) % s;
-            m.tri(under, b, a);
-        }
-    }
-    // Tip.
-    let tip_base = m.positions.len() as u32;
-    let tip_y = height;
-    let ring_y = height * 0.9;
-    let rr = height * 0.035;
-    for j in 0..6 {
-        let th = j as f32 / 6.0 * TAU;
-        m.vertex([rr * th.cos(), ring_y, -rr * th.sin()], [0.0, 1.0, 0.0], [0.0, 0.0], NEEDLES_LIGHT);
-    }
-    let apex = m.vertex([0.0, tip_y, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0], NEEDLES_LIGHT);
-    for j in 0..6 {
-        m.tri(tip_base + j, tip_base + (j + 1) % 6, apex);
-    }
-    m.recompute_normals();
-    // Snow settles on upward-facing needles, more on the outer branches.
-    for i in 0..m.positions.len() {
-        let n = m.normals[i];
-        let p = m.positions[i];
-        let outer = ((p[0] * p[0] + p[2] * p[2]).sqrt() / (height * 0.2)).min(1.0);
-        let patch = 0.75 + 0.25 * wobble(seed as f32, p[0] * 3.0, p[2] * 3.0 + p[1]);
-        let cover = smoothstep(0.35, 0.8, n[1]) * snow * patch * (0.55 + 0.45 * outer);
-        m.colors[i] = lerp4(m.colors[i], SNOW, cover.clamp(0.0, 1.0));
-    }
-    m
-}
 
 /// A bare, dead tree (snag): a few crooked branches. Returned as tubes in one
 /// mesh, base at the origin.
@@ -829,10 +753,6 @@ pub fn wolf_body_variant(variant: u32) -> MeshData {
     m
 }
 
-pub fn wolf_body() -> MeshData {
-    wolf_body_variant(0)
-}
-
 /// Wolf head with muzzle and ears, facing +Z. The variant changes the ears
 /// (1: one ear torn short, 2: tall and alert, 3: ragged and tilted) and the
 /// markings.
@@ -869,10 +789,6 @@ pub fn wolf_head_variant(variant: u32) -> MeshData {
     shade_fur(&mut m);
     wolf_pattern(&mut m, variant);
     m
-}
-
-pub fn wolf_head() -> MeshData {
-    wolf_head_variant(0)
 }
 
 /// Tapered leg hanging from its pivot (y = 0) down to the paw (y = -0.62).
@@ -1074,42 +990,6 @@ pub fn moose_antler(side: f32) -> (MeshData, Vec<V3>) {
     (m, tips)
 }
 
-/// Lower body of a rounded 1950s sedan, along Z (front +Z), wheels' ground at y = 0.
-pub fn car_body(uv_scale: f32) -> MeshData {
-    let q = 5.0;
-    loft_z(
-        &[
-            sec(-2.32, 0.72, 0.8, 0.2, q),
-            sec(-2.25, 0.74, 0.92, 0.3, q),
-            sec(-1.8, 0.76, 0.96, 0.34, q),
-            sec(-1.0, 0.74, 0.97, 0.33, q),
-            sec(0.6, 0.74, 0.97, 0.33, q),
-            sec(1.5, 0.74, 0.96, 0.32, q),
-            sec(2.1, 0.7, 0.93, 0.28, q),
-            sec(2.3, 0.66, 0.82, 0.2, q),
-        ],
-        20,
-        uv_scale,
-    )
-}
-
-/// Rounded cabin (greenhouse) of the sedan, sits on top of [`car_body`].
-pub fn car_cabin(uv_scale: f32) -> MeshData {
-    let q = 3.5;
-    loft_z(
-        &[
-            sec(-1.15, 1.1, 0.8, 0.04, q),
-            sec(-0.95, 1.22, 0.8, 0.18, q),
-            sec(-0.6, 1.3, 0.78, 0.27, q),
-            sec(0.35, 1.3, 0.77, 0.27, q),
-            sec(0.7, 1.2, 0.79, 0.17, q),
-            sec(0.85, 1.1, 0.8, 0.04, q),
-        ],
-        16,
-        uv_scale,
-    )
-}
-
 /// Leather glove colour.
 const GLOVE: [f32; 4] = [0.07, 0.045, 0.028, 1.0];
 const GLOVE_DARK: [f32; 4] = [0.035, 0.024, 0.016, 1.0];
@@ -1300,32 +1180,9 @@ mod tests {
     }
 
     #[test]
-    fn pines_are_snowy_on_top_and_tall_enough() {
-        let m = pine(7.0, 6, 1.0, 3);
-        assert!(m.is_valid());
-        let (lo, hi) = m.bounds();
-        assert!((hi[1] - 7.0).abs() < 1e-4);
-        assert!(lo[1] > 0.0, "foliage starts above the ground");
-        // Upward-facing vertices are whiter than downward ones.
-        let avg = |up: bool| {
-            let v: Vec<f32> = m
-                .normals
-                .iter()
-                .zip(&m.colors)
-                .filter(|(n, _)| (n[1] > 0.7) == up && n[1].abs() > 0.7)
-                .map(|(_, c)| c[0] + c[1] + c[2])
-                .collect();
-            v.iter().sum::<f32>() / v.len().max(1) as f32
-        };
-        assert!(avg(true) > avg(false) + 0.5);
-        let bare = pine(7.0, 6, 0.0, 3);
-        assert!(bare.colors.iter().all(|c| c[0] < 0.3));
-    }
-
-    #[test]
     fn wolf_parts_line_up() {
-        let body = wolf_body();
-        let head = wolf_head();
+        let body = wolf_body_variant(0);
+        let head = wolf_head_variant(0);
         let leg = wolf_leg();
         let tail = wolf_tail();
         for m in [&body, &head, &leg, &tail] {
@@ -1345,19 +1202,6 @@ mod tests {
         let top = body.colors[body.normals.iter().position(|n| n[1] > 0.95).unwrap()];
         let bottom = body.colors[body.normals.iter().position(|n| n[1] < -0.9).unwrap()];
         assert!(top[0] < bottom[0]);
-    }
-
-    #[test]
-    fn car_cabin_sits_on_the_body() {
-        let body = car_body(1.0);
-        let cabin = car_cabin(1.0);
-        closed_and_outward(&body, [0.0, 0.74, 0.0]);
-        closed_and_outward(&cabin, [0.0, 1.3, 0.0]);
-        let (blo, bhi) = body.bounds();
-        let (clo, chi) = cabin.bounds();
-        assert!(blo[1] > 0.3, "body clears the wheels' ground");
-        assert!(clo[1] < bhi[1] && chi[1] > bhi[1]);
-        assert!(bhi[2] - blo[2] > 4.5);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+// TEMP
 
 //! Pure game simulation for Fallout: Minnesota.
 //!

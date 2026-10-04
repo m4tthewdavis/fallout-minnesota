@@ -139,10 +139,12 @@ impl Fog {
         Some(((u * FOG_CELLS as f32) as usize, (v * FOG_CELLS as f32) as usize))
     }
 
+    #[cfg(test)]
     pub fn is_seen(&self, x: f32, z: f32) -> bool {
         Self::cell(x, z).is_some_and(|(i, j)| self.seen[j * FOG_CELLS + i])
     }
 
+    #[cfg(test)]
     pub fn is_cell_seen(&self, i: usize, j: usize) -> bool {
         self.seen[j * FOG_CELLS + i]
     }

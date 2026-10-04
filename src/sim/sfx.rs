@@ -239,6 +239,7 @@ impl MusicDirector {
         }
     }
 
+    #[cfg(test)]
     pub fn mood(&self) -> Mood {
         self.mood
     }
