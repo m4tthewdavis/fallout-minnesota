@@ -1,7 +1,6 @@
 //! Scatters the Northwoods over the map: snow-laden pines, dead snags, bare
 //! shrubs, boulders, snowdrifts and pre-war junk.
 
-use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
 use crate::assets::GameAssets;
@@ -11,7 +10,8 @@ use crate::sim::collision::{self, Shape};
 use crate::sim::meshgen::{self, MeshData};
 use crate::sim::terrain::{self, HALF_SIZE};
 use crate::state::{Colliders, RngRes};
-use crate::world::{ground, prop};
+use crate::sim::weather::WIND_DIR;
+use crate::world::{ground, prop, spawn_contact_shadow, spawn_drift};
 
 const PINES: usize = 260;
 const ROCKS: usize = 30;
@@ -88,6 +88,13 @@ pub fn spawn_nature(
             .with_scale(Vec3::splat(scale))
             .with_rotation(Quat::from_rotation_y(yaw));
         solid.push(Shape::Circle { x, z, r: 0.4 * scale });
+        spawn_contact_shadow(&mut commands, &mut meshes, &assets, x, z, 1.4 * scale, 1.4 * scale, yaw);
+        // Snow piles up in the lee of many trunks.
+        if rng.0.chance(0.4) {
+            let d = 0.9 * scale;
+            let (dx, dz) = (x + WIND_DIR[0] * d, z + WIND_DIR[1] * d);
+            spawn_drift(&mut commands, &mut meshes, &assets, dx, dz, 2.6 * scale, 1.5 * scale, 0.3 * scale, WIND_DIR, placed as u64);
+        }
         if snag {
             let mesh = snag_variants[(rng.0.f32() * snag_variants.len() as f32) as usize % snag_variants.len()].clone();
             commands.spawn((Mesh3d(mesh), MeshMaterial3d(assets.bark.clone()), tf));
@@ -116,19 +123,20 @@ pub fn spawn_nature(
                 .with_scale(Vec3::new(0.09 * s, 0.09 * s, 0.13 * s)),
         ));
         solid.push(Shape::Circle { x, z, r: 0.12 * s });
+        spawn_contact_shadow(&mut commands, &mut meshes, &assets, x, z, 0.2 * s, 0.2 * s, yaw);
+        let d = 0.12 * s;
+        spawn_drift(&mut commands, &mut meshes, &assets, x + WIND_DIR[0] * d, z + WIND_DIR[1] * d, 0.4 * s, 0.22 * s, 0.05 * s, WIND_DIR, 500 + (s * 10.0) as u64);
     }
 
     // ---------- Snowdrifts ----------
     for i in 0..DRIFTS {
         let Some((x, z)) = open_spot(&mut rng, solid, 0.5) else { continue };
-        let r = rng.0.range(2.0, 5.5);
-        let drift = meshgen::blob(r, 0.2, 0.25, 200 + i as u64, 3.0).scaled([1.0, 1.0, rng.0.range(0.4, 0.8)]);
-        commands.spawn((
-            Mesh3d(meshes.add(to_mesh_tangents(&drift))),
-            MeshMaterial3d(assets.snow.clone()),
-            Transform::from_xyz(x, ground(x, z) - 0.12, z).with_rotation(Quat::from_rotation_y(rng.0.range(0.0, 6.28))),
-            NotShadowCaster,
-        ));
+        let length = rng.0.range(4.0, 11.0);
+        let width = length * rng.0.range(0.35, 0.6);
+        let peak = rng.0.range(0.45, 1.2);
+        // Mostly lined up with the wind, a little scattered.
+        let a = WIND_DIR[1].atan2(WIND_DIR[0]) + rng.0.range(-0.35, 0.35);
+        spawn_drift(&mut commands, &mut meshes, &assets, x, z, length, width, peak, [a.cos(), a.sin()], 200 + i as u64);
     }
 
     // ---------- Bare shrubs ----------

@@ -17,6 +17,7 @@ use crate::sim::meshgen;
 use crate::sim::terrain;
 use crate::sim::vehicles::{self as v, Window};
 use crate::state::Colliders;
+use crate::world::spawn_contact_shadow;
 
 /// What's left of a wheel.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -114,6 +115,7 @@ pub fn spawn_vehicles(
     let kit = car_kit(&server, &mut meshes, &mut materials);
     for (i, &(x, z, yaw)) in CARS.iter().enumerate() {
         spawn_car(&mut commands, &mut meshes, &assets, &kit, &WRECKS[i % WRECKS.len()], i as u64, x, z, yaw);
+        spawn_contact_shadow(&mut commands, &mut meshes, &assets, x, z, 1.3, 2.9, yaw);
         let (ax, az) = (yaw.sin() * 1.2, yaw.cos() * 1.2);
         solid.push(Shape::Circle { x: x + ax, z: z + az, r: 1.0 });
         solid.push(Shape::Circle { x: x - ax, z: z - az, r: 1.0 });
@@ -126,6 +128,7 @@ pub fn spawn_vehicles(
     let contacts = [(-0.72, 1.28, 0.0), (0.72, 1.28, 0.0), (-0.72, -1.3, 0.0), (0.72, -1.3, 0.0)];
     let rest = v::settle(px, pz, yaw, &contacts, 0.04, &terrain::mesh_height);
     commands.spawn((SceneRoot(assets.covered_car.clone()), rest_transform(px, pz, yaw, rest)));
+    spawn_contact_shadow(&mut commands, &mut meshes, &assets, px, pz, 1.2, 2.6, yaw);
     for s in [-1.2f32, 1.2] {
         solid.push(Shape::Circle { x: px + yaw.sin() * s, z: pz + yaw.cos() * s, r: 1.0 });
     }
@@ -446,6 +449,7 @@ fn spawn_snowmobiles(commands: &mut Commands, meshes: &mut Assets<Mesh>, materia
                 NotShadowCaster,
             ));
         });
+        spawn_contact_shadow(commands, meshes, assets, x, z, 0.8, 1.9, yaw);
         let (ax, az) = (yaw.sin() * 0.6, yaw.cos() * 0.6);
         solid.push(Shape::Circle { x: x + ax, z: z + az, r: 0.7 });
         solid.push(Shape::Circle { x: x - ax, z: z - az, r: 0.7 });

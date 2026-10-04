@@ -13,6 +13,10 @@ pub enum Phase {
     Blizzard,
 }
 
+/// Direction the prevailing wind blows towards (x, z): snow streams this way,
+/// ripples form across it and drifts pile up downwind of things.
+pub const WIND_DIR: [f32; 2] = [0.928, 0.371];
+
 /// What the weather is doing right now, in gameplay terms.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Conditions {
@@ -85,7 +89,7 @@ impl Weather {
                 air_temp_f: -8.0,
                 wind_chill_f: 10.0,
                 rads_per_sec: 0.0,
-                fog_density: 0.012,
+                fog_density: 0.0075,
                 snow: 0.25,
                 wind: 1.0,
                 light: 1.0,

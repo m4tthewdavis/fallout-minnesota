@@ -14,7 +14,8 @@ use crate::sim::collision::{self, Shape};
 use crate::sim::meshgen;
 use crate::sim::terrain::{self, RAD_SOURCES, ROAD, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
 use crate::state::{Colliders, RngRes};
-use crate::world::{glow, ground, mat, prop, Blinker, FireLight};
+use crate::sim::weather::WIND_DIR;
+use crate::world::{glow, ground, mat, prop, spawn_contact_shadow, spawn_drift, Blinker, FireLight};
 
 /// Pre-war landmarks trees should stay away from: (x, z, clear radius).
 pub const RUINS: [(f32, f32, f32); 2] = [(-40.0, -110.0, 20.0), (140.0, -140.0, 18.0)];
@@ -277,6 +278,11 @@ pub fn spawn_landmarks(
     for (i, &(sx, sz)) in SHELTERS.iter().enumerate() {
         let gy = ground(sx, sz);
         let (hx, hz) = (sx - 1.5, sz);
+        // Snow banked against the windward wall and a long drift in the lee.
+        let (wx, wz) = (WIND_DIR[0], WIND_DIR[1]);
+        spawn_contact_shadow(&mut commands, &mut meshes, &assets, hx, hz, 2.4, 2.4, 0.0);
+        spawn_drift(&mut commands, &mut meshes, &assets, hx - wx * 1.75, hz - wz * 1.75, 1.6, 3.4, 0.55, WIND_DIR, 40 + i as u64);
+        spawn_drift(&mut commands, &mut meshes, &assets, hx + wx * 2.4, hz + wz * 2.4, 4.5, 3.2, 0.75, WIND_DIR, 50 + i as u64);
         commands
             .spawn((Transform::from_xyz(hx, gy, hz), Visibility::default()))
             .with_children(|house| {
@@ -605,14 +611,9 @@ pub fn spawn_landmarks(
         }
         along = 0.0;
         let side = if rng.0.chance(0.5) { 1.0 } else { -1.0 };
-        let (x, z) = (bx2, bz2 + side * (ROAD_HALF_WIDTH + 1.3));
-        let r = rng.0.range(1.5, 3.0);
-        commands.spawn((
-            Mesh3d(meshes.add(to_mesh_tangents(&meshgen::blob(r, 0.3, 0.2, i as u64, 2.0).scaled([1.6, 1.0, 0.8])))),
-            MeshMaterial3d(assets.snow.clone()),
-            Transform::from_xyz(x, ground(x, z) - 0.15, z),
-            NotShadowCaster,
-        ));
+        let (x, z) = (bx2, bz2 + side * (ROAD_HALF_WIDTH + 1.6));
+        let length = rng.0.range(3.0, 6.0);
+        spawn_drift(&mut commands, &mut meshes, &assets, x, z, length, 2.0, rng.0.range(0.45, 0.8), [bx2 - ax, bz2 - az], i as u64);
     }
 
     // Road sign pointing travellers to Mille Lacs and the vault.

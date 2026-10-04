@@ -497,6 +497,64 @@ pub fn ground_patch(
     m
 }
 
+/// A wind-blown snowdrift that grows out of the ground: a terrain-following
+/// grid, `length` along the wind and `width` across, rising to `peak`. The
+/// windward side is a long gentle ramp and the lee side a short steep face,
+/// like real drifts. The rim dips just under the ground so it blends with the
+/// terrain without a seam. `wind` is the direction the wind blows towards.
+/// Positions are in world space; UVs are world xz / `uv_scale` like the terrain.
+#[allow(clippy::too_many_arguments)]
+pub fn drift_patch(
+    cx: f32,
+    cz: f32,
+    length: f32,
+    width: f32,
+    peak: f32,
+    wind: [f32; 2],
+    seed: u64,
+    uv_scale: f32,
+    height: &dyn Fn(f32, f32) -> f32,
+) -> MeshData {
+    let res = 18usize;
+    let half = length.max(width);
+    let (wx, wz) = {
+        let l = (wind[0] * wind[0] + wind[1] * wind[1]).sqrt().max(1e-6);
+        (wind[0] / l, wind[1] / l)
+    };
+    let fs = (seed % 997) as f32 * 0.61;
+    let bump = |x: f32, z: f32| -> f32 {
+        let (dx, dz) = (x - cx, z - cz);
+        // u along the wind, v across it.
+        let u = dx * wx + dz * wz;
+        let v = -dx * wz + dz * wx;
+        let ul = if u > 0.0 { length * 0.35 } else { length };
+        let edge = 1.0 + 0.18 * wobble(fs, x * 0.7, z * 0.7);
+        let d = ((u / ul).powi(2) + (v / (width * 0.5)).powi(2)).sqrt() / edge;
+        if d >= 1.0 {
+            return -0.04;
+        }
+        let t = 0.5 + 0.5 * (d * PI).cos();
+        peak * t * t.sqrt() - 0.04 * (1.0 - t)
+    };
+    let mut m = MeshData::default();
+    for i in 0..=res {
+        for j in 0..=res {
+            let x = cx - half + 2.0 * half * i as f32 / res as f32;
+            let z = cz - half + 2.0 * half * j as f32 / res as f32;
+            m.vertex([x, height(x, z) + bump(x, z), z], [0.0, 1.0, 0.0], [x / uv_scale, z / uv_scale], WHITE);
+        }
+    }
+    let row = res as u32 + 1;
+    for i in 0..res as u32 {
+        for j in 0..res as u32 {
+            let a = i * row + j;
+            m.quad(a, a + 1, a + row + 1, a + row);
+        }
+    }
+    m.recompute_normals();
+    m
+}
+
 /// A ribbon along a path in the XZ plane that hugs the ground (roads).
 /// V runs along the road, U across it (0..1).
 pub fn ground_strip(path: &[(f32, f32)], width: f32, lift: f32, uv_len: f32, height: &dyn Fn(f32, f32) -> f32) -> MeshData {
@@ -1128,6 +1186,20 @@ mod tests {
         assert!(road.normals.iter().all(|n| n[1] > 0.99));
         let reversed = ground_strip(&[(20.0, 5.0), (10.0, 0.0), (0.0, 0.0)], 6.0, 0.05, 6.0, &|_, _| 0.0);
         assert!(reversed.normals.iter().all(|n| n[1] > 0.99));
+    }
+
+    #[test]
+    fn drifts_rise_from_the_ground_with_a_steep_lee_face() {
+        let flat = |_: f32, _: f32| 1.0;
+        let m = drift_patch(0.0, 0.0, 6.0, 3.0, 0.8, [1.0, 0.0], 3, 4.0, &flat);
+        assert!(m.is_valid());
+        assert!(m.normals.iter().all(|n| n[1] > 0.0), "faces up");
+        let (lo, hi) = m.bounds();
+        assert!(hi[1] > 1.6 && hi[1] < 1.85, "peaks about 0.8 above the ground: {}", hi[1]);
+        assert!(lo[1] < 1.0, "rim tucks under the ground");
+        let at = |x: f32| m.positions.iter().filter(|p| p[2].abs() < 0.2).min_by(|a, b| (a[0] - x).abs().total_cmp(&(b[0] - x).abs())).unwrap()[1];
+        // Downwind (+x) it falls away faster than upwind.
+        assert!(at(1.5) < at(-1.5), "lee {} vs windward {}", at(1.5), at(-1.5));
     }
 
     #[test]

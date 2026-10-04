@@ -182,7 +182,7 @@ fn apply_atmosphere(
         let warm = Vec3::new(1.0, 0.62, 0.38);
         let noon = Vec3::new(0.95, 0.96, 1.0);
         let lc = noon.lerp(warm, sky.warmth);
-        (Vec3::from_array(sky.sun_pos), 6_000.0 * sky.sun, lc)
+        (Vec3::from_array(sky.sun_pos), 9_000.0 * sky.sun, lc)
     } else {
         (
             Vec3::new(-0.3, 0.8, -0.5).normalize(),
@@ -198,7 +198,8 @@ fn apply_atmosphere(
 
     let amb = Vec3::new(0.35, 0.42, 0.65).lerp(Vec3::new(0.75, 0.80, 0.90), day);
     ambient.color = Color::srgb(amb.x, amb.y, amb.z);
-    ambient.brightness = ((200.0 + 300.0 * vis.light) * sky.daylight).max(60.0);
+    // Less fill than sun so snow drifts, ripples and trees keep their shape.
+    ambient.brightness = ((170.0 + 230.0 * vis.light) * sky.daylight).max(60.0);
 }
 
 fn move_flakes(

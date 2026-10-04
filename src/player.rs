@@ -112,7 +112,7 @@ fn spawn_player(
             )),
             DistanceFog {
                 color: Color::srgba(0.70, 0.74, 0.78, 1.0),
-                falloff: FogFalloff::Exponential { density: 0.012 },
+                falloff: FogFalloff::Exponential { density: 0.0075 },
                 ..default()
             },
             player,

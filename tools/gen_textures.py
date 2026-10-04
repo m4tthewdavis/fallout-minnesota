@@ -395,6 +395,99 @@ def vehicle_textures():
     print("   textures/generated/car_paint_arm.jpg")
 
 
+def snow_textures():
+    """Clean, tileable snow ground made from noise (no twigs or debris to
+    streak across the map): granular colour with blue-grey hollows, a normal
+    map with lumps and crystal grain, and AO/roughness/metal."""
+    n = 1024
+    lumps = value_noise(n, 6, 5)
+    grain = value_noise(n, 96, 2)
+    crust = value_noise(n, 24, 3)
+    crystals = (rng.random((n, n)) > 0.998).astype(float)
+    crystals = np.clip(wrap_blur(crystals, 0.7) * 6, 0, 1)
+    hgt = lumps * 0.55 + crust * 0.25 + grain * 0.2 + crystals * 0.08
+    cavity = np.clip((wrap_blur(hgt, 6.0) - hgt) * 3.0, 0, 1) ** 1.3
+    white = np.array([0.95, 0.96, 0.985])
+    shade = np.array([0.79, 0.85, 0.93])
+    col = white * (1 - cavity[..., None]) + shade * cavity[..., None]
+    col = col * (0.965 + 0.05 * grain[..., None] + 0.03 * (lumps[..., None] - 0.5))
+    col = np.clip(col + crystals[..., None] * 0.06, 0, 1)
+    Image.fromarray((col * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_diff.jpg"), quality=90)
+    print("   textures/generated/snow_diff.jpg")
+    nor = normal_from_height(hgt, 9.0)
+    Image.fromarray((nor * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_nor.jpg"), quality=92)
+    print("   textures/generated/snow_nor.jpg")
+    rough = np.clip(0.88 - 0.25 * crystals - 0.08 * crust, 0, 1)
+    arm = np.stack([1 - 0.3 * cavity, rough, np.zeros_like(rough)], -1)
+    Image.fromarray((arm * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_arm.jpg"), quality=92)
+    print("   textures/generated/snow_arm.jpg")
+
+
+def track_textures():
+    """Prints pressed into the snow, as see-through decals: a boot (the
+    player), a wolf paw and a split moose hoof. The hollow is shaded blue-grey
+    and darker on one wall, as if lit from the side. Also a soft contact
+    shadow and a grime texture for plain painted props."""
+    def finish(mask, name, w, h):
+        # mask: 0..1 depth of the print at 4x size.
+        m = np.asarray(Image.fromarray((mask * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(5)), float) / 255
+        gy, gx = np.gradient(m)
+        wall = np.clip((gx + gy) * 18, -1, 1)
+        shade = 0.62 + 0.25 * wall
+        rgb = np.stack([shade * 0.78, shade * 0.85, shade * 1.0], -1)
+        a = np.clip(m * 1.25, 0, 1) * 0.75
+        img = np.concatenate([np.clip(rgb, 0, 1), a[..., None]], -1)
+        out = Image.fromarray((img * 255).astype(np.uint8), "RGBA").resize((w, h), Image.LANCZOS)
+        save(out, GEN, name)
+
+    # Boot: sole and heel with lug bars.
+    W, H = 256, 512
+    img = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.ellipse([40, 20, 216, 300], fill=255)
+    d.rounded_rectangle([60, 330, 196, 492], radius=50, fill=255)
+    for y in range(50, 290, 34):
+        d.rectangle([70, y, 186, y + 12], fill=170)
+    for y in range(350, 480, 34):
+        d.rectangle([80, y, 176, y + 12], fill=170)
+    finish(np.asarray(img, float) / 255, "print_boot.png", 64, 128)
+
+    # Wolf paw: four toes and a triangular heel pad.
+    W = H = 256
+    img = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    for (cx, cy) in [(78, 70), (178, 70), (110, 30), (146, 30)]:
+        d.ellipse([cx - 26, cy - 32, cx + 26, cy + 32], fill=255)
+    d.polygon([(70, 200), (186, 200), (160, 120), (96, 120)], fill=255)
+    d.ellipse([70, 130, 186, 236], fill=255)
+    finish(np.asarray(img, float) / 255, "print_paw.png", 64, 64)
+
+    # Moose hoof: two long, pointed halves.
+    img = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.polygon([(124, 10), (60, 80), (56, 230), (118, 236)], fill=255)
+    d.polygon([(132, 10), (196, 80), (200, 230), (138, 236)], fill=255)
+    finish(np.asarray(img, float) / 255, "print_hoof.png", 64, 64)
+
+    # Soft contact shadow: darkest in the middle, gone at the edge.
+    n = 128
+    yy, xx = np.mgrid[0:n, 0:n].astype(float)
+    r = np.hypot(xx - n / 2 + 0.5, yy - n / 2 + 0.5) / (n / 2)
+    a = np.clip(1 - r, 0, 1) ** 1.8
+    img = np.dstack([np.zeros((n, n)), np.zeros((n, n)), np.zeros((n, n)), a])
+    save(Image.fromarray((img * 255).astype(np.uint8), "RGBA"), GEN, "contact_shadow.png")
+
+    # Grime for plain painted props: soft blotches, a few drips and scuffs.
+    n = 256
+    blot = value_noise(n, 4, 4)
+    fine = value_noise(n, 32, 2)
+    drips = np.repeat(value_noise(n, 24, 2)[:1], n, 0)
+    g = 1 - 0.16 * np.clip((blot - 0.45) * 2.5, 0, 1) - 0.06 * fine - 0.08 * np.clip((drips - 0.6) * 4, 0, 1) * np.linspace(0.3, 1, n)[:, None]
+    g = np.clip(g, 0, 1)
+    img = np.dstack([g, g * 0.99, g * 0.97])
+    save(Image.fromarray((img * 255).astype(np.uint8)), GEN, "grime.png")
+
+
 def vending_front():
     """Front of a pre-war soda machine: glowing bottle window and a 'Frost Cola' header."""
     w, h = 256, 512
@@ -527,6 +620,8 @@ def main():
     gun_textures()
     ui_icons()
     vehicle_textures()
+    snow_textures()
+    track_textures()
 
 
 def signs_only():
@@ -535,7 +630,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures}
 
 if __name__ == "__main__":
     import sys

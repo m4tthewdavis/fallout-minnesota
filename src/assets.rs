@@ -20,6 +20,7 @@ use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::TextureFormat;
 
 use crate::sim::mipmaps;
+use crate::snow::{SnowExt, SnowMaterial};
 
 /// Handles to every model, material and sprite the world uses.
 #[derive(Resource)]
@@ -56,6 +57,10 @@ pub struct GameAssets {
 
     // Tiled PBR materials.
     pub snow: Handle<StandardMaterial>,
+    /// The terrain: snow with the ripple/ice/glint shader.
+    pub snow_ground: Handle<SnowMaterial>,
+    /// Soft dark patch laid under things so they sit in the snow.
+    pub contact_shadow: Handle<StandardMaterial>,
     pub bark: Handle<StandardMaterial>,
     pub rust: Handle<StandardMaterial>,
     pub corrugated: Handle<StandardMaterial>,
@@ -212,6 +217,7 @@ fn load_assets(
     mut commands: Commands,
     server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut snow_materials: ResMut<Assets<SnowMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut fonts: ResMut<Assets<Font>>,
 ) {
@@ -235,13 +241,30 @@ fn load_assets(
 
     // Terrain snow: a cleaned-up diffuse (see tools/gen_textures.py) and no
     // baked AO, which made the whole map look dirty when tiled.
-    let snow = m.add(StandardMaterial {
-        base_color: Color::srgb(0.97, 0.98, 1.0),
-        base_color_texture: Some(tiled(s, "textures/snow_02/diff_clean.jpg".into(), true)),
-        normal_map_texture: Some(tiled(s, "textures/snow_02/nor.jpg".into(), false)),
-        metallic_roughness_texture: Some(tiled(s, "textures/snow_02/arm.jpg".into(), false)),
+    // Generated snow (tools/gen_textures.py): the photo set's twigs and
+    // debris read as dark streaks when tiled across a whole map.
+    let snow_base = StandardMaterial {
+        base_color: Color::srgb(0.8, 0.81, 0.83),
+        base_color_texture: Some(tiled(s, "textures/generated/snow_diff.jpg".into(), true)),
+        normal_map_texture: Some(tiled(s, "textures/generated/snow_nor.jpg".into(), false)),
+        metallic_roughness_texture: Some(tiled(s, "textures/generated/snow_arm.jpg".into(), false)),
         metallic: 0.0,
         perceptual_roughness: 1.0,
+        ..default()
+    };
+    // The ground itself gets ripples, icy patches and glints (see snow.rs).
+    let snow_ground = snow_materials.add(SnowMaterial {
+        base: snow_base.clone(),
+        extension: SnowExt::default(),
+    });
+    let snow = m.add(snow_base);
+    let _ = crate::world::GRIME.set(tiled(s, "textures/generated/grime.png".into(), true));
+    let contact_shadow = m.add(StandardMaterial {
+        base_color: Color::srgba(0.0, 0.01, 0.03, 0.42),
+        base_color_texture: Some(generated("contact_shadow.png")),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        depth_bias: 4.0,
         ..default()
     });
     let bark = m.add(StandardMaterial {
@@ -292,6 +315,8 @@ fn load_assets(
         rack: scene(s, "worn_metal_rack"),
 
         snow,
+        snow_ground,
+        contact_shadow,
         bark,
         rust: pbr(s, m, "rusty_metal_02", Color::WHITE),
         corrugated: pbr(s, m, "rusty_corrugated_iron", Color::WHITE),
@@ -392,41 +417,48 @@ fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<As
 fn fall_back_to_plain_colours(
     mut failed: EventReader<AssetLoadFailedEvent<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut snow_materials: ResMut<Assets<SnowMaterial>>,
 ) {
     for event in failed.read() {
         let id = event.id;
-        let uses = |slot: &Option<Handle<Image>>| slot.as_ref().is_some_and(|h| h.id() == id);
-        let affected: Vec<AssetId<StandardMaterial>> = materials
-            .iter()
-            .filter(|(_, m)| {
-                uses(&m.base_color_texture)
-                    || uses(&m.normal_map_texture)
-                    || uses(&m.metallic_roughness_texture)
-                    || uses(&m.occlusion_texture)
-                    || uses(&m.emissive_texture)
-            })
-            .map(|(mid, _)| mid)
-            .collect();
-        for mid in affected {
-            let Some(m) = materials.get_mut(mid) else { continue };
-            for slot in [
-                &mut m.base_color_texture,
-                &mut m.normal_map_texture,
-                &mut m.metallic_roughness_texture,
-                &mut m.occlusion_texture,
-                &mut m.emissive_texture,
-            ] {
-                if slot.as_ref().is_some_and(|h| h.id() == id) {
-                    *slot = None;
-                }
-            }
-            // Without its metal/roughness map a material would turn into
-            // shiny chrome (both factors are 1.0 for textured materials).
-            if m.metallic_roughness_texture.is_none() && m.metallic > 0.99 {
-                m.metallic = 0.0;
-                m.perceptual_roughness = 0.9;
+        let ids: Vec<_> = materials.iter().filter(|(_, m)| uses_image(m, id)).map(|(mid, _)| mid).collect();
+        for mid in ids {
+            if let Some(m) = materials.get_mut(mid) {
+                drop_image(m, id);
             }
         }
+        let ids: Vec<_> = snow_materials.iter().filter(|(_, m)| uses_image(&m.base, id)).map(|(mid, _)| mid).collect();
+        for mid in ids {
+            if let Some(m) = snow_materials.get_mut(mid) {
+                drop_image(&mut m.base, id);
+            }
+        }
+    }
+}
+
+fn uses_image(m: &StandardMaterial, id: AssetId<Image>) -> bool {
+    [&m.base_color_texture, &m.normal_map_texture, &m.metallic_roughness_texture, &m.occlusion_texture, &m.emissive_texture]
+        .into_iter()
+        .any(|slot| slot.as_ref().is_some_and(|h| h.id() == id))
+}
+
+fn drop_image(m: &mut StandardMaterial, id: AssetId<Image>) {
+    for slot in [
+        &mut m.base_color_texture,
+        &mut m.normal_map_texture,
+        &mut m.metallic_roughness_texture,
+        &mut m.occlusion_texture,
+        &mut m.emissive_texture,
+    ] {
+        if slot.as_ref().is_some_and(|h| h.id() == id) {
+            *slot = None;
+        }
+    }
+    // Without its metal/roughness map a material would turn into shiny
+    // chrome (both factors are 1.0 for textured materials).
+    if m.metallic_roughness_texture.is_none() && m.metallic > 0.99 {
+        m.metallic = 0.0;
+        m.perceptual_roughness = 0.9;
     }
 }
 

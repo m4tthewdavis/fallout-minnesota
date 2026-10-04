@@ -25,7 +25,9 @@ mod player;
 mod props;
 mod sim;
 mod sky;
+mod snow;
 mod state;
+mod tracks;
 mod vehicles;
 mod weather_fx;
 mod wolves;
@@ -67,6 +69,8 @@ fn main() {
         .add_plugins((
             player::PlayerPlugin,
             sky::SkyPlugin,
+            snow::SnowPlugin,
+            tracks::TracksPlugin,
             weather_fx::WeatherPlugin,
             wolves::WolfPlugin,
             moose::MoosePlugin,

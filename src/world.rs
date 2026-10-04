@@ -86,9 +86,15 @@ pub fn ground(x: f32, z: f32) -> f32 {
     terrain::height(x, z)
 }
 
+/// Weathering laid over every plain-coloured material (see [`mat`]).
+pub static GRIME: std::sync::OnceLock<Handle<Image>> = std::sync::OnceLock::new();
+
+/// A plain painted or bare material, with a little grime so flat colours
+/// don't look like plastic.
 pub fn mat(materials: &mut Assets<StandardMaterial>, color: Color) -> Handle<StandardMaterial> {
     materials.add(StandardMaterial {
         base_color: color,
+        base_color_texture: GRIME.get().cloned(),
         perceptual_roughness: 0.9,
         ..default()
     })
@@ -101,6 +107,60 @@ pub fn glow(materials: &mut Assets<StandardMaterial>, color: Color, emissive: Li
         perceptual_roughness: 0.4,
         ..default()
     })
+}
+
+/// A snowdrift growing out of the ground (see [`meshgen::drift_patch`]),
+/// shaded with the same snow shader and tint as the terrain so it blends in.
+/// `along` is the direction its long axis and gentle slope face into.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_drift(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    assets: &GameAssets,
+    x: f32,
+    z: f32,
+    length: f32,
+    width: f32,
+    peak: f32,
+    along: [f32; 2],
+    seed: u64,
+) {
+    let mut m = meshgen::drift_patch(x, z, length, width, peak, along, seed, 4.0, &terrain::mesh_height);
+    for i in 0..m.positions.len() {
+        let p = m.positions[i];
+        m.colors[i] = terrain_tint(p[0], p[2], p[1]);
+    }
+    commands.spawn((Mesh3d(meshes.add(to_mesh_tangents(&m))), MeshMaterial3d(assets.snow_ground.clone())));
+}
+
+/// A soft shadow pooled on the snow under an object (`rx` by `rz` metres,
+/// turned by `yaw`): cheap ambient occlusion where things meet the ground.
+pub fn spawn_contact_shadow(commands: &mut Commands, meshes: &mut Assets<Mesh>, assets: &GameAssets, x: f32, z: f32, rx: f32, rz: f32, yaw: f32) {
+    let n = 4;
+    let (s, c) = yaw.sin_cos();
+    let mut m = MeshData::default();
+    for i in 0..=n {
+        for j in 0..=n {
+            let (u, v) = (i as f32 / n as f32, j as f32 / n as f32);
+            let (lx, lz) = ((u * 2.0 - 1.0) * rx, (v * 2.0 - 1.0) * rz);
+            let (wx, wz) = (x + lx * c + lz * s, z - lx * s + lz * c);
+            m.vertex([wx, terrain::mesh_height(wx, wz).max(terrain::walk_height(wx, wz)) + 0.02, wz], [0.0, 1.0, 0.0], [u, v], meshgen::WHITE);
+        }
+    }
+    let row = n as u32 + 1;
+    for i in 0..n as u32 {
+        for j in 0..n as u32 {
+            let a = i * row + j;
+            m.quad(a, a + 1, a + row + 1, a + row);
+        }
+    }
+    m.recompute_normals();
+    if m.normals[0][1] < 0.0 {
+        for t in m.indices.chunks_exact_mut(3) {
+            t.swap(1, 2);
+        }
+    }
+    commands.spawn((Mesh3d(meshes.add(to_mesh(&m))), MeshMaterial3d(assets.contact_shadow.clone()), bevy::pbr::NotShadowCaster));
 }
 
 /// Spawns a glTF model.
@@ -117,7 +177,7 @@ pub fn prop(commands: &mut Commands, scene: &Handle<Scene>, pos: Vec3, yaw: f32,
 
 /// Snow tint for the terrain: bluer in hollows, trampled near shelters, slushy
 /// along the highway and sickly green around the radiation craters.
-fn terrain_tint(x: f32, z: f32, h: f32) -> [f32; 4] {
+pub fn terrain_tint(x: f32, z: f32, h: f32) -> [f32; 4] {
     let mut c = [0.97f32, 0.98, 1.0];
     let hollow = ((-h - 0.5) / 3.0).clamp(0.0, 1.0);
     c = [c[0] - 0.08 * hollow, c[1] - 0.05 * hollow, c[2]];
@@ -160,7 +220,7 @@ fn build_world(
     }
     commands.spawn((
         Mesh3d(meshes.add(to_mesh_tangents(&terrain_data))),
-        MeshMaterial3d(assets.snow.clone()),
+        MeshMaterial3d(assets.snow_ground.clone()),
         Transform::default(),
     ));
 
