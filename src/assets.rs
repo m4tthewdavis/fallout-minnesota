@@ -371,7 +371,7 @@ fn texture_lod() -> u32 {
     })
 }
 
-fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<Assets<Image>>) {
+fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<Assets<Image>>, server: Res<AssetServer>) {
     for event in events.read() {
         let AssetEvent::LoadedWithDependencies { id } = event else {
             continue;
@@ -391,7 +391,15 @@ fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<As
         if data.len() != (w * h * 4) as usize {
             continue;
         }
-        let (chain, levels) = mipmaps::build_chain(w, h, data, srgb);
+        let (mut chain, levels) = mipmaps::build_chain(w, h, data, srgb);
+        // Alpha-tested foliage cards keep their density in the distance.
+        let foliage = server.get_path(*id).is_some_and(|p| {
+            let p = p.path().to_string_lossy();
+            ["spray_", "twigs", "grass_tuft", "reed_plume", "snow_clumps"].iter().any(|k| p.contains(k))
+        });
+        if foliage {
+            mipmaps::preserve_coverage(&mut chain, w, h, levels, 0.35);
+        }
         let (chain, w, h, levels) = mipmaps::drop_levels(chain, w, h, levels, texture_lod());
         image.data = Some(chain);
         image.texture_descriptor.size.width = w;

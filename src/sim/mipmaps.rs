@@ -65,6 +65,51 @@ pub fn build_chain(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>
     (out, levels)
 }
 
+/// Alpha-tested foliage (needle sprays, twigs, grass) thins out and vanishes
+/// in the distance because averaging thin strokes drops their alpha below the
+/// cut-off. Rescale each smaller level's alpha so the same share of texels
+/// passes `cutoff` as in the full-size level (Castano's coverage trick).
+pub fn preserve_coverage(chain: &mut [u8], width: u32, height: u32, levels: u32, cutoff: f32) {
+    let coverage = |px: &[u8], scale: f32| -> f32 {
+        let n = px.len() / 4;
+        let pass = px.chunks_exact(4).filter(|p| p[3] as f32 / 255.0 * scale > cutoff).count();
+        pass as f32 / n.max(1) as f32
+    };
+    let (mut w, mut h) = (width as usize, height as usize);
+    let mut offset = 0;
+    let mut target = None;
+    for _ in 0..levels {
+        let len = w * h * 4;
+        if offset + len > chain.len() {
+            break;
+        }
+        let level = &mut chain[offset..offset + len];
+        match target {
+            None => target = Some(coverage(level, 1.0)),
+            Some(t) => {
+                // Binary search the alpha scale that restores the coverage.
+                let (mut lo, mut hi) = (0.5f32, 8.0f32);
+                for _ in 0..12 {
+                    let mid = (lo + hi) * 0.5;
+                    if coverage(level, mid) < t {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                // Err towards keeping the foliage rather than losing it.
+                let scale = hi;
+                for p in level.chunks_exact_mut(4) {
+                    p[3] = (p[3] as f32 * scale).round().min(255.0) as u8;
+                }
+            }
+        }
+        offset += len;
+        w = (w / 2).max(1);
+        h = (h / 2).max(1);
+    }
+}
+
 /// Drop the `skip` largest levels of a chain from [`build_chain`] (a cheaper,
 /// blurrier texture for low-memory machines). Never drops below 64 pixels.
 /// Returns (chain, width, height, levels).
@@ -87,6 +132,30 @@ pub fn drop_levels(chain: Vec<u8>, width: u32, height: u32, levels: u32, skip: u
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn thin_foliage_keeps_its_coverage_in_small_levels() {
+        // One-pixel vertical strokes every 4 pixels (25% coverage), of mixed opacity.
+        let (w, h) = (64u32, 64u32);
+        let mut data = vec![0u8; (w * h * 4) as usize];
+        for y in 0..h {
+            for x in (0..w).step_by(4) {
+                let i = ((y * w + x) * 4) as usize;
+                let a = 120 + ((x * 7 + y * 13) % 136) as u8;
+                data[i..i + 4].copy_from_slice(&[255, 255, 255, a]);
+            }
+        }
+        let (mut chain, levels) = build_chain(w, h, &data, true);
+        let level2 = |c: &[u8]| -> f32 {
+            let start = ((w * h + w * h / 4) * 4) as usize;
+            let len = (w * h / 16 * 4) as usize;
+            c[start..start + len].chunks_exact(4).filter(|p| p[3] as f32 / 255.0 > 0.35).count() as f32 / (len / 4) as f32
+        };
+        assert!(level2(&chain) < 0.05, "plain averaging loses the strokes");
+        preserve_coverage(&mut chain, w, h, levels, 0.35);
+        let c = level2(&chain);
+        assert!(c > 0.15, "coverage restored: {c}");
+    }
+
     #[test]
     fn dropping_levels_keeps_a_valid_smaller_chain() {
         let data = vec![200u8; 256 * 128 * 4];

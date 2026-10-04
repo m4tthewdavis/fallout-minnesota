@@ -12,6 +12,7 @@ mod audio;
 mod combat;
 mod devshot;
 mod enemy;
+mod flora;
 mod gun;
 mod hud;
 mod interact;

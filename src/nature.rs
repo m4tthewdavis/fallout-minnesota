@@ -1,22 +1,21 @@
-//! Scatters the Northwoods over the map: snow-laden pines, dead snags, bare
-//! shrubs, boulders, snowdrifts and pre-war junk.
+//! Scatters the Northwoods over the map: the forest and undergrowth (see
+//! `flora.rs`), dead snags, boulders, snowdrifts and pre-war junk.
 
 use bevy::prelude::*;
 
 use crate::assets::GameAssets;
 use crate::landmarks::{CARS, RUINS};
-use crate::meshes::{to_mesh, to_mesh_tangents};
+use crate::meshes::to_mesh_tangents;
 use crate::sim::collision::{self, Shape};
-use crate::sim::meshgen::{self, MeshData};
+use crate::sim::meshgen;
 use crate::sim::terrain::{self, HALF_SIZE};
 use crate::state::{Colliders, RngRes};
 use crate::sim::weather::WIND_DIR;
 use crate::world::{ground, prop, spawn_contact_shadow, spawn_drift};
 
-const PINES: usize = 260;
+const SNAGS: usize = 24;
 const ROCKS: usize = 30;
 const DRIFTS: usize = 50;
-const SHRUBS: usize = 70;
 const JUNK: usize = 36;
 
 /// A random point on open ground away from the ruins and cars, if one is found.
@@ -41,6 +40,7 @@ fn open_spot(rng: &mut RngRes, solid: &[Shape], clearance: f32) -> Option<(f32, 
 pub fn spawn_nature(
     mut commands: Commands,
     assets: Res<GameAssets>,
+    server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rng: ResMut<RngRes>,
@@ -49,22 +49,13 @@ pub fn spawn_nature(
 ) {
     let solid = &mut colliders.0;
 
-    // ---------- Pines ----------
-    let needles = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        perceptual_roughness: 0.9,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
-    });
-    let variants: Vec<(Handle<Mesh>, Handle<Mesh>, f32)> = [(8.0, 7, 1), (9.5, 8, 2), (7.0, 6, 3), (10.5, 9, 4)]
-        .into_iter()
-        .map(|(h, tiers, seed)| {
-            let foliage = meshes.add(to_mesh(&meshgen::pine(h, tiers, 1.0, seed)));
-            let trunk = meshgen::lathe(&[(0.26, -0.3), (0.22, h * 0.25), (0.12, h * 0.7), (0.04, h * 0.95)], 8, 1.2, false, false);
-            (foliage, meshes.add(to_mesh_tangents(&trunk)), h)
-        })
-        .collect();
+    // ---------- The forest, undergrowth and lake shores ----------
+    let avoid = |x: f32, z: f32| {
+        RUINS.iter().any(|&(rx, rz, r)| (x - rx).hypot(z - rz) < r) || CARS.iter().any(|&(cx, cz, _)| (x - cx).hypot(z - cz) < 5.0)
+    };
+    crate::flora::plant_forest(&mut commands, &mut meshes, &mut materials, &server, &assets, solid, &mut tree_positions.0, &avoid, 143);
+
+    // ---------- Dead snags ----------
     let snag_variants: Vec<Handle<Mesh>> = (0..3)
         .map(|seed| {
             let h = 7.0 + seed as f32;
@@ -73,38 +64,15 @@ pub fn spawn_nature(
             meshes.add(to_mesh_tangents(&m))
         })
         .collect();
-
-    let mut placed = 0;
-    let mut tries = 0;
-    while placed < PINES && tries < 3_000 {
-        tries += 1;
+    for k in 0..SNAGS {
         let Some((x, z)) = open_spot(&mut rng, solid, 1.0) else { continue };
-        placed += 1;
-        tree_positions.0.push((x, z));
         let yaw = rng.0.range(0.0, std::f32::consts::TAU);
-        let snag = rng.0.chance(0.12);
-        let scale = rng.0.range(0.75, 1.35);
         let tf = Transform::from_xyz(x, ground(x, z) - 0.1, z)
-            .with_scale(Vec3::splat(scale))
+            .with_scale(Vec3::splat(rng.0.range(0.8, 1.3)))
             .with_rotation(Quat::from_rotation_y(yaw));
-        solid.push(Shape::Circle { x, z, r: 0.4 * scale });
-        spawn_contact_shadow(&mut commands, &mut meshes, &assets, x, z, 1.4 * scale, 1.4 * scale, yaw);
-        // Snow piles up in the lee of many trunks.
-        if rng.0.chance(0.4) {
-            let d = 0.9 * scale;
-            let (dx, dz) = (x + WIND_DIR[0] * d, z + WIND_DIR[1] * d);
-            spawn_drift(&mut commands, &mut meshes, &assets, dx, dz, 2.6 * scale, 1.5 * scale, 0.3 * scale, WIND_DIR, placed as u64);
-        }
-        if snag {
-            let mesh = snag_variants[(rng.0.f32() * snag_variants.len() as f32) as usize % snag_variants.len()].clone();
-            commands.spawn((Mesh3d(mesh), MeshMaterial3d(assets.bark.clone()), tf));
-        } else {
-            let (foliage, trunk, _) = &variants[(rng.0.f32() * variants.len() as f32) as usize % variants.len()];
-            commands.spawn((tf, Visibility::default())).with_children(|tree| {
-                tree.spawn((Mesh3d(trunk.clone()), MeshMaterial3d(assets.bark.clone())));
-                tree.spawn((Mesh3d(foliage.clone()), MeshMaterial3d(needles.clone())));
-            });
-        }
+        commands.spawn((Mesh3d(snag_variants[k % 3].clone()), MeshMaterial3d(assets.bark.clone()), tf));
+        solid.push(Shape::Circle { x, z, r: 0.35 });
+        tree_positions.0.push((x, z));
     }
 
     // ---------- Boulders poking through the snow ----------
@@ -137,31 +105,6 @@ pub fn spawn_nature(
         // Mostly lined up with the wind, a little scattered.
         let a = WIND_DIR[1].atan2(WIND_DIR[0]) + rng.0.range(-0.35, 0.35);
         spawn_drift(&mut commands, &mut meshes, &assets, x, z, length, width, peak, [a.cos(), a.sin()], 200 + i as u64);
-    }
-
-    // ---------- Bare shrubs ----------
-    let shrub_variants: Vec<Handle<Mesh>> = (0..4)
-        .map(|seed| {
-            let mut m = MeshData::default();
-            m.append(&meshgen::dead_branches(1.6, 300 + seed).translated([0.0, -0.7, 0.0]));
-            meshes.add(to_mesh(&m))
-        })
-        .collect();
-    let twigs = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.18, 0.12, 0.09),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-    for _ in 0..SHRUBS {
-        let Some((x, z)) = open_spot(&mut rng, solid, 0.5) else { continue };
-        let mesh = shrub_variants[(rng.0.f32() * 4.0) as usize % 4].clone();
-        commands.spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(twigs.clone()),
-            Transform::from_xyz(x, ground(x, z), z)
-                .with_rotation(Quat::from_rotation_y(rng.0.range(0.0, 6.28)))
-                .with_scale(Vec3::splat(rng.0.range(0.7, 1.3))),
-        ));
     }
 
     // ---------- Pre-war junk ----------

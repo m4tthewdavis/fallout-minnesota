@@ -79,7 +79,7 @@ impl Plugin for DevShotPlugin {
     }
 }
 
-/// FMN_LINEUP=wolves|moose spawns a row of stationary creatures to look at.
+/// FMN_LINEUP=wolves|moose|trees spawns a row of stationary creatures to look at.
 /// Screenshot mode also turns off anti-aliasing: software rendering at
 /// 4x MSAA takes gigabytes on a small machine.
 fn spawn_extras(mut commands: Commands, cameras: Query<Entity, With<Camera3d>>) {
@@ -92,6 +92,9 @@ fn spawn_extras(mut commands: Commands, cameras: Query<Entity, With<Camera3d>>) 
         }
         Ok("moose") => {
             commands.run_system_cached(crate::moose::spawn_lineup);
+        }
+        Ok("trees") => {
+            commands.run_system_cached(crate::flora::spawn_lineup);
         }
         _ => {}
     }

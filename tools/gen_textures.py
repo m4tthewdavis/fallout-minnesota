@@ -488,6 +488,173 @@ def track_textures():
     save(Image.fromarray((img * 255).astype(np.uint8)), GEN, "grime.png")
 
 
+def plant_textures():
+    """Foliage cards and bark for the Minnesota trees and plants. Card
+    textures are near-white with alpha: the game tints them per species with
+    vertex colours (greens, golds, reds, and white where snow sits)."""
+    S = 4  # supersample
+
+    def card(w, h, draw, name, blur=0.0):
+        img = Image.new("LA", (w * S, h * S), (0, 0))
+        d = ImageDraw.Draw(img)
+        draw(d, w * S, h * S)
+        if blur:
+            img = img.filter(ImageFilter.GaussianBlur(blur * S))
+        save(img.resize((w, h), Image.LANCZOS).convert("RGBA"), GEN, name)
+
+    def lum():
+        return int(rng.uniform(170, 255))
+
+    # Long-needled pine spray (white and red pine): fascicles of long needles
+    # fanning forward from a twig that runs up the card.
+    def pine_spray(d, W, H):
+        cx = W / 2
+        d.line([cx, H, cx, H * 0.05], fill=(120, 255), width=int(3 * S))
+        for k in range(220):
+            t = rng.uniform(0.05, 0.98)
+            y = H * (1 - t)
+            x = cx + rng.normal(0, 2) * S
+            ang = rng.uniform(0.35, 1.15) * rng.choice([-1, 1])
+            length = rng.uniform(0.16, 0.28) * H * (0.6 + 0.4 * t)
+            ex = x + math.sin(ang) * length * 0.95
+            ey = y - math.cos(ang) * length
+            d.line([x, y, ex, ey], fill=(lum(), 255), width=int(1.8 * S))
+    card(128, 256, pine_spray, "spray_pine.png")
+
+    # Flat fir / spruce spray: side twigs with short dense needles like a comb.
+    def fir_spray(d, W, H):
+        cx = W / 2
+        d.line([cx, H, cx, H * 0.04], fill=(110, 255), width=int(3 * S))
+        for k in range(9):
+            y0 = H * (0.9 - k * 0.095)
+            for side in (-1, 1):
+                length = W * 0.42 * (1 - k * 0.07)
+                ex, ey = cx + side * length, y0 - length * 0.55
+                d.line([cx, y0, ex, ey], fill=(110, 255), width=int(2 * S))
+                for j in range(26):
+                    t = j / 26
+                    px, py = cx + (ex - cx) * t, y0 + (ey - y0) * t
+                    for nside in (-1, 1):
+                        nl = rng.uniform(7, 11) * S * (1 - 0.4 * t)
+                        nx = px + nside * nl * 0.45 - side * nl * 0.15
+                        ny = py - nl * 0.8 * nside * 0.5 - nl * 0.5
+                        d.line([px, py, nx, ny], fill=(lum(), 255), width=int(2.0 * S))
+        for j in range(60):
+            t = j / 60
+            py = H * (1 - t * 0.95)
+            for nside in (-1, 1):
+                nl = 9 * S
+                d.line([cx, py, cx + nside * nl * 0.6, py - nl * 0.7], fill=(lum(), 255), width=int(2.0 * S))
+    card(128, 256, fir_spray, "spray_fir.png")
+
+    # Snow clumps resting on branches: lumpy, lit from above.
+    def snow_clumps(d, W, H):
+        for k in range(26):
+            x = rng.uniform(0.15, 0.85) * W
+            y = rng.uniform(0.15, 0.85) * H
+            r = rng.uniform(0.06, 0.15) * W
+            d.ellipse([x - r, y - r * 0.7, x + r, y + r * 0.7], fill=(235, 255))
+            d.ellipse([x - r * 0.7, y - r * 0.65, x + r * 0.6, y + r * 0.1], fill=(255, 255))
+    card(128, 128, snow_clumps, "snow_clumps.png", blur=0.6)
+
+    # Bare twigs for birch, aspen and tamarack crowns.
+    def twigs(d, W, H):
+        def branch(x, y, ang, length, width, depth):
+            ex = x + math.sin(ang) * length
+            ey = y - math.cos(ang) * length
+            d.line([x, y, ex, ey], fill=(lum() // 2 + 60, 255), width=max(int(1.6 * S), int(width)))
+            if depth > 0:
+                for _ in range(2 + (depth > 2)):
+                    t = rng.uniform(0.35, 1.0)
+                    bx, by = x + (ex - x) * t, y + (ey - y) * t
+                    branch(bx, by, ang + rng.uniform(-0.8, 0.8), length * rng.uniform(0.45, 0.7), width * 0.7, depth - 1)
+        branch(W / 2, H, 0.0, H * 0.45, 4 * S, 5)
+    card(128, 256, twigs, "twigs.png")
+
+    # Tamarack: twigs with knobby short shoots and a few golden needle tufts.
+    def tamarack(d, W, H):
+        twigs(d, W, H)
+        for _ in range(70):
+            x, y = rng.uniform(0.15, 0.85) * W, rng.uniform(0.05, 0.75) * H
+            for _ in range(8):
+                a = rng.uniform(0, math.tau)
+                ln = rng.uniform(4, 8) * S
+                d.line([x, y, x + math.cos(a) * ln, y + math.sin(a) * ln], fill=(250, 255), width=int(1.2 * S))
+    card(128, 256, tamarack, "spray_tamarack.png")
+
+    # Prairie grass tuft (big bluestem, little bluestem): blades fanning up
+    # from the snow, some bent over, a few seed heads.
+    def grass(d, W, H):
+        for k in range(70):
+            x0 = W / 2 + rng.normal(0, W * 0.07)
+            lean = rng.normal(0, 0.35)
+            length = rng.uniform(0.45, 0.98) * H
+            pts = []
+            for j in range(9):
+                t = j / 8
+                bend = lean * t * t * 1.6
+                pts.append((x0 + math.sin(bend) * length * t * 0.8, H - math.cos(bend * 0.5) * length * t))
+            d.line(pts, fill=(lum(), 255), width=int(rng.uniform(1.2, 2.4) * S))
+            if rng.random() < 0.15:
+                x, y = pts[-1]
+                for f in range(3):
+                    a = -math.pi / 2 + rng.uniform(-0.6, 0.6)
+                    d.line([x, y, x + math.cos(a) * 14 * S, y + math.sin(a) * 14 * S], fill=(lum(), 255), width=int(1.6 * S))
+    card(128, 128, grass, "grass_tuft.png")
+
+    # Reed plumes (phragmites): a feathery head on a stalk.
+    def plume(d, W, H):
+        d.line([W / 2, H, W / 2, H * 0.3], fill=(200, 255), width=int(2 * S))
+        for _ in range(140):
+            y = rng.uniform(0.03, 0.4) * H
+            a = rng.uniform(-0.9, 0.9)
+            ln = rng.uniform(8, 22) * S
+            d.line([W / 2, y + ln * 0.3, W / 2 + math.sin(a) * ln, y], fill=(lum(), 200), width=int(1 * S))
+    card(64, 256, plume, "reed_plume.png")
+
+    # Paper birch bark: chalky white, horizontal lenticels, black chevrons
+    # under old branches, and curls of peeling bark.
+    n = 512
+    base = 0.86 + 0.08 * value_noise(n, 8, 3)
+    img = Image.fromarray((np.clip(base, 0, 1) * 255).astype(np.uint8)).convert("RGB")
+    d = ImageDraw.Draw(img)
+    for _ in range(420):
+        x, y = rng.uniform(0, n), rng.uniform(0, n)
+        ln = rng.uniform(6, 30)
+        c = int(rng.uniform(40, 110))
+        d.line([x, y, x + ln, y + rng.normal(0, 0.6)], fill=(c, c - 5, c - 8), width=int(rng.integers(1, 3)))
+    for _ in range(7):
+        x, y = rng.uniform(0, n), rng.uniform(0, n)
+        w = rng.uniform(30, 70)
+        d.polygon([(x - w, y), (x, y + w * 0.45), (x + w, y), (x, y + w * 0.2)], fill=(25, 22, 20))
+    for _ in range(18):
+        x, y = rng.uniform(0, n), rng.uniform(0, n)
+        d.ellipse([x, y, x + rng.uniform(15, 50), y + rng.uniform(4, 10)], fill=(215, 170, 150))
+    arr = np.asarray(img, float) / 255
+    arr = arr * np.array([1.0, 0.985, 0.95])
+    Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8)).save(os.path.join(GEN, "bark_birch.jpg"), quality=90)
+    print("   textures/generated/bark_birch.jpg")
+    hgt = np.asarray(img.convert("L"), float) / 255
+    Image.fromarray((normal_from_height(hgt, 2.5) * 255).astype(np.uint8)).save(os.path.join(GEN, "bark_birch_nor.jpg"), quality=90)
+    print("   textures/generated/bark_birch_nor.jpg")
+
+    # Quaking aspen bark: smooth pale green-grey with black eye-shaped scars.
+    base = 0.7 + 0.12 * value_noise(n, 6, 3)
+    arr = np.stack([base * 0.86, base * 0.9, base * 0.8], -1)
+    img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
+    d = ImageDraw.Draw(img)
+    for _ in range(26):
+        x, y = rng.uniform(0, n), rng.uniform(0, n)
+        w, h = rng.uniform(14, 40), rng.uniform(6, 14)
+        d.ellipse([x - w, y - h, x + w, y + h], fill=(35, 33, 30))
+        d.ellipse([x - w * 0.5, y - h * 0.4, x + w * 0.5, y + h * 0.4], fill=(70, 68, 60))
+    for _ in range(200):
+        x, y = rng.uniform(0, n), rng.uniform(0, n)
+        d.line([x, y, x + rng.uniform(3, 10), y], fill=(90, 92, 80), width=1)
+    img.save(os.path.join(GEN, "bark_aspen.jpg"), quality=90)
+    print("   textures/generated/bark_aspen.jpg")
+
+
 def vending_front():
     """Front of a pre-war soda machine: glowing bottle window and a 'Frost Cola' header."""
     w, h = 256, 512
@@ -622,6 +789,7 @@ def main():
     vehicle_textures()
     snow_textures()
     track_textures()
+    plant_textures()
 
 
 def signs_only():
@@ -630,7 +798,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures}
 
 if __name__ == "__main__":
     import sys
