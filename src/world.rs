@@ -27,11 +27,55 @@ pub struct Pickup {
     pub base_y: f32,
 }
 
+/// Where [`open_spot`] may put things: how far in from the map edge, how many
+/// tries, and how far to stay from the vault, ruins and cars.
+pub struct SpotRules {
+    pub edge: f32,
+    pub tries: usize,
+    pub vault_clear: f32,
+    pub ruin_pad: f32,
+    pub car_clear: f32,
+}
+
+/// Trees, rocks and drifts: anywhere on open ground not in a ruin or on a car.
+pub const SCATTER: SpotRules = SpotRules { edge: 0.0, tries: 40, vault_clear: 0.0, ruin_pad: 0.0, car_clear: 5.0 };
+/// Loot and camps: well inside the map and clear of the vault, with margins round landmarks.
+pub const PLACED: SpotRules = SpotRules { edge: 12.0, tries: 60, vault_clear: 30.0, ruin_pad: 4.0, car_clear: 6.0 };
+
+/// A random point on open ground that obeys `rules` and is clear of `solid`.
+pub fn open_spot(rng: &mut RngRes, solid: &[collision::Shape], clearance: f32, rules: &SpotRules) -> Option<(f32, f32)> {
+    use crate::landmarks::{CARS, RUINS};
+    for _ in 0..rules.tries {
+        let x = rng.0.range(-HALF_SIZE + rules.edge, HALF_SIZE - rules.edge);
+        let z = rng.0.range(-HALF_SIZE + rules.edge, HALF_SIZE - rules.edge);
+        if !terrain::is_open_ground(x, z) || terrain::dist_to_vault(x, z) < rules.vault_clear {
+            continue;
+        }
+        if RUINS.iter().any(|&(rx, rz, r)| (x - rx).hypot(z - rz) < r + rules.ruin_pad)
+            || CARS.iter().any(|&(cx, cz, _)| (x - cx).hypot(z - cz) < rules.car_clear)
+            || collision::blocked(x, z, clearance, solid)
+        {
+            continue;
+        }
+        return Some((x, z));
+    }
+    None
+}
+
 /// A point light that flickers like fire.
 #[derive(Component)]
 pub struct FireLight {
     pub base: f32,
     pub seed: f32,
+}
+
+/// A warm point light that flickers with [`crate::particles::fire_flicker`]:
+/// add a `Transform` to place it.
+pub fn flicker_light(color: Color, intensity: f32, range: f32, shadows: bool, seed: f32) -> (PointLight, FireLight) {
+    (
+        PointLight { color, intensity, range, shadows_enabled: shadows, ..default() },
+        FireLight { base: intensity, seed },
+    )
 }
 
 /// A point light that slowly breathes (radiation glow).

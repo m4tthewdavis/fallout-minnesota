@@ -11,36 +11,17 @@ use bevy::prelude::*;
 
 use crate::assets::GameAssets;
 use crate::interact::{spawn_container, ContainerAssets, Workbench};
-use crate::landmarks::{sign, CARS, RUINS};
+use crate::landmarks::{sign, RUINS};
 use crate::meshes::{to_mesh, to_mesh_tangents};
 use crate::sim::collision::{self, Shape};
 use crate::sim::combat::WeaponKind;
 use crate::sim::loot;
 use crate::sim::meshgen::{self, sec, MeshData};
-use crate::sim::terrain::{self, HALF_SIZE, LAKES, RAD_SOURCES, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
+use crate::sim::terrain::{self, LAKES, RAD_SOURCES, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
 use crate::state::{Colliders, RngRes};
-use crate::world::{ground, mat, prop, FireLight};
+use crate::world::{flicker_light, ground, mat, open_spot, prop, PLACED};
 
 const CACHES: usize = 12;
-
-/// A random point on open ground, clear of landmarks and other solids.
-fn open_spot(rng: &mut RngRes, solid: &[Shape], clearance: f32) -> Option<(f32, f32)> {
-    for _ in 0..60 {
-        let x = rng.0.range(-HALF_SIZE + 12.0, HALF_SIZE - 12.0);
-        let z = rng.0.range(-HALF_SIZE + 12.0, HALF_SIZE - 12.0);
-        if !terrain::is_open_ground(x, z) || terrain::dist_to_vault(x, z) < 30.0 {
-            continue;
-        }
-        if RUINS.iter().any(|&(rx, rz, r)| (x - rx).hypot(z - rz) < r + 4.0)
-            || CARS.iter().any(|&(cx, cz, _)| (x - cx).hypot(z - cz) < 6.0)
-            || collision::blocked(x, z, clearance, solid)
-        {
-            continue;
-        }
-        return Some((x, z));
-    }
-    None
-}
 
 /// A fence line of chain-link panels between two points (axis-aligned so it
 /// can be a simple collider).
@@ -186,7 +167,7 @@ pub fn spawn_props(
         if placed >= CACHES {
             break;
         }
-        let Some((x, z)) = open_spot(&mut rng, solid, 1.5) else { continue };
+        let Some((x, z)) = open_spot(&mut rng, solid, 1.5, &PLACED) else { continue };
         let (scene, scale, name) = cache_models[i % cache_models.len()].clone();
         let pos = Vec3::new(x, ground(x, z) + 0.05, z);
         let yaw = rng.0.range(0.0, std::f32::consts::TAU);
@@ -418,16 +399,7 @@ pub fn spawn_props(
                 v.spawn((Mesh3d(vend_front.clone()), MeshMaterial3d(vend_face.clone()), Transform::from_xyz(0.0, 0.95, 0.392), NotShadowCaster));
                 v.spawn((Mesh3d(snow_blob(&mut meshes, 0.5, 3)), MeshMaterial3d(assets.snow.clone()), Transform::from_xyz(0.0, 1.88, 0.0).with_scale(Vec3::new(1.0, 0.8, 0.9)), NotShadowCaster));
                 if flicker {
-                    v.spawn((
-                        PointLight {
-                            color: Color::srgb(0.85, 1.0, 0.9),
-                            intensity: 90_000.0,
-                            range: 9.0,
-                            ..default()
-                        },
-                        Transform::from_xyz(0.0, 1.0, 1.0),
-                        FireLight { base: 90_000.0, seed: 4.4 },
-                    ));
+                    v.spawn((flicker_light(Color::srgb(0.85, 1.0, 0.9), 90_000.0, 9.0, false, 4.4), Transform::from_xyz(0.0, 1.0, 1.0)));
                 }
             });
         solid.push(Shape::rect_centered(x, z, 1.0, 0.9));
@@ -480,16 +452,7 @@ pub fn spawn_props(
         solid.push(Shape::Circle { x, z, r: 0.3 });
         if lit {
             // The vault's own lamps still run off the geothermal tap.
-            commands.spawn((
-                PointLight {
-                    color: Color::srgb(1.0, 0.9, 0.7),
-                    intensity: 220_000.0,
-                    range: 16.0,
-                    ..default()
-                },
-                Transform::from_xyz(x, gy + 3.6, z),
-                FireLight { base: 220_000.0, seed: x * 0.3 },
-            ));
+            commands.spawn((flicker_light(Color::srgb(1.0, 0.9, 0.7), 220_000.0, 16.0, false, x * 0.3), Transform::from_xyz(x, gy + 3.6, z)));
         }
     }
 

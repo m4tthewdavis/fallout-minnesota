@@ -4,6 +4,8 @@
 //! The height function is shared by the renderer (terrain mesh) and gameplay
 //! (player/wolf ground height), so they always agree.
 
+use super::mathx::{lerp, smoothstep};
+
 pub const HALF_SIZE: f32 = 200.0;
 
 /// Vault 143's door sits in the southern hillside; the player starts just north of it.
@@ -58,15 +60,6 @@ pub const CONCRETE_PADS: [(f32, f32, f32, f32); 2] = [(VAULT_POS.0, VAULT_POS.1 
 /// Wooden landing around each shelter's fire barrel: (centre x, centre z, half width, half depth).
 pub fn wood_decks() -> impl Iterator<Item = (f32, f32, f32, f32)> {
     SHELTERS.iter().map(|&(sx, sz)| (sx + 1.6, sz, 2.2, 1.9))
-}
-
-fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
 }
 
 fn dist(x: f32, z: f32, cx: f32, cz: f32) -> f32 {

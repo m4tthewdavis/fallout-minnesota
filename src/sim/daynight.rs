@@ -1,6 +1,8 @@
 //! Day/night cycle. A full day lasts 12 real minutes. Nights are darker,
 //! colder, and the Frostfangs howl more.
 
+use super::mathx::smoothstep;
+
 /// Real seconds per in-game 24 hours.
 pub const DAY_LENGTH_SECS: f32 = 720.0;
 pub const START_HOUR: f32 = 7.5;
@@ -34,10 +36,6 @@ impl Default for Clock {
     }
 }
 
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
-    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
 
 impl Clock {
     pub fn new() -> Self {

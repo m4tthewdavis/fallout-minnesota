@@ -8,34 +8,15 @@ use crate::landmarks::{CARS, RUINS};
 use crate::meshes::to_mesh_tangents;
 use crate::sim::collision::{self, Shape};
 use crate::sim::meshgen;
-use crate::sim::terrain::{self, HALF_SIZE};
+use crate::sim::terrain;
 use crate::state::{Colliders, RngRes};
 use crate::sim::weather::WIND_DIR;
-use crate::world::{ground, prop, spawn_contact_shadow, spawn_drift};
+use crate::world::{ground, open_spot, prop, spawn_contact_shadow, spawn_drift, SCATTER};
 
 const SNAGS: usize = 24;
 const ROCKS: usize = 30;
 const DRIFTS: usize = 50;
 const JUNK: usize = 36;
-
-/// A random point on open ground away from the ruins and cars, if one is found.
-fn open_spot(rng: &mut RngRes, solid: &[Shape], clearance: f32) -> Option<(f32, f32)> {
-    for _ in 0..40 {
-        let x = rng.0.range(-HALF_SIZE, HALF_SIZE);
-        let z = rng.0.range(-HALF_SIZE, HALF_SIZE);
-        if !terrain::is_open_ground(x, z) {
-            continue;
-        }
-        if RUINS.iter().any(|&(rx, rz, r)| (x - rx).hypot(z - rz) < r)
-            || CARS.iter().any(|&(cx, cz, _)| (x - cx).hypot(z - cz) < 5.0)
-            || collision::blocked(x, z, clearance, solid)
-        {
-            continue;
-        }
-        return Some((x, z));
-    }
-    None
-}
 
 pub fn spawn_nature(
     mut commands: Commands,
@@ -65,7 +46,7 @@ pub fn spawn_nature(
         })
         .collect();
     for k in 0..SNAGS {
-        let Some((x, z)) = open_spot(&mut rng, solid, 1.0) else { continue };
+        let Some((x, z)) = open_spot(&mut rng, solid, 1.0, &SCATTER) else { continue };
         let yaw = rng.0.range(0.0, std::f32::consts::TAU);
         let tf = Transform::from_xyz(x, ground(x, z) - 0.1, z)
             .with_scale(Vec3::splat(rng.0.range(0.8, 1.3)))
@@ -78,7 +59,7 @@ pub fn spawn_nature(
     // ---------- Boulders poking through the snow ----------
     let cap = meshes.add(to_mesh_tangents(&meshgen::blob(1.0, 0.3, 0.25, 31, 1.0)));
     for _ in 0..ROCKS {
-        let Some((x, z)) = open_spot(&mut rng, solid, 1.5) else { continue };
+        let Some((x, z)) = open_spot(&mut rng, solid, 1.5, &SCATTER) else { continue };
         let s = rng.0.range(8.0, 16.0);
         let yaw = rng.0.range(0.0, std::f32::consts::TAU);
         let gy = ground(x, z);
@@ -98,7 +79,7 @@ pub fn spawn_nature(
 
     // ---------- Snowdrifts ----------
     for i in 0..DRIFTS {
-        let Some((x, z)) = open_spot(&mut rng, solid, 0.5) else { continue };
+        let Some((x, z)) = open_spot(&mut rng, solid, 0.5, &SCATTER) else { continue };
         let length = rng.0.range(4.0, 11.0);
         let width = length * rng.0.range(0.35, 0.6);
         let peak = rng.0.range(0.45, 1.2);
@@ -171,7 +152,7 @@ pub fn spawn_nature(
         junk_at(&mut commands, &mut rng, solid, x, z);
     }
     for _ in 0..JUNK {
-        if let Some((x, z)) = open_spot(&mut rng, solid, 1.0) {
+        if let Some((x, z)) = open_spot(&mut rng, solid, 1.0, &SCATTER) {
             junk_at(&mut commands, &mut rng, solid, x, z);
         }
     }

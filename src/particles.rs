@@ -148,40 +148,13 @@ pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials:
     commands.spawn((Transform::from_translation(at + Vec3::Y * 0.9 * scale), Emitter::new(EmitterKind::FireSmoke, 0.22 / scale)));
     let base = 400_000.0 * scale;
     commands.spawn((
-        PointLight {
-            color: Color::srgb(1.0, 0.55, 0.2),
-            intensity: base,
-            range: 18.0 * scale.max(0.7),
-            shadows_enabled: shadows,
-            ..default()
-        },
+        crate::world::flicker_light(Color::srgb(1.0, 0.55, 0.2), base, 18.0 * scale.max(0.7), shadows, seed),
         Transform::from_translation(at + Vec3::Y * 0.6),
-        crate::world::FireLight { base, seed },
     ));
     // Warm glow on the snow, following the ground.
     let r = 3.2 * scale;
-    let mut m = crate::sim::meshgen::MeshData::default();
-    let n = 6;
-    for i in 0..=n {
-        for j in 0..=n {
-            let (u, v) = (i as f32 / n as f32, j as f32 / n as f32);
-            let (x, z) = (at.x + (u * 2.0 - 1.0) * r, at.z + (v * 2.0 - 1.0) * r);
-            m.vertex([x, terrain::mesh_height(x, z).max(terrain::walk_height(x, z)) + 0.03, z], [0.0, 1.0, 0.0], [u, v], crate::sim::meshgen::WHITE);
-        }
-    }
-    let row = n as u32 + 1;
-    for i in 0..n as u32 {
-        for j in 0..n as u32 {
-            let a = i * row + j;
-            m.quad(a, a + 1, a + row + 1, a + row);
-        }
-    }
-    m.recompute_normals();
-    if m.normals[0][1] < 0.0 {
-        for t in m.indices.as_chunks_mut::<3>().0 {
-            t.swap(1, 2);
-        }
-    }
+    let height = |x: f32, z: f32| terrain::mesh_height(x, z).max(terrain::walk_height(x, z));
+    let m = crate::sim::meshgen::ground_patch(at.x, at.z, r, 6, 0.03, None, &height);
     let glow = materials.add(StandardMaterial {
         base_color: Color::LinearRgba(LinearRgba::new(1.6, 0.6, 0.15, 0.5)),
         base_color_texture: Some(soft.clone()),

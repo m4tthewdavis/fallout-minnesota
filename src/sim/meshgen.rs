@@ -12,6 +12,7 @@
 use std::f32::consts::{PI, TAU};
 
 use super::rng::Rng;
+use super::mathx::smoothstep;
 
 pub type V3 = [f32; 3];
 
@@ -55,10 +56,6 @@ fn lerp4(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
         a[2] + (b[2] - a[2]) * t,
         a[3] + (b[3] - a[3]) * t,
     ]
-}
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
-    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 pub const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];

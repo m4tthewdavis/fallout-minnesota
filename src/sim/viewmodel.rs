@@ -5,6 +5,7 @@
 use std::f32::consts::{PI, TAU};
 
 use super::combat::WeaponKind;
+use super::mathx::lerp;
 
 /// Scale the weapon models are drawn at.
 pub const SCALE: f32 = 0.8;
@@ -280,10 +281,6 @@ fn ramp(t: f32, a: f32, b: f32) -> f32 {
 /// A bump that rises over [a, b] and falls over [b, c].
 fn bump(t: f32, a: f32, b: f32, c: f32) -> f32 {
     ramp(t, a, b) * (1.0 - ramp(t, b, c))
-}
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
 }
 
 pub fn pose(i: &Inputs) -> Pose {
