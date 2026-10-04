@@ -14,10 +14,11 @@ use crate::sim::terrain::{self, SHELTERS, VAULT_POS};
 use crate::sim::weather::Phase;
 use crate::state::{ClockRes, Game, Messages, WeatherRes};
 
-const PIP_GREEN: Color = Color::srgb(0.45, 1.0, 0.45);
-const PIP_DIM: Color = Color::srgba(0.45, 1.0, 0.45, 0.35);
-const PANEL: Color = Color::srgba(0.0, 0.07, 0.02, 0.55);
-const WARN: Color = Color::srgb(1.0, 0.75, 0.3);
+/// New Vegas amber, matching the Pip-Boy screen.
+const HUD_AMBER: Color = Color::srgb(1.0, 0.72, 0.3);
+const HUD_DIM: Color = Color::srgba(1.0, 0.72, 0.3, 0.35);
+const PANEL: Color = Color::srgba(0.07, 0.04, 0.01, 0.55);
+const WARN: Color = Color::srgb(1.0, 0.92, 0.7);
 const DANGER: Color = Color::srgb(1.0, 0.3, 0.25);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -94,7 +95,7 @@ fn panel(node: Node) -> (Node, BackgroundColor, BorderColor, BorderRadius) {
             ..node
         },
         BackgroundColor(PANEL),
-        BorderColor(PIP_DIM),
+        BorderColor(HUD_DIM),
         BorderRadius::all(Val::Px(3.0)),
     )
 }
@@ -136,7 +137,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
 
     // Crosshair.
     commands.spawn((full_screen(), HideWithPip)).with_children(|p| {
-        p.spawn((Text::new("+"), font(24.0), TextColor(PIP_GREEN.with_alpha(0.85)), Crosshair));
+        p.spawn((Text::new("+"), font(24.0), TextColor(HUD_AMBER.with_alpha(0.85)), Crosshair));
     });
 
     // Controls reminder (fades after the first minute).
@@ -145,11 +146,11 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             "WASD move  SHIFT sprint  SPACE jump\n\
              LMB fire  RMB aim  R reload/unjam\n\
              H stimpak  X RadAway  F hotdish\n\
-             C craft coat (at shelter)  ESC free mouse\n\
+             C craft coat (at shelter)  TAB Pip-Boy\n\
              G Geiger on/off  F9 mute  F10/F11 volume",
         ),
         font(13.0),
-        TextColor(PIP_GREEN.with_alpha(0.6)),
+        TextColor(HUD_AMBER.with_alpha(0.6)),
         Node {
             position_type: PositionType::Absolute,
             left: Val::Px(12.0),
@@ -182,8 +183,8 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                 ..default()
             }))
             .with_children(|c| {
-                c.spawn((Text::new(""), font(16.0), TextColor(PIP_GREEN), CompassText));
-                c.spawn((Text::new(""), font(12.0), TextColor(PIP_GREEN.with_alpha(0.7)), HeadingText));
+                c.spawn((Text::new(""), font(16.0), TextColor(HUD_AMBER), CompassText));
+                c.spawn((Text::new(""), font(12.0), TextColor(HUD_AMBER.with_alpha(0.7)), HeadingText));
             });
             p.spawn((
                 Text::new(""),
@@ -241,14 +242,14 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                 })
                 .with_children(|row| {
                     row.spawn((
-                        image(icon, PIP_GREEN, NodeImageMode::Stretch),
+                        image(icon, HUD_AMBER, NodeImageMode::Stretch),
                         Node {
                             width: Val::Px(20.0),
                             height: Val::Px(20.0),
                             ..default()
                         },
                     ));
-                    row.spawn((Text::new(label), font(15.0), TextColor(PIP_GREEN)));
+                    row.spawn((Text::new(label), font(15.0), TextColor(HUD_AMBER)));
                     row.spawn((
                         Node {
                             width: Val::Px(190.0),
@@ -257,7 +258,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                             padding: UiRect::all(Val::Px(1.0)),
                             ..default()
                         },
-                        BorderColor(PIP_DIM),
+                        BorderColor(HUD_DIM),
                     ))
                     .with_children(|bar| {
                         bar.spawn((
@@ -266,7 +267,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                                 height: Val::Percent(100.0),
                                 ..default()
                             },
-                            BackgroundColor(PIP_GREEN),
+                            BackgroundColor(HUD_AMBER),
                             BarFill(stat),
                         ));
                         if stat == Stat::Hp {
@@ -287,7 +288,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                     row.spawn((
                         Text::new(""),
                         font(15.0),
-                        TextColor(PIP_GREEN),
+                        TextColor(HUD_AMBER),
                         Node {
                             min_width: Val::Px(120.0),
                             ..default()
@@ -296,7 +297,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                     ));
                 });
             }
-            p.spawn((Text::new(""), font(14.0), TextColor(PIP_GREEN.with_alpha(0.85)), InfoText));
+            p.spawn((Text::new(""), font(14.0), TextColor(HUD_AMBER.with_alpha(0.85)), InfoText));
         });
 
     // Weapon panel (bottom-right).
@@ -311,11 +312,11 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
         }))
         .insert(ChildOf(bottom))
         .with_children(|p| {
-            p.spawn((Text::new(""), font(30.0), TextColor(PIP_GREEN), AmmoText));
+            p.spawn((Text::new(""), font(30.0), TextColor(HUD_AMBER), AmmoText));
             p.spawn((
                 Text::new(""),
                 font(14.0),
-                TextColor(PIP_GREEN),
+                TextColor(HUD_AMBER),
                 TextLayout::new_with_justify(JustifyText::Right),
                 WeaponText,
             ));
@@ -337,7 +338,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             p.spawn((
                 Text::new(""),
                 font(19.0),
-                TextColor(PIP_GREEN),
+                TextColor(HUD_AMBER),
                 TextLayout::new_with_justify(JustifyText::Center),
                 PromptText,
             ));
@@ -415,7 +416,7 @@ fn show_prompt(prompt: Res<crate::state::Prompt>, mut q: Query<&mut Text, With<P
 /// The iron sights replace the crosshair while aiming.
 fn fade_crosshair(aim: Res<crate::gun::AimAmount>, mut q: Query<&mut TextColor, With<Crosshair>>) {
     for mut c in &mut q {
-        c.0 = PIP_GREEN.with_alpha(0.85 * (1.0 - aim.0 * 1.5).clamp(0.0, 1.0));
+        c.0 = HUD_AMBER.with_alpha(0.85 * (1.0 - aim.0 * 1.5).clamp(0.0, 1.0));
     }
 }
 
@@ -535,7 +536,7 @@ fn update_hud(
         let (frac, color) = match fill.0 {
             Stat::Hp => {
                 let f = s.health / Survival::BASE_MAX_HEALTH;
-                (f, if f < 0.25 { DANGER } else { PIP_GREEN })
+                (f, if f < 0.25 { DANGER } else { HUD_AMBER })
             }
             Stat::Heat => {
                 let f = s.body_heat / 100.0;
@@ -544,11 +545,11 @@ fn update_hud(
                 } else if f < 0.3 {
                     Color::srgb(0.55, 0.85, 1.0)
                 } else {
-                    PIP_GREEN
+                    HUD_AMBER
                 };
                 (f, c)
             }
-            Stat::Rads => (s.rads / Survival::MAX_RADS, if rad_rate > 0.0 { WARN } else { PIP_GREEN }),
+            Stat::Rads => (s.rads / Survival::MAX_RADS, if rad_rate > 0.0 { WARN } else { HUD_AMBER }),
         };
         node.width = Val::Percent(frac.clamp(0.0, 1.0) * 100.0);
         // Pulse a bar that's in trouble.
@@ -586,7 +587,7 @@ fn update_hud(
             }
         };
         text.0 = value;
-        color.0 = if warn { WARN } else { PIP_GREEN };
+        color.0 = if warn { WARN } else { HUD_AMBER };
     }
 
     // ---- Conditions line ----
@@ -629,7 +630,7 @@ fn update_hud(
             Some(ammo) => format!("{:>2} / {}", wpn.mag, game.inv.reserve(ammo)),
             None => "MELEE".to_string(),
         };
-        color.0 = if wpn.jammed || (wpn.mag == 0 && !wpn.melee) { WARN } else { PIP_GREEN };
+        color.0 = if wpn.jammed || (wpn.mag == 0 && !wpn.melee) { WARN } else { HUD_AMBER };
     }
     let inv = &game.inv;
     let coat = if inv.has_frostfang_coat {
@@ -709,7 +710,7 @@ fn update_hud(
     }
 
     if let Ok(mut c) = help.single_mut() {
-        c.0 = PIP_GREEN.with_alpha((0.6 - (t - 45.0) * 0.05).clamp(0.0, 0.6));
+        c.0 = HUD_AMBER.with_alpha((0.6 - (t - 45.0) * 0.05).clamp(0.0, 0.6));
     }
 
     // ---- Overlays ----

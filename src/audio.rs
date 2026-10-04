@@ -73,10 +73,12 @@ enum LoopKind {
     WindHigh,
     Siren,
     Music(Mood),
+    PipHum,
 }
 
 impl LoopKind {
-    const ALL: [LoopKind; 7] = [
+    const ALL: [LoopKind; 8] = [
+        LoopKind::PipHum,
         LoopKind::WindLow,
         LoopKind::WindMid,
         LoopKind::WindHigh,
@@ -92,6 +94,7 @@ impl LoopKind {
             LoopKind::WindMid => Sound::WindMid,
             LoopKind::WindHigh => Sound::WindHigh,
             LoopKind::Siren => Sound::Siren,
+            LoopKind::PipHum => Sound::PipHum,
             LoopKind::Music(m) => m.sound(),
         }
     }
@@ -291,6 +294,7 @@ fn steer_loops(
     player: Query<&Transform, With<Player>>,
     hostiles: Query<&Transform, (With<Hostile>, Without<Player>)>,
     mut sinks: Query<(&mut AudioSink, &LoopKind)>,
+    pip: Res<crate::state::PipOpen>,
 ) {
     let dt = real.delta_secs().min(0.25);
     let phase = weather.weather.phase;
@@ -321,6 +325,7 @@ fn steer_loops(
             LoopKind::WindHigh => ((0.03 + 0.95 * w * w) * 0.5 * muffle, Bus::Ambience),
             LoopKind::Siren => (if phase == Phase::Warning { 1.0 } else { 0.0 } * Sound::Siren.profile().volume, Bus::Ambience),
             LoopKind::Music(m) => (music[*m as usize], Bus::Music),
+            LoopKind::PipHum => (if pip.0 { Sound::PipHum.profile().volume } else { 0.0 }, Bus::Sfx),
         };
         let level = state.levels.entry(*kind).or_insert(0.0);
         // The siren fades in over two seconds and out over about one.

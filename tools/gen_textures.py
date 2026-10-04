@@ -655,6 +655,253 @@ def plant_textures():
     print("   textures/generated/bark_aspen.jpg")
 
 
+def pipboy_art():
+    """The Pip-Boy on your wrist (original art): an olive metal casing with
+    a rounded CRT window, knobs, a rad dial, lamps and STATS / ITEMS / DATA
+    buttons, with the Vault 143 suit sleeve and strap. Plus the CRT glass
+    overlay, static frames, and the Vault 143 mascot (a cheerful dweller in
+    a toque and scarf) in the poses the STATUS page uses. Mascot frames are
+    grey on transparent; the game tints them to the screen colour."""
+    S = 2
+    W, H = 1500 * S, 1000 * S
+    # Screen window in final pixels (the game lays the UI out to match).
+    sx0, sy0, sx1, sy1 = 225, 105, 1185, 795
+
+    def metal(w, h, base, seed_scale=1.0):
+        n = value_noise(512, 8, 4)
+        n = np.asarray(Image.fromarray((n * 255).astype(np.uint8)).resize((w, h)), float) / 255
+        grad = np.linspace(1.12, 0.78, h)[:, None]
+        rgb = np.array(base)[None, None, :] * (grad * (0.88 + 0.24 * n))[..., None]
+        speck = (rng.random((h, w)) > 0.997)[..., None] * 0.08
+        return np.clip(rgb + speck, 0, 1)
+
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    # ---- Sleeve and strap (the arm the Pip-Boy is strapped to) ----
+    d.polygon([(0, 330 * S), (300 * S, 300 * S), (300 * S, 860 * S), (0, 900 * S)], fill=(38, 62, 120, 255))
+    d.polygon([(0, 560 * S), (300 * S, 545 * S), (300 * S, 600 * S), (0, 618 * S)], fill=(214, 172, 40, 255))
+    for k in range(9):
+        y = (350 + k * 60) * S
+        d.line([(0, y), (300 * S, y - 30 * S)], fill=(30, 50, 98, 255), width=3 * S)
+    for x0 in (95, 1340):
+        d.rounded_rectangle([x0 * S, 250 * S, (x0 + 70) * S, 940 * S], radius=18 * S, fill=(44, 34, 26, 255))
+        for y in range(280, 920, 52):
+            d.ellipse([(x0 + 26) * S, y * S, (x0 + 44) * S, (y + 18) * S], fill=(120, 110, 90, 255))
+    # ---- Casing ----
+    body = Image.new("L", (W, H), 0)
+    bd = ImageDraw.Draw(body)
+    bd.rounded_rectangle([150 * S, 40 * S, 1420 * S, 960 * S], radius=70 * S, fill=255)
+    bd.rounded_rectangle([1180 * S, 150 * S, 1480 * S, 820 * S], radius=60 * S, fill=255)
+    casing = metal(W, H, (0.44, 0.42, 0.31))
+    casing_img = Image.fromarray((casing * 255).astype(np.uint8)).convert("RGBA")
+    casing_img.putalpha(body)
+    img.alpha_composite(casing_img)
+    d = ImageDraw.Draw(img)
+    # Bevel highlights and shadow lines.
+    d.rounded_rectangle([158 * S, 48 * S, 1412 * S, 952 * S], radius=64 * S, outline=(170, 165, 130, 255), width=3 * S)
+    d.rounded_rectangle([150 * S, 40 * S, 1420 * S, 960 * S], radius=70 * S, outline=(30, 28, 20, 255), width=4 * S)
+    # Screen surround: a dark rubber gasket and a raised metal lip.
+    d.rounded_rectangle([(sx0 - 48) * S, (sy0 - 48) * S, (sx1 + 48) * S, (sy1 + 48) * S], radius=60 * S, fill=(70, 66, 48, 255), outline=(26, 24, 18, 255), width=4 * S)
+    d.rounded_rectangle([(sx0 - 22) * S, (sy0 - 22) * S, (sx1 + 22) * S, (sy1 + 22) * S], radius=46 * S, fill=(16, 15, 12, 255))
+    # Screws.
+    for (x, y) in [(190, 85), (1380, 85), (190, 915), (1380, 915), (1440, 190), (1440, 780)]:
+        d.ellipse([(x - 13) * S, (y - 13) * S, (x + 13) * S, (y + 13) * S], fill=(120, 115, 92, 255), outline=(30, 28, 20, 255), width=2 * S)
+        d.line([(x - 9) * S, (y - 4) * S, (x + 9) * S, (y + 4) * S], fill=(40, 38, 28, 255), width=3 * S)
+    font_big = ImageFont.truetype(FONT, 34 * S)
+    font_small = ImageFont.truetype(FONT, 22 * S)
+    # Name plate.
+    d.rounded_rectangle([230 * S, 50 * S, 560 * S, 92 * S], radius=8 * S, fill=(40, 38, 28, 255))
+    d.text((250 * S, 52 * S), "PIP-BOY 3000", font=font_big, fill=(200, 190, 150, 255))
+    d.text((900 * S, 58 * S), "ROBCO INDUSTRIES", font=font_small, fill=(60, 56, 40, 255))
+    # ---- Right panel: tuning knob, rad dial, lamps ----
+    kx, ky, kr = 1330, 330, 95
+    d.ellipse([(kx - kr) * S, (ky - kr) * S, (kx + kr) * S, (ky + kr) * S], fill=(48, 46, 36, 255))
+    for k in range(36):
+        a = k / 36 * math.tau
+        d.line([(kx + math.cos(a) * (kr - 18)) * S, (ky + math.sin(a) * (kr - 18)) * S, (kx + math.cos(a) * kr) * S, (ky + math.sin(a) * kr) * S], fill=(90, 86, 66, 255), width=4 * S)
+    d.ellipse([(kx - 60) * S, (ky - 60) * S, (kx + 60) * S, (ky + 60) * S], fill=(110, 104, 80, 255), outline=(30, 28, 20, 255), width=3 * S)
+    d.line([kx * S, ky * S, (kx + 42) * S, (ky - 30) * S], fill=(30, 28, 20, 255), width=6 * S)
+    # Rad dial.
+    dx, dy, dr = 1330, 580, 72
+    d.ellipse([(dx - dr) * S, (dy - dr) * S, (dx + dr) * S, (dy + dr) * S], fill=(225, 215, 170, 255), outline=(30, 28, 20, 255), width=5 * S)
+    for k in range(11):
+        a = math.pi * (0.85 + 1.3 * k / 10)
+        r0 = dr - (16 if k % 5 == 0 else 9)
+        d.line([(dx + math.cos(a) * r0) * S, (dy + math.sin(a) * r0) * S, (dx + math.cos(a) * (dr - 4)) * S, (dy + math.sin(a) * (dr - 4)) * S], fill=(40, 30, 20, 255), width=3 * S)
+    d.pieslice([(dx - 40) * S, (dy - 40) * S, (dx + 40) * S, (dy + 40) * S], 300, 340, fill=(190, 40, 30, 255))
+    d.line([dx * S, dy * S, (dx - 30) * S, (dy - 45) * S], fill=(20, 18, 14, 255), width=4 * S)
+    d.text(((dx - 18) * S, (dy + 22) * S), "RAD", font=font_small, fill=(40, 30, 20, 255))
+    # Lamps.
+    for i, col in enumerate([(220, 60, 40), (240, 170, 50), (90, 200, 80)]):
+        x = 1255 + i * 50
+        d.ellipse([(x - 14) * S, 720 * S, (x + 14) * S, 748 * S], fill=col + (255,), outline=(30, 28, 20, 255), width=3 * S)
+    # ---- Buttons below the screen ----
+    for i, label in enumerate(["STATS", "ITEMS", "DATA"]):
+        x0 = 330 + i * 290
+        d.rounded_rectangle([x0 * S, 850 * S, (x0 + 200) * S, 915 * S], radius=12 * S, fill=(62, 58, 42, 255), outline=(26, 24, 18, 255), width=4 * S)
+        d.rounded_rectangle([(x0 + 6) * S, 856 * S, (x0 + 194) * S, 878 * S], radius=8 * S, fill=(96, 90, 66, 255))
+        tw = d.textlength(label, font=font_small)
+        d.text(((x0 + 100) * S - tw / 2, 875 * S), label, font=font_small, fill=(200, 190, 150, 255))
+    # Vent slots on the left of the casing.
+    for k in range(7):
+        y = 330 + k * 34
+        d.rounded_rectangle([168 * S, y * S, 196 * S, (y + 14) * S], radius=6 * S, fill=(26, 24, 18, 255))
+    # Scratches and grime.
+    scr = Image.new("L", (W, H), 0)
+    sd = ImageDraw.Draw(scr)
+    for _ in range(160):
+        x, y = rng.uniform(150, 1420) * S, rng.uniform(40, 960) * S
+        a, ln = rng.uniform(0, math.pi), rng.uniform(10, 60) * S
+        sd.line([x, y, x + math.cos(a) * ln, y + math.sin(a) * ln], fill=int(rng.uniform(40, 120)), width=S)
+    arr = np.asarray(img, float)
+    scratch = np.asarray(scr, float)[..., None] / 255
+    arr[..., :3] = arr[..., :3] * (1 - scratch * 0.3) + 200 * scratch * 0.3
+    img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA")
+    # Cut the screen window out so the game's screen shows through.
+    hole = Image.new("L", (W, H), 255)
+    ImageDraw.Draw(hole).rounded_rectangle([sx0 * S, sy0 * S, sx1 * S, sy1 * S], radius=36 * S, fill=0)
+    a = np.minimum(np.asarray(img.getchannel("A")), np.asarray(hole))
+    img.putalpha(Image.fromarray(a))
+    save(img.resize((1500, 1000), Image.LANCZOS), UI, "pip_frame.png")
+
+    # ---- CRT glass: dark curved corners and a soft glare ----
+    w, h = 480, 344
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    u, v = (xx / w - 0.5) * 2, (yy / h - 0.5) * 2
+    r = np.sqrt((u * 0.92) ** 4 + (v * 0.92) ** 4) ** 0.5
+    dark = np.clip((r - 0.62) / 0.5, 0, 1) ** 1.6
+    glare = np.exp(-(((u + 0.45) / 0.3) ** 2 + ((v + 0.7) / 0.12) ** 2)) * 0.03
+    rgb = np.ones((h, w, 3)) * (glare[..., None] > dark[..., None])
+    alpha = np.clip(dark * 0.95 + glare, 0, 1)
+    out = np.dstack([rgb * 255, alpha * 255]).astype(np.uint8)
+    save(Image.fromarray(out, "RGBA"), UI, "pip_crt.png")
+
+    # ---- Static: four frames of noise with horizontal streaks ----
+    for k in range(4):
+        n = 128
+        base = rng.random((n, n))
+        streak = np.repeat(rng.random((n, 1)), n, 1)
+        a = np.clip(base * 0.7 + (streak > 0.85) * 0.5, 0, 1)
+        out = np.dstack([np.full((n, n), 255), np.full((n, n), 255), np.full((n, n), 255), a * 255]).astype(np.uint8)
+        save(Image.fromarray(out, "RGBA"), UI, f"pip_static_{k}.png")
+
+    # ---- The Vault 143 mascot ----
+    def mascot(pose):
+        M = 4
+        w, h = 300 * M, 420 * M
+        im = Image.new("LA", (w, h), (0, 0))
+        g = ImageDraw.Draw(im)
+        line = (0, 255)
+        light = (235, 255)
+        mid = (150, 255)
+        ow = 5 * M
+
+        def P(x, y):
+            return (x * M, y * M)
+
+        def ell(x0, y0, x1, y1, fill=light):
+            g.ellipse([P(x0, y0), P(x1, y1)], fill=fill, outline=line, width=ow)
+
+        def limb(pts, wdt, fill=light):
+            pts = [P(*p) for p in pts]
+            g.line(pts, fill=line, width=(wdt + 10) * M, joint="curve")
+            g.line(pts, fill=fill, width=wdt * M, joint="curve")
+            for p in (pts[0], pts[-1]):
+                r = (wdt + 10) * M / 2
+                g.ellipse([p[0] - r, p[1] - r, p[0] + r, p[1] + r], fill=line)
+                r = wdt * M / 2
+                g.ellipse([p[0] - r, p[1] - r, p[0] + r, p[1] + r], fill=fill)
+
+        cold = pose == "cold"
+        hurt = pose == "hurt"
+        knee = 8 if cold else 0
+        # Legs and boots.
+        limb([(128 + knee, 280), (122 + knee * 1.5, 360)], 30)
+        limb([(172 - knee, 280), (178 - knee * 1.5, 360)], 30)
+        for bx in (122 + knee * 1.5, 178 - knee * 1.5):
+            g.rounded_rectangle([P(bx - 24, 352), P(bx + 26, 384)], radius=10 * M, fill=mid, outline=line, width=ow)
+        # Body: jumpsuit with a belt and "143".
+        g.rounded_rectangle([P(100, 180), P(200, 296)], radius=26 * M, fill=light, outline=line, width=ow)
+        g.line([P(104, 262), P(196, 262)], fill=line, width=ow)
+        g.line([P(157, 186), P(157, 262)], fill=line, width=3 * M)
+        g.text(P(124, 212), "143", font=ImageFont.truetype(FONT, 15 * M), fill=line)
+        # Scarf.
+        g.rounded_rectangle([P(112, 168), P(188, 190)], radius=10 * M, fill=mid, outline=line, width=ow)
+        g.polygon([P(170, 186), P(190, 186), P(196, 236), P(176, 232)], fill=mid, outline=line)
+        # Arms.
+        if cold:
+            # Hugging himself, hands tucked under the arms.
+            limb([(106, 196), (128, 238), (178, 232)], 24)
+            limb([(194, 196), (172, 244), (124, 240)], 24)
+        elif hurt:
+            limb([(106, 196), (92, 250), (98, 290)], 24)
+            # Right arm in a sling.
+            limb([(194, 196), (200, 236), (150, 238)], 24)
+            g.polygon([P(140, 222), P(205, 222), P(196, 252), P(140, 250)], fill=mid, outline=line)
+            g.line([P(196, 222), P(124, 172)], fill=line, width=5 * M)
+        else:
+            # Hand on hip, other arm up with a thumbs-up.
+            limb([(106, 196), (80, 236), (104, 262)], 24)
+            limb([(194, 196), (234, 186), (242, 146)], 24)
+            # Fist turned sideways, knuckles towards us, thumb up.
+            g.rounded_rectangle([P(222, 112), P(266, 146)], radius=10 * M, fill=light, outline=line, width=ow)
+            for y in (121, 129, 137):
+                g.line([P(240, y), P(264, y)], fill=line, width=3 * M)
+            g.rounded_rectangle([P(222, 84), P(238, 118)], radius=8 * M, fill=light, outline=line, width=ow)
+        # Head: big and round, with ears.
+        ell(88, 92, 104, 122)
+        ell(196, 92, 212, 122)
+        ell(96, 44, 204, 170)
+        # Toque with a folded band and a pom-pom.
+        g.chord([P(96, 6), P(204, 120)], 180, 360, fill=mid, outline=line, width=ow)
+        g.rounded_rectangle([P(92, 52), P(208, 74)], radius=10 * M, fill=light, outline=line, width=ow)
+        for x in range(104, 200, 12):
+            g.line([P(x, 54), P(x, 72)], fill=line, width=2 * M)
+        ell(136, -2, 164, 22)
+        # Hair curl peeking out from under the toque.
+        g.arc([P(100, 66), P(140, 100)], 200, 330, fill=line, width=ow)
+        # Face.
+        if cold:
+            g.line([P(122, 104), P(138, 110)], fill=line, width=ow)
+            g.line([P(178, 110), P(162, 104)], fill=line, width=ow)
+            # Chattering teeth.
+            g.rectangle([P(126, 132), P(174, 150)], fill=light, outline=line, width=4 * M)
+            for x in range(132, 174, 8):
+                g.line([P(x, 132), P(x, 150)], fill=line, width=2 * M)
+            # Icicle on the nose.
+            g.polygon([P(146, 118), P(154, 118), P(150, 140)], fill=light, outline=line)
+            # Shiver lines.
+            for (x, y) in [(70, 150), (64, 170), (230, 150), (236, 170)]:
+                g.arc([P(x - 8, y - 8), P(x + 8, y + 8)], 270, 90, fill=line, width=3 * M)
+        elif hurt:
+            g.line([P(120, 106), P(136, 112)], fill=line, width=ow)
+            g.line([P(164, 112), P(180, 106)], fill=line, width=ow)
+            g.arc([P(128, 134), P(172, 160)], 200, 340, fill=line, width=ow)
+            # Bandage round the head.
+            g.rounded_rectangle([P(96, 84), P(204, 98)], radius=4 * M, fill=light, outline=line, width=3 * M)
+            g.line([P(184, 86), P(196, 96)], fill=line, width=3 * M)
+        else:
+            ell(118, 98, 134, 116, fill=line)
+            g.arc([P(162, 100), P(182, 116)], 200, 340, fill=line, width=ow)  # wink
+            g.arc([P(118, 112), P(182, 156)], 20, 160, fill=line, width=ow)  # grin
+            g.line([P(148, 112), P(152, 124)], fill=line, width=3 * M)
+        im = im.resize((300, 420), Image.LANCZOS).convert("RGBA")
+        save(im, UI, f"mascot_{pose}.png")
+
+    for pose in ("idle", "cold", "hurt"):
+        mascot(pose)
+    # Radiation glow: rays round the figure, pulsed by the game.
+    w, h = 300, 420
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    dx, dy = (xx - 150) / 150, (yy - 210) / 210
+    r = np.hypot(dx, dy)
+    ang = np.arctan2(dy, dx)
+    rays = (np.cos(ang * 12) * 0.5 + 0.5) ** 3
+    a = np.clip(rays * np.clip(1 - np.abs(r - 0.85) / 0.25, 0, 1) + np.clip(1 - np.abs(r - 0.8) / 0.06, 0, 1) * 0.6, 0, 1)
+    out = np.dstack([np.full((h, w), 255), np.full((h, w), 255), np.full((h, w), 255), a * 255]).astype(np.uint8)
+    save(Image.fromarray(out, "RGBA"), UI, "mascot_glow.png")
+
+
 def vending_front():
     """Front of a pre-war soda machine: glowing bottle window and a 'Frost Cola' header."""
     w, h = 256, 512
@@ -790,6 +1037,7 @@ def main():
     snow_textures()
     track_textures()
     plant_textures()
+    pipboy_art()
 
 
 def signs_only():
@@ -798,7 +1046,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art}
 
 if __name__ == "__main__":
     import sys

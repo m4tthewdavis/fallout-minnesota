@@ -83,6 +83,12 @@ pub enum Sound {
     // Pip-Boy interface.
     PipOn,
     PipOff,
+    /// Burst of CRT static when the Pip-Boy changes page.
+    PipStatic,
+    /// Soft tick moving through a list.
+    PipScroll,
+    /// Transformer hum and CRT whine while the Pip-Boy is up (loops).
+    PipHum,
     /// Keep last: the tests rely on it.
     UiTab,
 }
@@ -157,6 +163,9 @@ impl Sound {
         Sound::MusicDanger,
         Sound::PipOn,
         Sound::PipOff,
+        Sound::PipStatic,
+        Sound::PipScroll,
+        Sound::PipHum,
         Sound::UiTab,
     ];
 
@@ -189,6 +198,9 @@ impl Sound {
             | Sound::MusicDanger
             | Sound::PipOn
             | Sound::PipOff
+            | Sound::PipStatic
+            | Sound::PipScroll
+            | Sound::PipHum
             | Sound::UiTab => 1,
         }
     }
@@ -205,6 +217,7 @@ impl Sound {
                 | Sound::MusicCalm
                 | Sound::MusicTense
                 | Sound::MusicDanger
+                | Sound::PipHum
         )
     }
 
@@ -262,6 +275,9 @@ impl Sound {
             Sound::MusicCalm | Sound::MusicTense | Sound::MusicDanger => p(Music, 1.0, 0.0, 0.0, 0.0, self, false, None),
             Sound::PipOn | Sound::PipOff => p(Sfx, 0.45, 0.0, 0.0, 0.1, self, false, None),
             Sound::UiTab => p(Sfx, 0.4, 0.04, 0.05, 0.04, self, false, None),
+            Sound::PipStatic => p(Sfx, 0.35, 0.05, 0.1, 0.05, self, false, None),
+            Sound::PipScroll => p(Sfx, 0.3, 0.06, 0.1, 0.03, self, false, None),
+            Sound::PipHum => p(Sfx, 0.25, 0.0, 0.0, 0.0, self, false, None),
         }
     }
 
@@ -320,6 +336,9 @@ impl Sound {
             Sound::PipOn => pip_blip(true),
             Sound::PipOff => pip_blip(false),
             Sound::UiTab => ui_tick(),
+            Sound::PipStatic => pip_static(rng),
+            Sound::PipScroll => pip_scroll(),
+            Sound::PipHum => pip_hum(rng),
         }
     }
 
@@ -1408,6 +1427,49 @@ fn pip_blip(on: bool) -> Vec<f32> {
         })
         .collect();
     normalize(out, 0.4)
+}
+
+/// A crackling burst of white noise, like a CRT changing channel.
+fn pip_static(mut rng: Rng) -> Vec<f32> {
+    let mut crackle = 0.0;
+    let out: Vec<f32> = (0..len(0.22))
+        .map(|i| {
+            let t = i as f32 / SR;
+            if rng.f32() < 0.02 {
+                crackle = noise(&mut rng) * 1.5;
+            }
+            crackle *= 0.97;
+            (noise(&mut rng) * 0.6 + crackle) * env(t, 0.003, 14.0)
+        })
+        .collect();
+    normalize(out, 0.4)
+}
+
+/// A dry, low tick for moving through a list.
+fn pip_scroll() -> Vec<f32> {
+    let out: Vec<f32> = (0..len(0.035))
+        .map(|i| {
+            let t = i as f32 / SR;
+            ((TAU * 820.0 * t).sin() + 0.4 * (TAU * 2460.0 * t).sin()) * env(t, 0.0005, 110.0)
+        })
+        .collect();
+    normalize(out, 0.3)
+}
+
+/// Mains hum (60 Hz and harmonics), a faint CRT whine and the odd crackle.
+/// Whole cycles over the 3-second loop so it repeats without a click.
+fn pip_hum(mut rng: Rng) -> Vec<f32> {
+    let n = len(3.0);
+    let out: Vec<f32> = (0..n)
+        .map(|i| {
+            let t = i as f32 / SR;
+            let hum = (TAU * 60.0 * t).sin() * 0.5 + (TAU * 120.0 * t).sin() * 0.35 + (TAU * 180.0 * t).sin() * 0.15;
+            let whine = (TAU * 7800.0 * t).sin() * 0.03;
+            let crackle = if rng.f32() < 0.0008 { noise(&mut rng) * 0.6 } else { 0.0 };
+            hum * (0.85 + 0.15 * (TAU * t / 1.5).sin()) + whine + crackle
+        })
+        .collect();
+    normalize(out, 0.35)
 }
 
 fn ui_tick() -> Vec<f32> {

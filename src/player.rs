@@ -320,6 +320,55 @@ fn survival_tick(
     }
 }
 
+/// The three aid items you can use from the keyboard or the Pip-Boy.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Aid {
+    Stimpak,
+    RadAway,
+    Hotdish,
+}
+
+/// Use one aid item if you have it (and it would help). Returns true if used.
+pub fn use_aid(aid: Aid, game: &mut Game, msgs: &mut Messages) -> bool {
+    let Game { survival, inv, .. } = game;
+    match aid {
+        Aid::Stimpak => {
+            if inv.stimpaks == 0 {
+                msgs.show("No Stimpaks left.", 2.0);
+            } else if survival.health >= survival.max_health() {
+                msgs.show("You're not hurt.", 1.5);
+            } else {
+                inv.stimpaks -= 1;
+                survival.heal(40.0);
+                msgs.show("Stimpak used. +40 HP", 2.0);
+                return true;
+            }
+        }
+        Aid::RadAway => {
+            if inv.radaway == 0 {
+                msgs.show("No RadAway left.", 2.0);
+            } else {
+                inv.radaway -= 1;
+                survival.purge_rads(150.0);
+                msgs.show("RadAway used. -150 rads", 2.0);
+                return true;
+            }
+        }
+        Aid::Hotdish => {
+            if inv.hotdish == 0 {
+                msgs.show("No hotdish left. Uff da.", 2.0);
+            } else {
+                inv.hotdish -= 1;
+                survival.warm(35.0);
+                survival.heal(5.0);
+                msgs.show("Vault 143 Hotdish: warm, starchy, and only a little radioactive. +35 Heat", 3.0);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn use_items(
     keys: Res<ButtonInput<KeyCode>>,
     mut game: ResMut<Game>,
@@ -327,41 +376,12 @@ fn use_items(
     mut sfx: ResMut<SfxQueue>,
     q: Query<&Transform, With<Player>>,
 ) {
-    let Game { survival, inv, .. } = &mut *game;
-
-    if keys.just_pressed(KeyCode::KeyH) {
-        if inv.stimpaks == 0 {
-            msgs.show("No Stimpaks left.", 2.0);
-        } else if survival.health >= survival.max_health() {
-            msgs.show("You're not hurt.", 1.5);
-        } else {
-            inv.stimpaks -= 1;
-            survival.heal(40.0);
-            msgs.show("Stimpak used. +40 HP", 2.0);
+    for (key, aid) in [(KeyCode::KeyH, Aid::Stimpak), (KeyCode::KeyX, Aid::RadAway), (KeyCode::KeyF, Aid::Hotdish)] {
+        if keys.just_pressed(key) {
+            use_aid(aid, &mut game, &mut msgs);
         }
     }
-    if keys.just_pressed(KeyCode::KeyX) {
-        if inv.radaway == 0 {
-            msgs.show("No RadAway left.", 2.0);
-        } else {
-            inv.radaway -= 1;
-            survival.purge_rads(150.0);
-            msgs.show("RadAway used. -150 rads", 2.0);
-        }
-    }
-    if keys.just_pressed(KeyCode::KeyF) {
-        if inv.hotdish == 0 {
-            msgs.show("No hotdish left. Uff da.", 2.0);
-        } else {
-            inv.hotdish -= 1;
-            survival.warm(35.0);
-            survival.heal(5.0);
-            msgs.show(
-                "Vault 143 Hotdish: warm, starchy, and only a little radioactive. +35 Heat",
-                3.0,
-            );
-        }
-    }
+    let Game { inv, .. } = &mut *game;
     if keys.just_pressed(KeyCode::KeyC) {
         let at_shelter = q
             .single()
