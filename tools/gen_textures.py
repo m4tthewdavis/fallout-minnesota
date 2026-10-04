@@ -29,16 +29,23 @@ def save(img, folder, name):
 
 
 def value_noise(size, cells, octaves=4):
-    """Tileable fractal value noise in 0..1."""
+    """Tileable fractal value noise in 0..1: random values on a wrapping grid,
+    smoothly interpolated, so the left edge meets the right and top meets
+    bottom exactly."""
     out = np.zeros((size, size))
     amp, total = 1.0, 0.0
     for o in range(octaves):
         c = cells * 2**o
         grid = rng.random((c, c))
-        grid = np.vstack([grid, grid[:1]])
-        grid = np.hstack([grid, grid[:, :1]])
-        img = Image.fromarray((grid * 255).astype(np.uint8)).resize((size + size // c, size + size // c), Image.BICUBIC)
-        out += amp * np.asarray(img, dtype=float)[:size, :size] / 255.0
+        t = np.arange(size) * c / size
+        i0 = np.floor(t).astype(int) % c
+        i1 = (i0 + 1) % c
+        f = t - np.floor(t)
+        f = f * f * (3 - 2 * f)
+        # Interpolate along x, then y.
+        top = grid[i0][:, i0] * (1 - f)[None, :] + grid[i0][:, i1] * f[None, :]
+        bottom = grid[i1][:, i0] * (1 - f)[None, :] + grid[i1][:, i1] * f[None, :]
+        out += amp * (top * (1 - f)[:, None] + bottom * f[:, None])
         total += amp
         amp *= 0.5
     return out / total
@@ -902,6 +909,41 @@ def pipboy_art():
     save(Image.fromarray(out, "RGBA"), UI, "mascot_glow.png")
 
 
+def flame_sheet():
+    """An 8-frame flipbook of flame tongues (512x128: frames side by side).
+    Noise scrolls upward through the frames and wraps, so it loops; the
+    shape narrows and breaks into licks towards the top. Colour runs from a
+    white-yellow core through orange to red edges; alpha is the flame."""
+    fw, fh, frames = 64, 128, 8
+    period = 512
+    # Tileable noise, tall enough to scroll through.
+    n1 = value_noise(period, 8, 4)
+    n2 = value_noise(period, 16, 3)
+    yy, xx = np.mgrid[0:fh, 0:fw].astype(float)
+    u = (xx + 0.5) / fw * 2 - 1  # -1..1 across
+    v = 1 - (yy + 0.5) / fh  # 0 at the base, 1 at the top
+    sheet = np.zeros((fh, fw * frames, 4))
+    for k in range(frames):
+        off = int(k * period / frames)
+        a = n1[(yy.astype(int) + off) % period, (xx.astype(int) * 3) % period]
+        b = n2[(yy.astype(int) * 2 + off * 2) % period, (xx.astype(int) * 5 + 77) % period]
+        turb = a * 0.65 + b * 0.35
+        # Licks: the edges wander more higher up.
+        bend = (turb - 0.5) * 1.3 * v
+        width = (1 - v) ** 1.1 * 0.8 + 0.05
+        d = np.abs(u + bend) / width
+        body = np.clip(1 - d, 0, 1) ** 0.8
+        # Break up the top into separate tongues.
+        cut = np.clip((turb - (v - 0.32)) * 2.6, 0, 1)
+        alpha = np.clip(body * cut * 1.6, 0, 1) * np.clip(v * 6, 0, 1) ** 0.5
+        heat = np.clip(body * (1.1 - v) * 1.5, 0, 1)
+        r = np.clip(0.9 + 0.3 * heat, 0, 1)
+        g = np.clip(0.25 + 0.75 * heat ** 1.2, 0, 1)
+        bl = np.clip(0.05 + 0.75 * heat ** 3, 0, 1)
+        sheet[:, k * fw:(k + 1) * fw] = np.stack([r, g, bl, alpha], -1)
+    save(Image.fromarray((sheet * 255).astype(np.uint8), "RGBA"), GEN, "flame_sheet.png")
+
+
 def vending_front():
     """Front of a pre-war soda machine: glowing bottle window and a 'Frost Cola' header."""
     w, h = 256, 512
@@ -1038,6 +1080,7 @@ def main():
     track_textures()
     plant_textures()
     pipboy_art()
+    flame_sheet()
 
 
 def signs_only():
@@ -1046,7 +1089,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art, "flame": flame_sheet}
 
 if __name__ == "__main__":
     import sys

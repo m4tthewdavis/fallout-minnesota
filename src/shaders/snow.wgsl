@@ -71,7 +71,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let ripple_h = sin(u * k) + 0.35 * sin(2.0 * u * k + 1.3);
     let ripple_d = k * (cos(u * k) + 0.7 * cos(2.0 * u * k + 1.3));
     let far = 1.0 - smoothstep(35.0, 80.0, dist);
-    let amp = snow.wind.z * (0.25 + 0.75 * packed) * (1.0 - icy) * flat_ground * far * 0.025;
+    let amp = snow.wind.z * (0.25 + 0.75 * packed) * (1.0 - icy) * flat_ground * far * 0.02;
     var grad = wind * ripple_d * amp;
 
     // ---- Scattered pits (old tracks, dropped clumps) ----

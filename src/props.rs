@@ -1,6 +1,6 @@
 //! Hand-placed and scattered props that make the map feel lived in (and
 //! then abandoned): shelter workbenches, the three weapon finds, supply
-//! caches, camps with tents and cold campfires, snowmobiles, sleds, shopping
+//! caches, camps with tents and campfires (one still burning), snowmobiles, sleds, shopping
 //! carts, vending machines, mailboxes, lamp posts, chain-link fences,
 //! ice-fishing sets and more road signs.
 
@@ -277,6 +277,10 @@ pub fn spawn_props(
             ));
         }
         solid.push(Shape::Circle { x: fx, z: fz, r: 0.9 });
+        // Someone was here recently: the first camp's fire is still burning.
+        if ci == 0 {
+            crate::particles::spawn_fire(&mut commands, &mut meshes, &mut materials, &assets.soft, Vec3::new(fx, fgy + 0.12, fz), 0.9, 9.1, true);
+        }
         // Sled, bucket, spade, boombox.
         let (sx, sz) = at(-3.0, 0.5);
         commands

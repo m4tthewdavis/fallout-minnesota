@@ -9,13 +9,13 @@ use bevy::prelude::*;
 
 use crate::assets::GameAssets;
 use crate::meshes::{to_mesh, to_mesh_tangents};
-use crate::particles::{Emitter, EmitterKind, Flame};
+use crate::particles::{Emitter, EmitterKind};
 use crate::sim::collision::{self, Shape};
 use crate::sim::meshgen;
 use crate::sim::terrain::{self, RAD_SOURCES, ROAD, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
 use crate::state::{Colliders, RngRes};
 use crate::sim::weather::WIND_DIR;
-use crate::world::{glow, ground, mat, prop, spawn_contact_shadow, spawn_drift, Blinker, FireLight};
+use crate::world::{glow, ground, mat, prop, spawn_contact_shadow, spawn_drift, Blinker};
 
 /// Pre-war landmarks trees should stay away from: (x, z, clear radius).
 pub const RUINS: [(f32, f32, f32); 2] = [(-40.0, -110.0, 20.0), (140.0, -140.0, 18.0)];
@@ -282,7 +282,8 @@ pub fn spawn_landmarks(
         let (wx, wz) = (WIND_DIR[0], WIND_DIR[1]);
         spawn_contact_shadow(&mut commands, &mut meshes, &assets, hx, hz, 2.4, 2.4, 0.0);
         spawn_drift(&mut commands, &mut meshes, &assets, hx - wx * 1.75, hz - wz * 1.75, 1.6, 3.4, 0.55, WIND_DIR, 40 + i as u64);
-        spawn_drift(&mut commands, &mut meshes, &assets, hx + wx * 2.4, hz + wz * 2.4, 4.5, 3.2, 0.75, WIND_DIR, 50 + i as u64);
+        // (Off to the side, so the door and the fire barrel stay clear.)
+        spawn_drift(&mut commands, &mut meshes, &assets, hx + 0.5, hz + 3.2, 4.5, 2.6, 0.7, WIND_DIR, 50 + i as u64);
         commands
             .spawn((Transform::from_xyz(hx, gy, hz), Visibility::default()))
             .with_children(|house| {
@@ -350,34 +351,7 @@ pub fn spawn_landmarks(
             Transform::from_xyz(sx + 1.5, gy + 0.97, sz).with_rotation(Quat::from_rotation_x(-FRAC_PI_2)),
             NotShadowCaster,
         ));
-        for k in 0..3 {
-            commands.spawn((
-                Transform::from_xyz(sx + 1.5 + (k as f32 - 1.0) * 0.1, gy + 1.2, sz + (k as f32 % 2.0) * 0.08),
-                Visibility::default(),
-                Flame {
-                    seed: i as f32 * 3.1 + k as f32 * 1.7,
-                    size: 0.55 - k as f32 * 0.1,
-                },
-            ));
-        }
-        commands.spawn((
-            Transform::from_xyz(sx + 1.5, gy + 1.3, sz),
-            Emitter::new(EmitterKind::Embers, 0.12),
-        ));
-        commands.spawn((
-            PointLight {
-                color: Color::srgb(1.0, 0.55, 0.2),
-                intensity: 400_000.0,
-                range: 18.0,
-                shadows_enabled: i == 0,
-                ..default()
-            },
-            Transform::from_xyz(sx + 1.5, gy + 1.8, sz),
-            FireLight {
-                base: 400_000.0,
-                seed: i as f32 * 2.7,
-            },
-        ));
+        crate::particles::spawn_fire(&mut commands, &mut meshes, &mut materials, &assets.soft, Vec3::new(sx + 1.5, gy + 0.95, sz), 1.0, i as f32 * 2.7, i == 0);
         // Cut stumps and a crate of supplies nearby.
         prop(&mut commands, &assets.stump, Vec3::new(sx + 3.5, gy - 0.1, sz - 3.2), i as f32, 0.9);
         solid.push(Shape::Circle { x: sx + 3.5, z: sz - 3.2, r: 0.6 });

@@ -35,6 +35,8 @@ enum Look {
     Flash,
     Flame,
     WolfBreath,
+    Spark,
+    FireSmoke,
 }
 
 #[derive(Resource)]
@@ -77,6 +79,10 @@ pub enum EmitterKind {
     ChimneySmoke,
     Embers,
     RadMotes,
+    /// Thick, dark smoke rolling off a fire.
+    FireSmoke,
+    /// Bright sparks, with the odd pop of a whole shower.
+    Sparks,
 }
 
 /// Spawns particles every `every` seconds while the camera is near.
@@ -93,11 +99,99 @@ impl Emitter {
     }
 }
 
-/// A flickering flame sprite (fire barrels).
+/// One tongue of flame: an animated flipbook quad standing on its base,
+/// turned to face you, flickering and leaning with the wind.
 #[derive(Component)]
 pub struct Flame {
     pub seed: f32,
-    pub size: f32,
+    /// Width and height in metres.
+    pub size: Vec2,
+}
+
+/// The warm patch of light a fire throws on the snow round it.
+#[derive(Component)]
+pub struct FireGlow {
+    seed: f32,
+    strength: f32,
+}
+
+/// How bright a fire is right now (about 0.7..1.15): flames, their light and
+/// the glow on the ground all follow this, so they pulse together.
+pub fn fire_flicker(t: f32, seed: f32) -> f32 {
+    0.9 + 0.1 * (t * 7.3 + seed).sin() + 0.07 * (t * 13.1 + seed * 2.0).sin() + 0.05 * (t * 23.7 + seed * 3.0).sin() + 0.04 * (t * 41.0 + seed * 5.0).sin()
+}
+
+/// Frames in the flame flipbook (textures/generated/flame_sheet.png).
+const FLAME_FRAMES: usize = 8;
+
+#[derive(Resource)]
+struct FlameSheet {
+    quad: Handle<Mesh>,
+    frames: Vec<Handle<StandardMaterial>>,
+}
+
+/// A whole fire at `at` (the base of the flames): several tongues, embers,
+/// sparks, smoke, a flickering light and a glow on the ground. `scale` 1 is
+/// a fire-barrel fire.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool) {
+    // A big central tongue and smaller ones round it.
+    let tongues = [(0.0f32, 0.0f32, 0.55f32, 1.05f32), (0.14, 0.05, 0.38, 0.75), (-0.13, -0.04, 0.36, 0.7), (0.03, -0.13, 0.32, 0.62), (-0.04, 0.13, 0.3, 0.55)];
+    for (k, (dx, dz, w, h)) in tongues.into_iter().enumerate() {
+        commands.spawn((
+            Transform::from_translation(at + Vec3::new(dx, 0.0, dz) * scale),
+            Visibility::default(),
+            Flame { seed: seed + k as f32 * 1.7, size: Vec2::new(w, h) * scale },
+        ));
+    }
+    commands.spawn((Transform::from_translation(at + Vec3::Y * 0.15 * scale), Emitter::new(EmitterKind::Embers, 0.12 / scale)));
+    commands.spawn((Transform::from_translation(at + Vec3::Y * 0.3 * scale), Emitter::new(EmitterKind::Sparks, 0.09 / scale)));
+    commands.spawn((Transform::from_translation(at + Vec3::Y * 0.9 * scale), Emitter::new(EmitterKind::FireSmoke, 0.22 / scale)));
+    let base = 400_000.0 * scale;
+    commands.spawn((
+        PointLight {
+            color: Color::srgb(1.0, 0.55, 0.2),
+            intensity: base,
+            range: 18.0 * scale.max(0.7),
+            shadows_enabled: shadows,
+            ..default()
+        },
+        Transform::from_translation(at + Vec3::Y * 0.6),
+        crate::world::FireLight { base, seed },
+    ));
+    // Warm glow on the snow, following the ground.
+    let r = 3.2 * scale;
+    let mut m = crate::sim::meshgen::MeshData::default();
+    let n = 6;
+    for i in 0..=n {
+        for j in 0..=n {
+            let (u, v) = (i as f32 / n as f32, j as f32 / n as f32);
+            let (x, z) = (at.x + (u * 2.0 - 1.0) * r, at.z + (v * 2.0 - 1.0) * r);
+            m.vertex([x, terrain::mesh_height(x, z).max(terrain::walk_height(x, z)) + 0.03, z], [0.0, 1.0, 0.0], [u, v], crate::sim::meshgen::WHITE);
+        }
+    }
+    let row = n as u32 + 1;
+    for i in 0..n as u32 {
+        for j in 0..n as u32 {
+            let a = i * row + j;
+            m.quad(a, a + 1, a + row + 1, a + row);
+        }
+    }
+    m.recompute_normals();
+    if m.normals[0][1] < 0.0 {
+        for t in m.indices.chunks_exact_mut(3) {
+            t.swap(1, 2);
+        }
+    }
+    let glow = materials.add(StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::new(1.6, 0.6, 0.15, 0.5)),
+        base_color_texture: Some(soft.clone()),
+        unlit: true,
+        alpha_mode: AlphaMode::Add,
+        depth_bias: 6.0,
+        ..default()
+    });
+    commands.spawn((Mesh3d(meshes.add(crate::meshes::to_mesh(&m))), MeshMaterial3d(glow), NotShadowCaster, FireGlow { seed, strength: 0.5 }));
 }
 
 pub struct ParticlePlugin;
@@ -113,6 +207,7 @@ impl Plugin for ParticlePlugin {
                     breath.run_if(alive),
                     init_flames,
                     animate_flames,
+                    pulse_glows,
                     update_particles,
                     update_casings,
                 ),
@@ -123,11 +218,12 @@ impl Plugin for ParticlePlugin {
 fn setup(
     mut commands: Commands,
     assets: Res<GameAssets>,
+    server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // (look, colour, emissive glow, additive, texture)
-    let specs: [(Look, LinearRgba, bool, &Handle<Image>); 11] = [
+    let specs: [(Look, LinearRgba, bool, &Handle<Image>); 13] = [
         (Look::Snow, LinearRgba::new(0.95, 0.97, 1.0, 0.85), false, &assets.soft),
         (Look::Smoke, LinearRgba::new(0.32, 0.32, 0.33, 0.5), false, &assets.soft),
         (Look::Breath, LinearRgba::new(0.95, 0.97, 1.0, 0.35), false, &assets.soft),
@@ -139,6 +235,8 @@ fn setup(
         (Look::Flash, LinearRgba::new(9.0, 6.0, 2.5, 1.0), true, &assets.flash),
         (Look::Flame, LinearRgba::new(5.0, 1.8, 0.35, 1.0), true, &assets.flash),
         (Look::WolfBreath, LinearRgba::new(0.4, 1.6, 2.0, 0.55), true, &assets.soft),
+        (Look::Spark, LinearRgba::new(9.0, 4.0, 0.9, 1.0), true, &assets.soft),
+        (Look::FireSmoke, LinearRgba::new(0.13, 0.12, 0.11, 0.55), false, &assets.soft),
     ];
     let mut looks = HashMap::new();
     for (look, color, additive, tex) in specs {
@@ -160,6 +258,26 @@ fn setup(
             .collect();
         looks.insert(look, steps);
     }
+    // The flame flipbook: one material per frame, each showing its slice of the sheet.
+    let sheet = server.load::<Image>("textures/generated/flame_sheet.png");
+    let frames = (0..FLAME_FRAMES)
+        .map(|k| {
+            materials.add(StandardMaterial {
+                base_color: Color::LinearRgba(LinearRgba::new(3.4, 2.5, 1.9, 1.0)),
+                base_color_texture: Some(sheet.clone()),
+                uv_transform: bevy::math::Affine2::from_scale_angle_translation(Vec2::new(1.0 / FLAME_FRAMES as f32, 1.0), 0.0, Vec2::new(k as f32 / FLAME_FRAMES as f32, 0.0)),
+                unlit: true,
+                alpha_mode: AlphaMode::Add,
+                double_sided: true,
+                cull_mode: None,
+                ..default()
+            })
+        })
+        .collect();
+    // A quad standing on its bottom edge, so flames grow upwards from the fire.
+    let mut flame_quad = Mesh::from(Rectangle::new(1.0, 1.0));
+    flame_quad.translate_by(Vec3::Y * 0.5);
+    commands.insert_resource(FlameSheet { quad: meshes.add(flame_quad), frames });
     commands.insert_resource(ParticleAssets {
         quad: meshes.add(Rectangle::new(1.0, 1.0)),
         casing: meshes.add(Cylinder::new(0.009, 0.045)),
@@ -392,6 +510,32 @@ fn run_emitters(
                     (0.05, 0.015),
                 )
                 .windy(),
+                EmitterKind::FireSmoke => Spec::new(
+                    Look::FireSmoke,
+                    p + Vec3::new(rng.0.range(-0.1, 0.1), 0.0, rng.0.range(-0.1, 0.1)),
+                    Vec3::new(rng.0.range(-0.15, 0.15), rng.0.range(0.6, 1.0), rng.0.range(-0.15, 0.15)),
+                    rng.0.range(3.0, 4.5),
+                    (0.3, 1.6),
+                )
+                .windy(),
+                EmitterKind::Sparks => {
+                    // Now and then a log shifts and throws a shower.
+                    if rng.0.chance(0.06) {
+                        for _ in 0..8 {
+                            let v = Vec3::new(rng.0.range(-1.2, 1.2), rng.0.range(2.5, 5.0), rng.0.range(-1.2, 1.2));
+                            emit(&mut commands, &pa, Spec::new(Look::Spark, p, v, rng.0.range(0.5, 1.1), (0.04, 0.008)).gravity(-2.0).drag(0.6).windy());
+                        }
+                    }
+                    Spec::new(
+                        Look::Spark,
+                        p + Vec3::new(rng.0.range(-0.15, 0.15), 0.0, rng.0.range(-0.15, 0.15)),
+                        Vec3::new(rng.0.range(-0.4, 0.4), rng.0.range(2.0, 3.5), rng.0.range(-0.4, 0.4)),
+                        rng.0.range(0.6, 1.4),
+                        (0.035, 0.008),
+                    )
+                    .drag(0.8)
+                    .windy()
+                }
                 EmitterKind::RadMotes => {
                     let a = rng.0.range(0.0, std::f32::consts::TAU);
                     let r = rng.0.range(0.0, 12.0);
@@ -440,28 +584,50 @@ fn breath(
     }
 }
 
-fn init_flames(mut commands: Commands, pa: Res<ParticleAssets>, flames: Query<Entity, Added<Flame>>) {
+fn init_flames(mut commands: Commands, sheet: Res<FlameSheet>, flames: Query<Entity, Added<Flame>>) {
     for e in &flames {
-        commands.entity(e).insert((
-            Mesh3d(pa.quad.clone()),
-            MeshMaterial3d(pa.looks[&Look::Flame][1].clone()),
-            NotShadowCaster,
-        ));
+        commands.entity(e).insert((Mesh3d(sheet.quad.clone()), MeshMaterial3d(sheet.frames[0].clone()), NotShadowCaster));
     }
 }
 
+/// Turn each tongue to face you (staying upright), run its flipbook, and
+/// make it flicker and lean with the wind.
 fn animate_flames(
     time: Res<Time>,
+    sheet: Res<FlameSheet>,
+    weather: Res<WeatherRes>,
     cam: Query<&GlobalTransform, With<Player>>,
-    mut flames: Query<(&mut Transform, &Flame)>,
+    mut flames: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>, &Flame)>,
 ) {
     let Ok(cam) = cam.single() else { return };
-    let rot = cam.compute_transform().rotation;
+    let eye = cam.translation();
     let t = time.elapsed_secs();
-    for (mut tf, f) in &mut flames {
-        let flick = 0.8 + 0.2 * (t * 11.0 + f.seed).sin() + 0.1 * (t * 23.0 + f.seed * 2.0).sin();
-        tf.rotation = rot * Quat::from_rotation_z((t * 3.0 + f.seed).sin() * 0.25);
-        tf.scale = Vec3::new(f.size * 0.75, f.size * flick * 1.4, 1.0);
+    let wind_dir = Vec3::new(crate::sim::weather::WIND_DIR[0], 0.0, crate::sim::weather::WIND_DIR[1]);
+    let wind = (weather.weather.conditions().wind / 14.0).clamp(0.0, 1.0);
+    for (mut tf, mut mat, f) in &mut flames {
+        let to_eye = eye - tf.translation;
+        let yaw = to_eye.x.atan2(to_eye.z);
+        let right = Quat::from_rotation_y(yaw) * Vec3::X;
+        let lean = -right.dot(wind_dir) * (0.12 + 0.35 * wind) + (t * 2.3 + f.seed).sin() * 0.07;
+        tf.rotation = Quat::from_rotation_y(yaw) * Quat::from_rotation_z(lean);
+        let flick = fire_flicker(t * 1.3, f.seed);
+        let breathe = 1.0 + 0.12 * (t * 5.1 + f.seed * 1.3).sin();
+        tf.scale = Vec3::new(f.size.x * (0.9 + 0.1 * flick), f.size.y * flick * breathe, 1.0);
+        let frame = ((t * 14.0 + f.seed * 3.7) as usize) % FLAME_FRAMES;
+        if mat.0 != sheet.frames[frame] {
+            mat.0 = sheet.frames[frame].clone();
+        }
+    }
+}
+
+/// The glow on the snow pulses with its fire.
+fn pulse_glows(time: Res<Time>, glows: Query<(&FireGlow, &MeshMaterial3d<StandardMaterial>)>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    let t = time.elapsed_secs();
+    for (g, mat) in &glows {
+        if let Some(m) = materials.get_mut(&mat.0) {
+            let k = fire_flicker(t, g.seed);
+            m.base_color = Color::LinearRgba(LinearRgba::new(1.6 * k, 0.6 * k, 0.15 * k, g.strength * k));
+        }
     }
 }
 

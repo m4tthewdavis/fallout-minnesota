@@ -565,12 +565,8 @@ fn collect_pickups(
 fn flicker_fires(time: Res<Time>, mut q: Query<(&mut PointLight, &FireLight)>) {
     let t = time.elapsed_secs();
     for (mut light, fire) in &mut q {
-        let s = fire.seed;
-        let f = 0.78
-            + 0.12 * (t * 7.3 + s).sin()
-            + 0.07 * (t * 13.1 + s * 2.0).sin()
-            + 0.05 * (t * 23.7 + s * 3.0).sin();
-        light.intensity = fire.base * f;
+        // The same flicker as the flames and their glow.
+        light.intensity = fire.base * crate::particles::fire_flicker(t, fire.seed) * 0.85;
     }
 }
 
