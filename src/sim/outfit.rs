@@ -23,7 +23,7 @@ pub fn belt() -> MeshData {
 pub fn quilting() -> MeshData {
     let mut m = MeshData::default();
     for k in 0..4 {
-        let y = 0.8 + k as f32 * 0.12 - if k == 3 { 0.0 } else { 0.0 };
+        let y = 0.8 + k as f32 * 0.12;
         // The parka's radius at height y, roughly (see `parka_body`).
         let r = 0.3 - (y - 0.72) * 0.17;
         m.append(&lathe(&[(r + 0.004, y - 0.008), (r + 0.012, y), (r + 0.004, y + 0.008)], 20, 0.3, false, false).scaled([1.0, 1.0, 0.78]));
@@ -58,7 +58,7 @@ pub fn hood_shell() -> MeshData {
             remap[i] = out.vertex(m.positions[i], m.normals[i], m.uvs[i], m.colors[i]);
         }
     }
-    for t in m.indices.chunks_exact(3) {
+    for t in m.indices.as_chunks::<3>().0 {
         if t.iter().all(|&i| keep[i as usize]) {
             out.tri(remap[t[0] as usize], remap[t[1] as usize], remap[t[2] as usize]);
         }

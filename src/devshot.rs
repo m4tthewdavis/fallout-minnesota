@@ -226,7 +226,7 @@ fn dev_fire(mut fx: ResMut<crate::state::FxQueue>, mut tick: Local<u32>, game: R
         return;
     }
     *tick += 1;
-    if *tick % 3 != 0 {
+    if !(*tick).is_multiple_of(3) {
         return;
     }
     let (Ok(g), Ok(c)) = (gun.single(), cam.single()) else { return };
