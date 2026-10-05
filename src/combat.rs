@@ -68,6 +68,7 @@ fn switch_weapons(
     mut game: ResMut<Game>,
     mut sfx: ResMut<SfxQueue>,
     mut msgs: ResMut<Messages>,
+    loot: Res<crate::interact::LootMenu>,
 ) {
     let mut switched = false;
     for (i, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4].into_iter().enumerate() {
@@ -79,7 +80,8 @@ fn switch_weapons(
             }
         }
     }
-    if cursor_locked(&windows) && scroll.delta.y != 0.0 {
+    // (With a container's loot list open, the wheel scrolls that instead.)
+    if cursor_locked(&windows) && scroll.delta.y != 0.0 && loot.target.is_none() {
         switched |= game.arsenal.cycle(if scroll.delta.y > 0.0 { -1 } else { 1 });
     }
     if switched {
@@ -223,6 +225,10 @@ fn fire(
     }
     game.recoil = 1.0;
     sfx.play(sfx::fire_sound(kind));
+    // Then the mechanism: the bolt working, the hammer thumbed back.
+    if let Some((click, delay)) = crate::sim::soundscape::follow_up(kind) {
+        sfx.push(crate::state::SfxReq::new(click).after(delay));
+    }
 
     let origin = cam.translation();
     let dir = cam.forward().as_vec3();
@@ -342,7 +348,13 @@ fn fire(
     ));
 
     for s in &strikes {
-        sfx.play_at(Sound::Yelp, s.point);
+        // What cries out depends on what was hit: a man grunts, a crow caws.
+        let cry = match bodies.get(s.entity).map(|(_, _, b)| b.species) {
+            Ok(Species::Raider) => Sound::RaiderGrunt,
+            Ok(Species::Crow) => Sound::Caw,
+            _ => Sound::Yelp,
+        };
+        sfx.play_at(cry, s.point);
         fxq.spawn(Fx::WolfHit(s.point, s.dir));
     }
     strike(&mut commands, &mut game, &mut msgs, &mut fxq, &mut bodies, &strikes);

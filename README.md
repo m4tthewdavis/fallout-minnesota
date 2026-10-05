@@ -48,12 +48,22 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
 | Esc | Pause menu: Resume, Save, Load, Settings (shadows, view distance, UI size, volume), Quit. Esc also closes the Pip-Boy |
-| E | Use a door, bunk, stove or terminal (a prompt shows what's in reach), or open a crate |
+| E | Use a door, bunk, stove or terminal (a prompt shows what's in reach). Looking at a container opens its loot list: Up/Down or the wheel to choose, E takes the highlighted entry, T takes all |
 | G | Geiger counter on / off |
 | F9 | Mute / unmute all sound |
 | F10 / F11 | Master volume down / up |
 | F5 / F6 | Effects volume down / up |
 | F7 / F8 | Music volume down / up |
+
+## Look and sound (Milestone 7)
+
+- **One winter palette** (`src/theme.rs`): ice blue ink, cyan for what's selected, frost white for emphasis, deep navy panels, used by the HUD, Pip-Boy, pause menu, dialogue, loot list and XP bar. The Pip-Boy keeps its scanlines, static and flicker, now in frosty cyan, and its map is recoloured through an ice ramp.
+- **The sky** is painted from a single-scattering atmosphere model: deep blue overhead, pale at the horizon, a haze that glows round the sun, orange then red as it sinks, a violet dusk and a moonlit night. It also sets the fog colour, the sunlight's colour and the ambient light, so they always agree. It's midwinter at 46 degrees north, so the noon sun only reaches 24 degrees and shadows are long all day.
+- **Atmosphere effects** (both toggles in the pause menu's settings): volumetric fog and light shafts (ground-hugging banks that thicken and drift in blizzards, a faint haze at other times) and ambient occlusion (darkens creases, drifts and tree bases; SMAA replaces MSAA while it's on). Fog toward the sun glows with its light.
+- **Weapons** get a normal-mapped steel texture, scanned painted-steel pipes, and hoar frost that builds on barrels, receivers and stocks in the cold (and melts indoors). Every shot throws a tongue of flame, sparks, powder smoke and condensing vapour.
+- **People** (survivors and raiders) wear a shared winter kit: quilted fleece parka, belt, fur-trimmed hood, cuffs and hem, beanies, trapper hats, balaclavas and goggles, mittens, boots, packs, bandoliers, scarves and frost, in scanned CC0 cloth, fur, wool and leather.
+- **Sound.** Positioned sounds fade with distance and get a muffled version when trees, walls or a doorway are in the way. Gunshots have a sub-bass boom and leave an echo that depends on where you are: a long rolling answer off the treeline outdoors, a short bright slap in a room. The pipe rifle's bolt and the revolver's hammer click after a shot. Wind is five layers (breeze, rumble, rush, hiss and a blizzard howl) and goes dull behind walls. Boots crunch harder when you run and squeak in deep cold; raiders' footsteps carry. Rooms murmur: a stove crackling and timber creaking in the fish houses, machinery hum in the vault, drips in the stockroom.
+- **Loot and XP.** Look at a container and corner brackets close round the reticle while a list opens beside it: a title, tagged entries ([Ammo] Pipe rounds (12)) with the highlight lit solid, and the buttons below. Picked-up things stack up in a feed at the left. Earning XP slides up a level bar with the amount and what it was for; a new level gets a LEVEL UP banner, then the perk choice.
 
 ## Interiors
 
@@ -112,7 +122,7 @@ Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.j
 - **Vehicles.** The sedans are rebuilt in detail: real wheel arches, fins, roof and pillars, frosted or smashed glass, chrome bumpers, grille, headlights, door seams and handles, a licence plate, bench seats and a steering wheel, an underbody, and tyres with tread. Faded paint and rust have their own texture, normal and roughness maps. Each wreck is different: flat tyres, bare rims, a missing wheel, doors hanging open, one on its roof. Snowmobiles are one machine with a seat, cowl, windshield, a lugged track on its wheels, and skis on proper suspension. Every vehicle is fitted to the ground under its wheels, skis or track, then sunk a little into the snow.
 - **Snow with depth.** A custom snow shader adds powder, wind-packed and icy-crust areas, wind ripples, scattered pits, sun glints, and hides texture tiling. The twig streaks in the old snow texture are gone. Drifts grow out of the ground behind trees, rocks and fish houses and along the highway. You leave boot prints (wolves and moose leave theirs), old animal trails cross the map, and fresh snow fills prints in. Soft contact shadows sit under trees, rocks, vehicles and buildings, plain props have grime, and calm days are clearer with stronger sunlight.
 - **A Minnesota forest.** White pine, red pine, balsam fir, white spruce, paper birch, quaking aspen and tamarack, built from needle and twig cards with snow on the branches. Conifers grow in groves, birch and aspen in stands, tamarack and spruce by the lakes. Underneath: red osier dogwood, staghorn sumac, juniper, prairie grass, and cattails and reeds round every lake.
-- **The Pip-Boy, New Vegas style.** A physical Pip-Boy on your wrist that raises into view, an amber CRT that powers on with scanlines, curved glass, flicker and static. The pages are STATS (STATUS, S.P.E.C.I.A.L.), ITEMS (WEAPONS, APPAREL, AID) and DATA (WORLD MAP, NOTES), and the header shows level, HP, heat, rads, XP and the date. An original Vault 143 mascot shivers when you're cold, wears a bandage when you're hurt and glows when you're irradiated. It has its own sounds, and the HUD is amber to match.
+- **The Pip-Boy, New Vegas style.** A physical Pip-Boy on your wrist that raises into view, an ice-blue CRT that powers on with scanlines, curved glass, flicker and static. The pages are STATS (STATUS, S.P.E.C.I.A.L.), ITEMS (WEAPONS, APPAREL, AID) and DATA (WORLD MAP, NOTES), and the header shows level, HP, heat, rads, XP and the date. An original Vault 143 mascot shivers when you're cold, wears a bandage when you're hurt and glows when you're irradiated. It has its own sounds, and the HUD is the same cold blue to match.
 - **Hands and reloads you can see.** Gloved hands and sleeves hold every weapon. The left hand pulls the rifle's magazine and seats a fresh one, then works the bolt. It loads shells into the open shotgun one at a time, and swings out and loads the revolver's cylinder. Sounds are timed to the hands. The rifle reload takes 2.2 s (was 1.6 s).
 - **Fire that looks like fire.** Animated flame tongues that flicker and lean in the wind, sparks and showers, embers, smoke, and a warm glow on the snow, all pulsing with the light. One camp's fire is still burning.
 
@@ -168,6 +178,10 @@ src/
     weather.rs   Calm / siren / blizzard cycle and conditions
     terrain.rs   Height field, lakes, shelters, radiation zones, highway
     interiors.rs Rooms: layout, sleeping, cooking, door fade timing
+    atmosphere.rs  Sky scattering, sunlight colour, fog density field
+    soundscape.rs  Occlusion, echoes, footsteps, wind layers, room murmurs
+    outfit.rs    Winter clothing meshes for people
+    lootmenu.rs  Loot list entries, highlight and scrolling
     quest.rs     The quest line: stages, flags, XP, perks
     dialogue.rs  Conversation graphs and the replies you can pick
     combat.rs    Pipe rifle, jams, ray-sphere hits
@@ -199,7 +213,7 @@ src/
   interact.rs    Containers (E) and workbenches (B), prompts
   props.rs       Camps, vehicles, vending machines, fences, lamps, caches
   pipboy.rs      The Pip-Boy (STATS / ITEMS / DATA)
-  hud.rs         Amber HUD and overlays
+  hud.rs         HUD and overlays
 assets/          Models, textures, font, HUD images (see assets/CREDITS.md)
 tools/           Scripts that download and generate the assets
 ```

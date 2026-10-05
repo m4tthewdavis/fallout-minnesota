@@ -15,7 +15,7 @@ use crate::sim::meshgen::{self, MeshData};
 use crate::sim::survival::Item;
 use crate::sim::sfx;
 use crate::sim::terrain::{self, HALF_SIZE, ICE_FRACTION, ICE_LEVEL, LAKES, RAD_SOURCES, SHELTERS, VAULT_POS};
-use crate::state::{alive, Colliders, Game, Messages, RngRes, SfxQueue};
+use crate::state::{alive, Colliders, Game, RngRes, SfxQueue};
 
 /// The directional "sun" light, dimmed by the weather.
 #[derive(Component)]
@@ -593,7 +593,7 @@ fn animate_pickups(time: Res<Time>, mut q: Query<(&mut Transform, &Pickup)>) {
 fn collect_pickups(
     mut commands: Commands,
     mut game: ResMut<Game>,
-    mut msgs: ResMut<Messages>,
+    mut feed: ResMut<crate::fo4ui::Feed>,
     mut sfx: ResMut<SfxQueue>,
     perks: Res<crate::quest::Perks>,
     player: Query<&Transform, With<Player>>,
@@ -612,7 +612,7 @@ fn collect_pickups(
             sfx.play(sfx::pickup_sound(pickup.item));
             let n = pickup.item.amount();
             let extra = if n > 1 { format!(" (+{n})") } else { String::new() };
-            msgs.show(format!("Picked up: {}{}", pickup.item.name(), extra), 2.5);
+            feed.push(format!("{}{} added", pickup.item.name(), extra));
             commands.entity(entity).insert((Collected, Visibility::Hidden));
             for (ring, owner) in &rings {
                 if owner.0 == entity {

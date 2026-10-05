@@ -73,6 +73,33 @@ pub struct SfxReq {
     pub pos: Option<Vec3>,
     /// Extra volume scale (a soft footstep, a muffled shot).
     pub gain: f32,
+    /// How far (metres) a positioned sound carries at full volume, for sounds
+    /// whose own profile doesn't say (a raider's footsteps, his gunshots).
+    pub reference: Option<f32>,
+    /// Seconds to wait before it plays (the click after a shot).
+    pub delay: f32,
+}
+
+impl SfxReq {
+    pub fn new(sound: Sound) -> SfxReq {
+        SfxReq { sound, pos: None, gain: 1.0, reference: None, delay: 0.0 }
+    }
+    pub fn at(mut self, pos: Vec3) -> SfxReq {
+        self.pos = Some(pos);
+        self
+    }
+    pub fn gain(mut self, gain: f32) -> SfxReq {
+        self.gain = gain;
+        self
+    }
+    pub fn carrying(mut self, metres: f32) -> SfxReq {
+        self.reference = Some(metres);
+        self
+    }
+    pub fn after(mut self, secs: f32) -> SfxReq {
+        self.delay = secs;
+        self
+    }
 }
 
 /// Sound effects requested this frame; the audio plugin plays and clears them.
@@ -81,14 +108,18 @@ pub struct SfxQueue(pub Vec<SfxReq>);
 
 impl SfxQueue {
     pub fn play(&mut self, sound: Sound) {
-        self.0.push(SfxReq { sound, pos: None, gain: 1.0 });
+        self.0.push(SfxReq::new(sound));
     }
     pub fn play_gain(&mut self, sound: Sound, gain: f32) {
-        self.0.push(SfxReq { sound, pos: None, gain });
+        self.0.push(SfxReq::new(sound).gain(gain));
     }
     /// A sound that comes from a place in the world.
     pub fn play_at(&mut self, sound: Sound, pos: Vec3) {
-        self.0.push(SfxReq { sound, pos: Some(pos), gain: 1.0 });
+        self.0.push(SfxReq::new(sound).at(pos));
+    }
+    /// Anything more particular.
+    pub fn push(&mut self, req: SfxReq) {
+        self.0.push(req);
     }
 }
 

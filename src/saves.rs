@@ -21,7 +21,7 @@ use crate::menu::{close_menu, SaveRequest, SlotSummaries};
 use crate::pipboy::PipState;
 use crate::player::{Player, EYE_HEIGHT};
 use crate::sim::menu::{slot_name, AUTOSAVE, QUICKSAVE, SLOTS};
-use crate::sim::save::{world_key, PlayerSave, SaveGame, Snapshot, WorldKey};
+use crate::sim::save::{world_key, LootedSave, PlayerSave, SaveGame, Snapshot, WorldKey};
 use crate::sim::terrain;
 use crate::sim::interiors::Interior;
 use crate::state::{alive, ClockRes, CurrentInterior, Game, Messages, Paused, WeatherRes};
@@ -139,6 +139,12 @@ impl WorldView<'_, '_> {
             .unwrap_or((Vec3::new(terrain::PLAYER_SPAWN.0, 0.0, terrain::PLAYER_SPAWN.1), 0.0, 0.0));
         let key = |tf: &Transform| world_key(tf.translation.x, tf.translation.z);
         let opened: Vec<WorldKey> = self.containers.iter().filter(|(_, c)| c.opened).map(|(tf, _)| key(tf)).collect();
+        let looted: Vec<LootedSave> = self
+            .containers
+            .iter()
+            .filter(|(_, c)| !c.opened && c.taken.iter().any(|t| *t))
+            .map(|(tf, c)| LootedSave { key: key(tf), items: c.taken_indices() })
+            .collect();
         let collected: Vec<WorldKey> = self.taken.iter().map(key).collect();
         let saved_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         SaveGame::capture(&Snapshot {
@@ -153,6 +159,7 @@ impl WorldView<'_, '_> {
             play_secs: self.play.0,
             saved_at,
             opened,
+            looted,
             collected,
             interior: self.interior.0.map(|i| i.id()),
             flags: self.flags.0.iter().cloned().collect(),
@@ -275,8 +282,10 @@ fn apply_world_state(
 
     // Crates: open exactly the ones that were open.
     let opened: HashSet<WorldKey> = s.opened.iter().copied().collect();
+    let looted: std::collections::HashMap<WorldKey, &Vec<u8>> = s.looted.iter().map(|l| (l.key, &l.items)).collect();
     for (tf, mut c) in &mut containers {
-        c.opened = opened.contains(&world_key(tf.translation.x, tf.translation.z));
+        let key = world_key(tf.translation.x, tf.translation.z);
+        c.restore(opened.contains(&key), looted.get(&key).map(|v| v.as_slice()).unwrap_or(&[]));
         let ring = if c.opened { Visibility::Hidden } else { Visibility::Inherited };
         commands.entity(c.ring()).insert(ring);
     }

@@ -148,9 +148,39 @@ pub fn segment_blocked(a: (f32, f32), b: (f32, f32), shapes: &[Shape]) -> bool {
     shapes.iter().any(|s| !s.contains(a.0, a.1) && !s.contains(b.0, b.1) && s.crossed_by(a, b))
 }
 
+/// How many trees (circles) and walls (rectangles) stand between `a` and
+/// `b`: what a sound has to get through. Shapes either end is touching don't count.
+pub fn segment_cover(a: (f32, f32), b: (f32, f32), shapes: &[Shape]) -> (usize, usize) {
+    let (mut circles, mut rects) = (0, 0);
+    for s in shapes {
+        if s.contains(a.0, a.1) || s.contains(b.0, b.1) || !s.crossed_by(a, b) {
+            continue;
+        }
+        match s {
+            Shape::Circle { .. } => circles += 1,
+            Shape::Rect { .. } => rects += 1,
+        }
+    }
+    (circles, rects)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cover_counts_what_is_in_the_way() {
+        let shapes = [
+            Shape::Circle { x: 3.0, z: 0.0, r: 0.5 },
+            Shape::Circle { x: 6.0, z: 0.1, r: 0.5 },
+            Shape::Circle { x: 6.0, z: 5.0, r: 0.5 },
+            Shape::rect_centered(8.0, 0.0, 1.0, 4.0),
+        ];
+        assert_eq!(segment_cover((0.0, 0.0), (12.0, 0.0), &shapes), (2, 1));
+        assert_eq!(segment_cover((0.0, 0.0), (2.0, 0.0), &shapes), (0, 0));
+        assert_eq!(segment_cover((0.0, 0.0), (12.0, 8.0), &shapes), (0, 0));
+        assert_eq!(segment_cover((3.0, 0.2), (12.0, 0.0), &shapes).0, 1, "the tree it stands in doesn't count");
+    }
 
     #[test]
     fn a_tree_or_a_wall_cuts_the_line_of_sight() {

@@ -14,7 +14,7 @@ use crate::enemy::{Body, Dying, Species};
 use crate::moose::{spawn_moose, MooseAssets};
 use crate::pipboy::{total_upgrades, PipState};
 use crate::player::Player;
-use crate::saves::{AutosaveRequest, Loaded, StoryFlags};
+use crate::saves::{AutosaveRequest, StoryFlags};
 use crate::sim::collision::{self, Shape};
 use crate::sim::dialogue::{Gift, Npc, Session};
 use crate::sim::loot;
@@ -52,7 +52,7 @@ pub(crate) struct Talk(Option<Conversation>);
 
 /// Seconds before the level-up screen may open again after you put it off.
 #[derive(Resource, Default)]
-struct PerkDelay(f32);
+pub(crate) struct PerkDelay(pub f32);
 
 /// The territorial Glowmoose that has to be killed for Sven.
 #[derive(Component)]
@@ -97,7 +97,7 @@ impl Plugin for QuestPlugin {
                     use_spots,
                     moose_deeds,
                     ensure_quest_moose.run_if(alive.and(outdoors)),
-                    (level_watch, offer_perks.run_if(alive)).chain(),
+                    offer_perks.run_if(alive),
                     sync_perks,
                     apply_power,
                     render_talk,
@@ -296,28 +296,6 @@ fn current_level(game: &Game, pip: &PipState, flags: &rules::Flags) -> u32 {
     progress::level(progress::experience(game.kills, places, total_upgrades(game), game.inv.has_frostfang_coat, rules::quest_xp(flags))).0
 }
 
-/// Announce each new level as it's reached (not when a save loads).
-fn level_watch(
-    game: Res<Game>,
-    pip: Res<PipState>,
-    flags: Res<StoryFlags>,
-    mut loaded: EventReader<Loaded>,
-    mut msgs: ResMut<Messages>,
-    mut sfx: ResMut<SfxQueue>,
-    mut last: Local<u32>,
-) {
-    let level = current_level(&game, &pip, &flags.0);
-    if loaded.read().count() > 0 || *last == 0 {
-        *last = level;
-        return;
-    }
-    if level > *last {
-        msgs.show(format!("LEVEL UP! You are now level {level}."), 4.0);
-        sfx.play(Sound::PickupMed);
-    }
-    *last = level;
-}
-
 /// When a perk pick is waiting, and nothing dangerous is near, show the choice.
 #[allow(clippy::too_many_arguments)]
 fn offer_perks(
@@ -379,6 +357,7 @@ fn drive_talk(
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
     mut delay: ResMut<PerkDelay>,
+    mut feed: ResMut<crate::fo4ui::Feed>,
     mut autosave: EventWriter<AutosaveRequest>,
 ) {
     let up = keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyW);
@@ -405,7 +384,7 @@ fn drive_talk(
                             Gift::Scrap(n) => game.inv.scrap += n,
                             Gift::Stimpak(n) => game.inv.stimpaks += n,
                         }
-                        msgs.show(format!("Received: {}", gift.describe()), 3.0);
+                        feed.push(format!("{} received", gift.describe().trim_start_matches('+')));
                         sfx.play(Sound::PickupFood);
                     }
                     let after = rules::stage(&flags.0);

@@ -19,6 +19,7 @@ mod crows;
 mod devshot;
 mod enemy;
 mod flora;
+mod fo4ui;
 mod gun;
 mod hud;
 mod interact;
@@ -97,6 +98,6 @@ fn main() {
             interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
         .run();
 }

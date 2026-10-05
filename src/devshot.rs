@@ -144,7 +144,7 @@ impl Plugin for DevShotPlugin {
             wait: std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0),
             taken: None,
         })
-        .add_systems(Update, (dev_story, dev_slay, dev_bang, dev_fire, take_shot).chain())
+        .add_systems(Update, (dev_story, dev_slay, dev_bang, dev_fire, dev_sfx, dev_kills, take_shot).chain())
         .add_systems(PreUpdate, inject_keys.run_if(resource_exists::<KeyScript>).after(bevy::input::InputSystem))
         .add_systems(PostStartup, spawn_extras)
         .add_systems(Startup, resize_window);
@@ -235,6 +235,39 @@ fn dev_fire(mut fx: ResMut<crate::state::FxQueue>, mut tick: Local<u32>, game: R
     let dir = c.forward().as_vec3();
     fx.spawn(crate::state::Fx::Muzzle(muzzle, dir, c.right().as_vec3(), false));
     fx.spawn(crate::state::Fx::Blast(muzzle, dir, if kind == WeaponKind::ScrapShotgun { 1.6 } else { 1.0 }));
+}
+
+/// `FMN_SFXTEST=1`: a few seconds in, fire some test sounds (with
+/// `FMN_AUDIO_LOG=1` the audio system says how each one was heard).
+fn dev_sfx(mut done: Local<bool>, time: Res<Time<Real>>, mut sfx: ResMut<crate::state::SfxQueue>, player: Query<&Transform, With<Player>>) {
+    if *done || time.elapsed_secs() < 12.0 || std::env::var("FMN_SFXTEST").is_err() {
+        return;
+    }
+    *done = true;
+    let Ok(p) = player.single() else { return };
+    use crate::sim::synth::Sound;
+    let at = p.translation;
+    let vault = crate::sim::interiors::Interior::VaultLobby.origin();
+    // Your own shot; a raider's shot 40 m off in the open; the same shot in the vault next door; footsteps; a bark.
+    sfx.play(Sound::RifleShot);
+    sfx.push(crate::state::SfxReq::new(Sound::ShotgunShot).at(at + Vec3::new(40.0, 0.0, 0.0)).carrying(26.0));
+    sfx.push(crate::state::SfxReq::new(Sound::RifleShot).at(Vec3::new(vault.0, 1.0, vault.1)).carrying(26.0));
+    sfx.push(crate::state::SfxReq::new(Sound::StepSnowRun).at(at + Vec3::new(0.0, 0.0, 12.0)).carrying(10.0));
+    sfx.push(crate::state::SfxReq::new(Sound::RaiderShout).at(at + Vec3::new(-20.0, 1.6, 0.0)));
+    sfx.push(crate::state::SfxReq::new(Sound::BoltClack).after(0.4));
+}
+
+/// `FMN_KILLS=n`: a few seconds in, award n kills (25 XP each) to show the XP bar.
+fn dev_kills(mut done: Local<bool>, time: Res<Time<Real>>, mut game: ResMut<Game>) {
+    // Just before the screenshot, so the bar is still up when it's taken.
+    let wait: f32 = std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0);
+    if *done || time.elapsed_secs() < wait - 2.5 {
+        return;
+    }
+    if let Some(n) = std::env::var("FMN_KILLS").ok().and_then(|v| v.parse::<u32>().ok()) {
+        game.kills += n;
+    }
+    *done = true;
 }
 
 fn take_shot(

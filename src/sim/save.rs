@@ -201,6 +201,13 @@ pub fn world_key(x: f32, z: f32) -> WorldKey {
     [(x * 4.0).round() as i32, (z * 4.0).round() as i32]
 }
 
+/// A container you've taken some (not all) of: which entries are gone.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct LootedSave {
+    pub key: WorldKey,
+    pub items: Vec<u8>,
+}
+
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SaveGame {
@@ -220,6 +227,8 @@ pub struct SaveGame {
     pub fog: FogSave,
     /// Containers you've opened.
     pub opened: Vec<WorldKey>,
+    /// Containers you've taken some things from.
+    pub looted: Vec<LootedSave>,
     /// Pickups you've taken.
     pub collected: Vec<WorldKey>,
     /// The interior you're in, if any (an id from the interiors list).
@@ -244,6 +253,7 @@ impl Default for SaveGame {
             weather: WeatherSave::default(),
             fog: FogSave::default(),
             opened: Vec::new(),
+            looted: Vec::new(),
             collected: Vec::new(),
             interior: None,
             flags: Vec::new(),
@@ -264,6 +274,7 @@ pub struct Snapshot<'a> {
     pub play_secs: f32,
     pub saved_at: u64,
     pub opened: Vec<WorldKey>,
+    pub looted: Vec<LootedSave>,
     pub collected: Vec<WorldKey>,
     pub interior: Option<String>,
     pub flags: Vec<String>,
@@ -348,6 +359,7 @@ impl SaveGame {
             weather: WeatherSave { phase: s.weather.phase.into(), timer: s.weather.timer, blizzards: s.weather.blizzards },
             fog: FogSave { runs: s.fog.seen_runs(), found: s.fog.landmarks_found.clone() },
             opened: s.opened.clone(),
+            looted: s.looted.clone(),
             collected: s.collected.clone(),
             interior: s.interior.clone(),
             flags: s.flags.clone(),
@@ -433,6 +445,18 @@ impl SaveGame {
             list.sort_unstable();
             list.dedup();
         }
+        // Partly looted: sorted, no repeats, no impossible entries, and nothing
+        // that's also marked fully opened.
+        cap(&mut self.looted);
+        for l in &mut self.looted {
+            l.items.retain(|i| (*i as usize) < 16);
+            l.items.sort_unstable();
+            l.items.dedup();
+        }
+        let opened: std::collections::HashSet<WorldKey> = self.opened.iter().copied().collect();
+        self.looted.retain(|l| !l.items.is_empty() && !opened.contains(&l.key));
+        self.looted.sort_by_key(|l| l.key);
+        self.looted.dedup_by_key(|l| l.key);
         self.flags.retain(|f| !f.is_empty() && f.len() <= 80);
         self.flags.sort();
         self.flags.dedup();
@@ -597,6 +621,7 @@ mod tests {
             play_secs: 4_000.0,
             saved_at: 1_700_000_000,
             opened: vec![[10, 20], [-4, 7]],
+            looted: vec![LootedSave { key: [3, 4], items: vec![1, 0, 1] }],
             collected: vec![[100, -100]],
             interior: None,
             flags: vec!["met_olson".into(), "convoy_found".into()],
@@ -638,6 +663,7 @@ mod tests {
         assert_eq!(shotgun.mag, 1);
         assert!(!a.get(WeaponKind::Revolver).has_upgrade(Upgrade::Choke));
         assert_eq!(again.opened, vec![[-4, 7], [10, 20]], "kept (sorted)");
+        assert_eq!(again.looted, vec![LootedSave { key: [3, 4], items: vec![0, 1] }], "partial loot kept, tidied");
         assert_eq!(again.collected, vec![[100, -100]]);
         assert_eq!(again.flags, vec!["convoy_found".to_string(), "met_olson".to_string()]);
     }
@@ -807,6 +833,24 @@ mod tests {
         let fine = SaveGame::parse(&format!(r#"{{ "version": 1, "interior": "mart", "player": {{ "x": {}, "z": {} }} }}"#, Interior::Mart.origin().0, Interior::Mart.origin().1)).unwrap();
         assert_eq!(fine.interior.as_deref(), Some("mart"));
         assert_eq!(fine.player.x, Interior::Mart.origin().0, "a position inside its room is kept");
+    }
+
+    #[test]
+    fn partly_looted_containers_are_tidied_and_never_double_counted() {
+        let mut save = SaveGame {
+            opened: vec![[1, 1]],
+            looted: vec![
+                LootedSave { key: [1, 1], items: vec![0] },
+                LootedSave { key: [2, 2], items: vec![] },
+                LootedSave { key: [3, 3], items: vec![2, 99, 2] },
+            ],
+            ..SaveGame::default()
+        };
+        save.sanitize();
+        assert_eq!(save.looted, vec![LootedSave { key: [3, 3], items: vec![2] }]);
+        // An old save with no such field still loads.
+        let old = SaveGame::parse(r#"{ "version": 1, "opened": [[5, 5]] }"#).unwrap();
+        assert!(old.looted.is_empty());
     }
 
     #[test]

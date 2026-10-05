@@ -20,6 +20,7 @@ use crate::sim::collision::{self, segment_blocked};
 use crate::sim::raider::{Gun, Mode, Raider, Senses};
 use crate::sim::survival::DeathCause;
 use crate::sim::synth::Sound;
+use crate::sim::soundscape;
 use crate::sim::terrain;
 use crate::sim::weather::Phase;
 use crate::state::{alive, outdoors, ClockRes, Colliders, Fx, FxQueue, Game, Gunshot, Hostile, Lifetime, Messages, RngRes, SfxQueue, SfxReq, WeatherRes};
@@ -44,6 +45,11 @@ pub struct RaiderAi {
     /// 0 = gun low, 1 = shouldered.
     aim: f32,
     yaw: f32,
+    /// Metres walked since the last footstep sound.
+    step_acc: f32,
+    /// Seconds before it may shout again.
+    shout_cd: f32,
+    was_fighting: bool,
 }
 
 #[derive(Component)]
@@ -131,7 +137,7 @@ fn spawn_raider(commands: &mut Commands, a: &RaiderAssets, kit: &PersonKit, at: 
             Visibility::default(),
             Hostile,
             Body::new(Species::Raider, HEALTH, BODY_CENTER, BODY_RADIUS),
-            RaiderAi { brain: Raider::new(gun, home), stride: rng.0.range(0.0, TAU), gait: 0.0, aim, yaw },
+            RaiderAi { brain: Raider::new(gun, home), stride: rng.0.range(0.0, TAU), gait: 0.0, aim, yaw, step_acc: 0.0, shout_cd: 0.0, was_fighting: false },
         ))
         .id();
     commands.entity(id).with_children(|r| {
@@ -247,6 +253,23 @@ fn raider_ai(
         let moved = Vec2::new(nx, nz).distance(pos);
         r.gait = if dt > 0.0 { moved / dt } else { 0.0 };
         r.stride += moved * STRIDE_PER_METRE;
+        // Footsteps you can hear coming: crunch, and louder the faster they move.
+        r.step_acc += moved;
+        if r.step_acc > 0.9 {
+            r.step_acc = 0.0;
+            if pos.distance(player_xz) < 60.0 {
+                let (sound, gain) = soundscape::footstep(terrain::surface_at(nx, nz), r.gait > 3.0, temp, rng.0.f32());
+                sfx.push(SfxReq::new(sound).at(tf.translation).gain(gain * soundscape::step_gain_for_speed(r.gait)).carrying(10.0));
+            }
+        }
+        // A shout when one first sees you.
+        r.shout_cd = (r.shout_cd - dt).max(0.0);
+        let fighting = r.brain.mode == Mode::Fight;
+        if fighting && !r.was_fighting && r.shout_cd <= 0.0 {
+            r.shout_cd = 9.0;
+            sfx.play_at(Sound::RaiderShout, tf.translation + Vec3::Y * 1.6);
+        }
+        r.was_fighting = fighting;
         // Turn towards where it wants to look.
         if act.face[0].abs() + act.face[1].abs() > 1e-4 {
             let want = act.face[0].atan2(act.face[1]);
@@ -259,7 +282,7 @@ fn raider_ai(
         r.aim += (aim_target - r.aim) * (dt * 7.0).min(1.0);
 
         if act.reloading {
-            sfx.0.push(SfxReq { sound: Sound::ClunkOut, pos: Some(tf.translation + Vec3::Y), gain: gain_for(pos.distance(player_xz)) });
+            sfx.push(SfxReq::new(Sound::ClunkOut).at(tf.translation + Vec3::Y).carrying(12.0));
         }
         let Some(v) = act.volley else { continue };
 
@@ -294,9 +317,12 @@ fn raider_ai(
             NotShadowCaster,
             Lifetime(0.05),
         ));
-        sfx.0.push(SfxReq { sound: gun_sound(v.gun), pos: Some(muzzle), gain: gain_for(muzzle.distance(ptf.translation)) });
+        sfx.push(SfxReq::new(gun_sound(v.gun)).at(muzzle).carrying(26.0));
+        if let Some((click, delay)) = soundscape::follow_up_for_gun(v.gun) {
+            sfx.push(SfxReq::new(click).at(muzzle).carrying(14.0).after(delay + 0.35));
+        }
         if v.jammed {
-            sfx.0.push(SfxReq { sound: Sound::Jam, pos: Some(muzzle), gain: gain_for(muzzle.distance(ptf.translation)) });
+            sfx.push(SfxReq::new(Sound::Jam).at(muzzle).carrying(14.0));
         }
         gunshots.send(Gunshot { pos: muzzle, by_player: false });
         if v.hits > 0 && game.death.is_none() {
@@ -322,11 +348,6 @@ fn raider_ai(
     } else if !any_fighting {
         *warned = false;
     }
-}
-
-/// Gunfire is quieter the further away it is.
-fn gain_for(dist: f32) -> f32 {
-    (1.0 / (1.0 + dist / 35.0)).clamp(0.2, 1.0)
 }
 
 /// Animate gait, aim and flinch.

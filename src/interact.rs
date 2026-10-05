@@ -2,12 +2,15 @@
 //! upgrades at a shelter workbench (B). Shows a prompt near the crosshair
 //! when something can be used.
 
+use bevy::ecs::schedule::common_conditions::not;
+use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
 use crate::player::Player;
 use crate::sim::collision::Shape;
 use crate::sim::loot::{self, Loot};
+use crate::sim::lootmenu;
 use crate::sim::synth::Sound;
 use crate::state::{alive, Game, Messages, Prompt, SfxQueue};
 
@@ -20,15 +23,52 @@ const BENCH_REACH: f32 = 3.4;
 pub struct Container {
     pub name: &'static str,
     pub loot: Vec<Loot>,
+    /// Which entries of `loot` have been taken.
+    pub taken: Vec<bool>,
+    /// Everything has been taken.
     pub opened: bool,
     ring: Entity,
 }
 
 impl Container {
-    /// The green ring that marks it while it's unopened.
+    /// The green ring that marks it while it still holds something.
     pub fn ring(&self) -> Entity {
         self.ring
     }
+
+    /// Indices into `loot` of what's still inside.
+    pub fn remaining(&self) -> Vec<usize> {
+        lootmenu::remaining(&self.taken)
+    }
+
+    /// Take entry `i` (None if it's gone or doesn't exist). Emptying the
+    /// container marks it opened.
+    pub fn take(&mut self, i: usize) -> Option<Loot> {
+        if *self.taken.get(i)? {
+            return None;
+        }
+        self.taken[i] = true;
+        self.opened = self.taken.iter().all(|t| *t);
+        self.loot.get(i).copied()
+    }
+
+    /// Which entries are gone, for the save.
+    pub fn taken_indices(&self) -> Vec<u8> {
+        self.taken.iter().enumerate().filter(|(_, t)| **t).map(|(i, _)| i as u8).collect()
+    }
+
+    /// Put it back as a save says: emptied, partly looted or untouched.
+    pub fn restore(&mut self, opened: bool, taken: &[u8]) {
+        self.taken = (0..self.loot.len()).map(|i| opened || taken.contains(&(i as u8))).collect();
+        self.opened = self.taken.iter().all(|t| *t);
+    }
+}
+
+/// The container you're looking at, and which of its entries is highlighted.
+#[derive(Resource, Default)]
+pub struct LootMenu {
+    pub target: Option<Entity>,
+    pub selected: usize,
 }
 
 #[derive(Component)]
@@ -51,6 +91,8 @@ pub struct InteractPlugin;
 impl Plugin for InteractPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FixtureClaim>()
+            .init_resource::<LootMenu>()
+            .add_systems(Update, forget_loot_target.run_if(not(alive)))
             .add_systems(PreStartup, setup_assets)
             .add_systems(Update, (reset_prompt, interact).chain().run_if(alive));
     }
@@ -102,12 +144,18 @@ pub fn spawn_container(
                 .with_scale(Vec3::splat(scale)),
             Container {
                 name,
+                taken: vec![false; loot.len()],
                 loot,
                 opened: false,
                 ring,
             },
         ))
         .id()
+}
+
+/// No container is targeted while a menu or conversation has the screen.
+fn forget_loot_target(mut menu: ResMut<LootMenu>) {
+    menu.target = None;
 }
 
 pub(crate) fn reset_prompt(mut prompt: ResMut<Prompt>) {
@@ -123,35 +171,71 @@ pub(crate) fn interact(
     mut prompt: ResMut<Prompt>,
     claim: Res<FixtureClaim>,
     perks: Res<crate::quest::Perks>,
+    scroll: Res<AccumulatedMouseScroll>,
+    mut menu: ResMut<LootMenu>,
+    mut feed: ResMut<crate::fo4ui::Feed>,
+    cam: Query<&GlobalTransform, With<Player>>,
     player: Query<&Transform, With<Player>>,
-    mut containers: Query<(&Transform, &mut Container), Without<Player>>,
+    mut containers: Query<(Entity, &Transform, &mut Container), Without<Player>>,
     benches: Query<&Transform, (With<Workbench>, Without<Player>)>,
 ) {
     let Ok(ptf) = player.single() else { return };
     let p = ptf.translation;
     let flat = |t: Vec3| Vec2::new(t.x - p.x, t.z - p.z).length();
 
-    // ---- Containers (E) ----
-    let nearest = containers
-        .iter_mut()
-        .filter(|(_, c)| !c.opened && !claim.0)
-        .map(|(tf, c)| (flat(tf.translation), tf, c))
-        .filter(|(d, _, _)| *d < REACH)
-        .min_by(|a, b| a.0.total_cmp(&b.0));
-    if let Some((_, tf, mut c)) = nearest {
-        prompt.0.push(format!("[E] Open {}", c.name));
-        if keys.just_pressed(KeyCode::KeyE) {
-            c.opened = true;
-            let Game { inv, arsenal, .. } = &mut *game;
-            let scrap_before = inv.scrap;
-            let gained = loot::grant(&c.loot, inv, arsenal);
-            if inv.scrap > scrap_before {
-                // Scrounger.
-                inv.scrap += perks.0.extra_scrap;
+    // ---- Containers: look at one to see what's in it ----
+    // The one in reach that you're facing most squarely.
+    let look = cam.single().map(|g| g.forward().as_vec3()).unwrap_or(Vec3::NEG_Z);
+    let target = containers
+        .iter()
+        .filter(|(_, _, c)| !c.opened && !claim.0)
+        .filter_map(|(e, tf, _)| {
+            let to = Vec3::new(tf.translation.x - p.x, 0.0, tf.translation.z - p.z);
+            let dist = to.length();
+            let facing = if dist < 0.6 { 1.0 } else { to.normalize_or_zero().dot(Vec3::new(look.x, 0.0, look.z).normalize_or_zero()) };
+            (dist < REACH && facing > 0.35).then_some((e, dist * (2.0 - facing)))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(e, _)| e);
+    if menu.target != target {
+        menu.target = target;
+        menu.selected = 0;
+    }
+    if let Some((_, tf, mut c)) = target.and_then(|e| containers.get_mut(e).ok()) {
+        let left = c.remaining();
+        let step = (keys.just_pressed(KeyCode::ArrowDown) as i32 - keys.just_pressed(KeyCode::ArrowUp) as i32) - scroll.delta.y.signum() as i32 * (scroll.delta.y != 0.0) as i32;
+        if step != 0 {
+            menu.selected = lootmenu::step(menu.selected, step, left.len());
+            sfx.play(Sound::UiTab);
+        }
+        menu.selected = menu.selected.min(left.len().saturating_sub(1));
+        let take_all = keys.just_pressed(KeyCode::KeyT);
+        if keys.just_pressed(KeyCode::KeyE) || take_all {
+            let picks: Vec<usize> = if take_all { left.clone() } else { left.get(menu.selected).copied().into_iter().collect() };
+            let first_take = c.taken.iter().all(|t| !*t);
+            for i in picks {
+                let Some(item) = c.take(i) else { continue };
+                let Game { inv, arsenal, .. } = &mut *game;
+                let scrap_before = inv.scrap;
+                let gained = loot::grant(&[item], inv, arsenal);
+                if inv.scrap > scrap_before {
+                    // Scrounger.
+                    inv.scrap += perks.0.extra_scrap;
+                }
+                feed.push(format!("{} added", gained.first().cloned().unwrap_or_else(|| lootmenu::label(&item))));
+                if let Loot::Item(it, _) = item {
+                    sfx.play(crate::sim::sfx::pickup_sound(it));
+                } else {
+                    sfx.play(Sound::PickupAmmo);
+                }
             }
-            msgs.show(format!("{}: {}", c.name, gained.join(", ")), 5.0);
-            sfx.play_at(Sound::ContainerOpen, tf.translation + Vec3::Y * 0.5);
-            commands.entity(c.ring).insert(Visibility::Hidden);
+            if first_take {
+                sfx.play_at(Sound::ContainerOpen, tf.translation + Vec3::Y * 0.5);
+            }
+            if c.opened {
+                commands.entity(c.ring).insert(Visibility::Hidden);
+                menu.target = None;
+            }
         }
     }
 
@@ -191,5 +275,51 @@ pub(crate) fn interact(
                 prompt.0.push(line);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sim::survival::Item;
+
+    fn crate_with(n: usize) -> Container {
+        Container {
+            name: "crate",
+            loot: (0..n).map(|_| Loot::Item(Item::Scrap, 1)).collect(),
+            taken: vec![false; n],
+            opened: false,
+            ring: Entity::PLACEHOLDER,
+        }
+    }
+
+    #[test]
+    fn taking_things_one_at_a_time_empties_the_container() {
+        let mut c = crate_with(3);
+        assert_eq!(c.remaining(), vec![0, 1, 2]);
+        assert!(c.take(1).is_some());
+        assert_eq!(c.remaining(), vec![0, 2]);
+        assert!(!c.opened);
+        assert!(c.take(1).is_none(), "can't take it twice");
+        assert!(c.take(9).is_none());
+        c.take(0);
+        c.take(2);
+        assert!(c.opened && c.remaining().is_empty());
+    }
+
+    #[test]
+    fn a_partly_looted_container_comes_back_as_it_was_left() {
+        let mut c = crate_with(4);
+        c.take(0);
+        c.take(3);
+        let gone = c.taken_indices();
+        assert_eq!(gone, vec![0, 3]);
+        let mut fresh = crate_with(4);
+        fresh.restore(false, &gone);
+        assert_eq!(fresh.remaining(), vec![1, 2], "what you took stays taken");
+        assert!(!fresh.opened);
+        let mut emptied = crate_with(4);
+        emptied.restore(true, &[]);
+        assert!(emptied.opened && emptied.remaining().is_empty());
     }
 }

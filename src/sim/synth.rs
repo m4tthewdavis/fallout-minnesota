@@ -60,6 +60,25 @@ pub enum Sound {
     Hoof,
     // Rad-crows.
     Caw,
+    // Gunfire's echo: the open snowfield's long, rolling answer, or a room's short slap.
+    ShotTailOutdoor,
+    ShotTailIndoor,
+    // Mechanical clicks after a shot.
+    BoltClack,
+    HammerCock,
+    // A calm breeze and a howling blizzard, to layer over the wind loops.
+    WindBreeze,
+    WindHowl,
+    // Inside: machinery hum, drips, creaking timber.
+    RoomHum,
+    Drip,
+    Creak,
+    // The raiders' voices.
+    RaiderShout,
+    RaiderGrunt,
+    // Boots: a running crunch and the squeak of dry snow in deep cold.
+    StepSnowRun,
+    StepSnowSqueak,
     // World.
     IceCrack,
     IceCreak,
@@ -146,6 +165,19 @@ impl Sound {
         Sound::MooseGrunt,
         Sound::Hoof,
         Sound::Caw,
+        Sound::ShotTailOutdoor,
+        Sound::ShotTailIndoor,
+        Sound::BoltClack,
+        Sound::HammerCock,
+        Sound::WindBreeze,
+        Sound::WindHowl,
+        Sound::RoomHum,
+        Sound::Drip,
+        Sound::Creak,
+        Sound::RaiderShout,
+        Sound::RaiderGrunt,
+        Sound::StepSnowRun,
+        Sound::StepSnowSqueak,
         Sound::IceCrack,
         Sound::IceCreak,
         Sound::Geiger,
@@ -186,6 +218,10 @@ impl Sound {
             Sound::Growl => 3,
             Sound::MooseBellow | Sound::MooseGrunt | Sound::Hoof => 3,
             Sound::Caw => 4,
+            Sound::ShotTailOutdoor | Sound::ShotTailIndoor | Sound::BoltClack | Sound::HammerCock => 2,
+            Sound::Drip | Sound::Creak | Sound::RaiderGrunt => 3,
+            Sound::RaiderShout | Sound::StepSnowRun | Sound::StepSnowSqueak => 4,
+            Sound::WindBreeze | Sound::WindHowl | Sound::RoomHum => 1,
             Sound::IceCrack => 2,
             Sound::IceCreak => 3,
             Sound::Geiger => 5,
@@ -217,6 +253,9 @@ impl Sound {
             Sound::WindLow
                 | Sound::WindMid
                 | Sound::WindHigh
+                | Sound::WindBreeze
+                | Sound::WindHowl
+                | Sound::RoomHum
                 | Sound::Fire
                 | Sound::Siren
                 | Sound::MusicCalm
@@ -264,6 +303,15 @@ impl Sound {
             Sound::MooseGrunt => p(Sfx, 0.7, 0.06, 0.15, 4.0, self, true, Some(18.0)),
             Sound::Hoof => p(Sfx, 0.8, 0.08, 0.2, 0.2, self, false, Some(20.0)),
             Sound::Caw => p(Sfx, 0.55, 0.1, 0.2, 0.3, self, true, Some(28.0)),
+            Sound::ShotTailOutdoor | Sound::ShotTailIndoor => p(Sfx, 0.5, 0.03, 0.1, 0.0, self, false, None),
+            Sound::BoltClack | Sound::HammerCock => p(Sfx, 0.5, 0.05, 0.15, 0.1, self, false, None),
+            Sound::WindBreeze | Sound::WindHowl | Sound::RoomHum => p(Ambience, 1.0, 0.0, 0.0, 0.0, self, false, None),
+            Sound::Drip => p(Sfx, 0.45, 0.1, 0.3, 1.0, self, false, None),
+            Sound::Creak => p(Sfx, 0.5, 0.08, 0.25, 2.0, self, false, None),
+            Sound::RaiderShout => p(Sfx, 0.75, 0.07, 0.15, 1.5, self, true, Some(30.0)),
+            Sound::RaiderGrunt => p(Sfx, 0.7, 0.08, 0.15, 0.2, self, true, Some(18.0)),
+            Sound::StepSnowRun => p(Sfx, 0.85, 0.08, 0.2, 0.1, self, false, None),
+            Sound::StepSnowSqueak => p(Sfx, 0.5, 0.1, 0.2, 0.1, self, false, None),
             Sound::IceCrack => p(Sfx, 0.9, 0.04, 0.05, 0.5, self, false, None),
             Sound::IceCreak => p(Sfx, 0.7, 0.08, 0.15, 1.5, self, true, None),
             Sound::Geiger => p(Sfx, 0.3, 0.12, 0.35, 0.06, self, false, None),
@@ -322,6 +370,19 @@ impl Sound {
             Sound::MooseGrunt => moose_grunt(rng, vf),
             Sound::Hoof => hoof(rng, vf),
             Sound::Caw => caw(rng, vf),
+            Sound::ShotTailOutdoor => shot_tail(rng, false, vf),
+            Sound::ShotTailIndoor => shot_tail(rng, true, vf),
+            Sound::BoltClack => bolt_clack(rng, vf),
+            Sound::HammerCock => hammer_cock(rng, vf),
+            Sound::WindBreeze => wind_breeze(rng),
+            Sound::WindHowl => wind_howl(rng),
+            Sound::RoomHum => room_hum(rng),
+            Sound::Drip => drip(rng, vf),
+            Sound::Creak => creak(rng, vf),
+            Sound::RaiderShout => raider_voice(rng, vf, true),
+            Sound::RaiderGrunt => raider_voice(rng, vf, false),
+            Sound::StepSnowRun => step_snow_run(rng),
+            Sound::StepSnowSqueak => step_snow_squeak(rng, vf),
             Sound::IceCrack => ice_crack(rng),
             Sound::IceCreak => ice_creak(rng, vf),
             Sound::Geiger => geiger(rng, vf),
@@ -607,6 +668,9 @@ struct Shot {
     tail_lp: f32,
     tail_decay: f32,
     tail_amp: f32,
+    /// A felt-more-than-heard sub-bass boom under the crack.
+    sub_hz: f32,
+    sub_amp: f32,
     amp: f32,
 }
 
@@ -623,6 +687,8 @@ impl Shot {
             tail_lp: 750.0,
             tail_decay: 5.0 + 1.5 * v,
             tail_amp: 0.14,
+            sub_hz: 64.0,
+            sub_amp: 0.7,
             amp: 0.95,
         }
     }
@@ -638,6 +704,8 @@ impl Shot {
             tail_lp: 600.0,
             tail_decay: 3.6,
             tail_amp: 0.2,
+            sub_hz: 46.0,
+            sub_amp: 1.1,
             amp: 1.0,
         }
     }
@@ -653,6 +721,8 @@ impl Shot {
             tail_lp: 1100.0,
             tail_decay: 8.0,
             tail_amp: 0.1,
+            sub_hz: 72.0,
+            sub_amp: 0.5,
             amp: 0.9,
         }
     }
@@ -662,14 +732,18 @@ fn shot(mut rng: Rng, p: &Shot) -> Vec<f32> {
     let total = len(p.tail_secs + 0.2);
     let mut crack_lp = LowPass::new(p.crack_lp);
     let mut tail_lp = LowPass::new(p.tail_lp);
+    let mut sub_phase = 0.0f32;
     let mut out: Vec<f32> = (0..total)
         .map(|i| {
             let t = i as f32 / SR;
+            // The boom drops in pitch as the pressure wave rolls away.
+            sub_phase += TAU * (p.sub_hz * (1.0 - 1.4 * t).max(0.45)) / SR;
+            let sub = sub_phase.sin() * env(t, 0.004, 6.0) * p.sub_amp;
             let crack = crack_lp.run(noise(&mut rng)) * env(t, 0.0008, p.crack_decay);
             let thump = (TAU * (p.thump_hz - 40.0 * t) * t).sin() * env(t, 0.002, p.thump_decay);
             let ring = (TAU * p.ring_hz * t).sin() * env(t, 0.001, 16.0) * p.ring_amp;
             let tail = tail_lp.run(noise(&mut rng)) * env(t, 0.02, p.tail_decay) * p.tail_amp * 3.0;
-            crack * 1.5 + thump * 0.8 + ring + tail
+            crack * 1.5 + thump * 0.8 + sub + ring + tail
         })
         .collect();
     echo(&mut out, 0.085, 0.4, 0.22, 0.25);
@@ -1512,6 +1586,326 @@ fn ui_tick() -> Vec<f32> {
     normalize(out, 0.35)
 }
 
+// ---------------------------------------------------------------------------
+// Rooms, weather and voices (the environmental layer)
+// ---------------------------------------------------------------------------
+
+/// What a gunshot leaves behind. Outdoors: a dull, low rumble and a few soft
+/// answers off distant treelines. Indoors: a dense, bright slap that dies in
+/// well under a second. Played just after the shot itself.
+fn shot_tail(mut rng: Rng, indoor: bool, v: f32) -> Vec<f32> {
+    let secs = if indoor { 0.9 } else { 2.4 };
+    let mut out = vec![0.0f32; len(secs)];
+    if indoor {
+        // Early reflections off the walls, then a dense decaying wash.
+        let mut lp = LowPass::new(3800.0 - 600.0 * v);
+        for k in 0..9 {
+            let at = 0.004 + 0.008 * k as f32 + rng.range(0.0, 0.006);
+            let amp = 0.55 * (-(k as f32) * 0.3).exp();
+            let burst: Vec<f32> = (0..len(0.02)).map(|i| noise(&mut rng) * env(i as f32 / SR, 0.0005, 160.0)).collect();
+            mix_at(&mut out, at, &burst, amp);
+        }
+        for (i, o) in out.iter_mut().enumerate() {
+            let t = i as f32 / SR;
+            let wash = lp.run(noise(&mut rng)) * env(t, 0.03, 6.5 - 1.0 * v) * 0.35;
+            // A room's boom: one low mode.
+            let boom = (TAU * (95.0 + 20.0 * v) * t).sin() * env(t, 0.01, 8.0) * 0.28;
+            *o += wash + boom;
+        }
+    } else {
+        // Treeline answers: soft, dark, spaced out and thinning.
+        for (delay, amp) in [(0.2 + 0.05 * v, 0.5f32), (0.47 + 0.08 * v, 0.3), (0.9 + 0.1 * v, 0.17)] {
+            let mut lp = LowPass::new(900.0);
+            let echo_len = len(0.55);
+            let burst: Vec<f32> = (0..echo_len)
+                .map(|i| {
+                    let t = i as f32 / SR;
+                    lp.set(1000.0 - 600.0 * (t / 0.55));
+                    lp.run(noise(&mut rng)) * env(t, 0.03, 6.0) * 2.4
+                })
+                .collect();
+            mix_at(&mut out, delay, &burst, amp);
+        }
+        // The rolling rumble underneath.
+        let mut lp = LowPass::new(170.0);
+        for (i, o) in out.iter_mut().enumerate() {
+            let t = i as f32 / SR;
+            *o += lp.run(noise(&mut rng)) * env(t, 0.08, 2.0) * 1.6;
+        }
+    }
+    fade_edges(&mut out, 0.02);
+    normalize(out, 0.7)
+}
+
+/// Working a bolt: a heavy clack, a pause, and the lighter clack of it going home.
+fn bolt_clack(mut rng: Rng, v: f32) -> Vec<f32> {
+    let mut out = vec![0.0f32; len(0.4)];
+    for (at, amp, f) in [(0.0, 1.0f32, 1700.0 + 300.0 * v), (0.13 + 0.03 * v, 0.7, 2300.0 + 300.0 * v)] {
+        let clip: Vec<f32> = (0..len(0.16))
+            .map(|i| {
+                let t = i as f32 / SR;
+                let ring = (TAU * f * t).sin() + 0.6 * (TAU * f * 1.62 * t).sin() + 0.4 * (TAU * f * 2.7 * t).sin();
+                (ring * 0.3 + noise(&mut rng) * 0.5) * env(t, 0.0004, 60.0) + (TAU * 190.0 * t).sin() * env(t, 0.001, 38.0) * 0.5
+            })
+            .collect();
+        mix_at(&mut out, at, &clip, amp);
+    }
+    normalize(out, 0.55)
+}
+
+/// Thumbing back a revolver's hammer: ratchet ticks rising to a final click.
+fn hammer_cock(mut rng: Rng, v: f32) -> Vec<f32> {
+    let mut out = vec![0.0f32; len(0.35)];
+    for k in 0..4 {
+        let at = 0.03 * k as f32 * (1.0 + 0.1 * v) + if k == 3 { 0.03 } else { 0.0 };
+        let f = 1500.0 + 350.0 * k as f32;
+        let amp = if k == 3 { 1.0 } else { 0.5 };
+        let clip: Vec<f32> = (0..len(0.05))
+            .map(|i| {
+                let t = i as f32 / SR;
+                ((TAU * f * t).sin() * 0.5 + noise(&mut rng) * 0.4) * env(t, 0.0003, 120.0)
+            })
+            .collect();
+        mix_at(&mut out, at, &clip, amp);
+    }
+    normalize(out, 0.5)
+}
+
+/// A calm breeze: soft, low, slowly breathing. 41 s, so it never lines up
+/// with the other wind layers.
+fn wind_breeze(mut rng: Rng) -> Vec<f32> {
+    let secs = 41.0f32;
+    let total = len(secs + 2.0);
+    let mut lp1 = LowPass::new(260.0);
+    let mut lp2 = LowPass::new(260.0);
+    let (p1, p2) = (rng.range(0.0, TAU), rng.range(0.0, TAU));
+    let out: Vec<f32> = (0..total)
+        .map(|i| {
+            let t = i as f32 / SR;
+            let w = t / secs;
+            // Whole numbers of cycles over the loop: it joins up seamlessly.
+            let breath = 0.6 + 0.25 * (TAU * 7.0 * w + p1).sin() + 0.15 * (TAU * 17.0 * w + p2).sin();
+            lp1.set(180.0 + 260.0 * breath);
+            lp2.run(lp1.run(noise(&mut rng))) * breath * 4.0
+        })
+        .collect();
+    normalize(make_loopable(out, 2.0), 0.4)
+}
+
+/// The howl of a blizzard in the eaves: a resonant, wandering, rising and
+/// falling moan with a thin hiss over it. 47 s.
+fn wind_howl(mut rng: Rng) -> Vec<f32> {
+    let secs = 47.0f32;
+    let total = len(secs + 2.0);
+    let (p1, p2, p3) = (rng.range(0.0, TAU), rng.range(0.0, TAU), rng.range(0.0, TAU));
+    let mut phase = 0.0f32;
+    let mut phase2 = 0.0f32;
+    let mut hp = LowPass::new(2500.0);
+    let out: Vec<f32> = (0..total)
+        .map(|i| {
+            let t = i as f32 / SR;
+            let w = t / secs;
+            let swell = (0.5 + 0.5 * (TAU * 3.0 * w + p1).sin()).powf(1.6);
+            let drift = 0.5 + 0.5 * (TAU * 5.0 * w + p2).sin();
+            let f = 330.0 + 330.0 * drift + 40.0 * (TAU * 13.0 * w + p3).sin();
+            phase += TAU * f / SR;
+            phase2 += TAU * f * 1.51 / SR;
+            let moan = phase.sin() * 0.5 + phase2.sin() * 0.22 + (phase * 2.0).sin() * 0.1;
+            let n = noise(&mut rng);
+            let hiss = (n - hp.run(n)) * 0.25;
+            (moan * 0.7 + hiss) * (0.15 + 0.85 * swell)
+        })
+        .collect();
+    normalize(make_loopable(out, 2.0), 0.45)
+}
+
+/// A vault's machine hum: mains hum and its harmonics, a slow beat, and the
+/// breath of a vent. 8 s, with a whole number of cycles of every tone.
+fn room_hum(mut rng: Rng) -> Vec<f32> {
+    let secs = 8.0f32;
+    let total = len(secs + 1.0);
+    let mut lp = LowPass::new(520.0);
+    let out: Vec<f32> = (0..total)
+        .map(|i| {
+            let t = i as f32 / SR;
+            let hum = (TAU * 50.0 * t).sin() * 0.5 + (TAU * 100.0 * t).sin() * 0.25 + (TAU * 150.0 * t).sin() * 0.12 + (TAU * 250.0 * t).sin() * 0.04;
+            let beat = 0.85 + 0.15 * (TAU * 0.25 * t).sin();
+            let vent = lp.run(noise(&mut rng)) * 0.5;
+            hum * beat + vent * (0.6 + 0.4 * (TAU * 0.125 * t).sin())
+        })
+        .collect();
+    normalize(make_loopable(out, 1.0), 0.4)
+}
+
+/// A drip falling into standing water: a plink dropping in pitch, and its echo.
+fn drip(mut rng: Rng, v: f32) -> Vec<f32> {
+    let f0 = 1500.0 + 500.0 * v + rng.range(-80.0, 80.0);
+    let mut phase = 0.0f32;
+    let mut out: Vec<f32> = (0..len(0.55))
+        .map(|i| {
+            let t = i as f32 / SR;
+            phase += TAU * (f0 * (1.0 - 0.55 * (t / 0.05).min(1.0))) / SR;
+            phase.sin() * env(t, 0.0006, 38.0)
+        })
+        .collect();
+    echo(&mut out, 0.17, 0.3, 0.35, 0.25);
+    normalize(out, 0.35)
+}
+
+/// Timber creaking as it contracts in the cold: a slow, wavering, rasping groan.
+fn creak(mut rng: Rng, v: f32) -> Vec<f32> {
+    let secs = 0.9 + 0.5 * v;
+    let (a, b, c) = (rng.range(0.0, TAU), rng.range(0.0, TAU), 70.0 + 30.0 * v);
+    let mut phase = 0.0f32;
+    let mut lp = LowPass::new(900.0);
+    let out: Vec<f32> = (0..len(secs))
+        .map(|i| {
+            let t = i as f32 / secs / SR;
+            let f = c + 55.0 * (TAU * 1.5 * t + a).sin() + 25.0 * (TAU * 4.0 * t + b).sin();
+            phase += TAU * f.max(30.0) / SR;
+            // A sawtooth, scraped: lots of harmonics, jittered in amplitude.
+            let saw = (phase / TAU).fract() * 2.0 - 1.0;
+            let scrape = 0.6 + 0.4 * noise(&mut rng);
+            lp.run(saw * scrape) * (TAU * 0.5 * t).sin().abs().powf(0.7)
+        })
+        .collect();
+    let mut out = out;
+    fade_edges(&mut out, 0.05);
+    normalize(out, 0.4)
+}
+
+/// A man's voice, roughly: a buzzing glottal source shaped by two formants.
+/// `shout` is a drawn-out "hey!"; otherwise a short grunt of pain.
+fn raider_voice(mut rng: Rng, v: f32, shout: bool) -> Vec<f32> {
+    let secs = if shout { 0.55 + 0.15 * v } else { 0.2 + 0.08 * v };
+    let f0 = 105.0 + 28.0 * v + rng.range(-5.0, 5.0);
+    let mut phase = 0.0f32;
+    let mut f1 = BandPass::new(450.0, 820.0);
+    let mut f2 = BandPass::new(900.0, 1500.0);
+    let mut breath = LowPass::new(3000.0);
+    let out: Vec<f32> = (0..len(secs))
+        .map(|i| {
+            let t = i as f32 / SR;
+            let u = t / secs;
+            // Pitch: a shout rises then falls; a grunt drops.
+            let pitch = if shout { f0 * (1.0 + 0.5 * (std::f32::consts::PI * u).sin() + 0.1 * (TAU * 5.0 * t).sin()) } else { f0 * (1.2 - 0.4 * u) };
+            phase += TAU * pitch / SR;
+            // A buzzy pulse train (rich in harmonics).
+            let pulse = (phase.sin() + 0.7 * (2.0 * phase).sin() + 0.5 * (3.0 * phase).sin() + 0.35 * (4.0 * phase).sin() + 0.25 * (5.0 * phase).sin()) * 0.35;
+            // Vowel: "eh-ay" for a shout, "uh" for a grunt: the formants slide.
+            let (c1, c2) = if shout { (550.0 + 250.0 * u, 1300.0 + 900.0 * u) } else { (520.0, 1050.0) };
+            f1 = BandPass::new(c1 * 0.7, c1 * 1.3);
+            f2 = BandPass::new(c2 * 0.75, c2 * 1.25);
+            let voiced = f1.run(pulse) * 2.2 + f2.run(pulse) * 1.4;
+            let air = breath.run(noise(&mut rng)) * 0.08;
+            let amp = if shout { (u * 14.0).min(1.0) * (1.0 - u).powf(0.6) } else { (u * 30.0).min(1.0) * (1.0 - u) };
+            (voiced + air) * amp
+        })
+        .collect();
+    let mut out = out;
+    fade_edges(&mut out, 0.01);
+    normalize(out, 0.5)
+}
+
+/// A boot crunching hard through snow when running: heavier, with a second
+/// crunch under it.
+fn step_snow_run(mut rng: Rng) -> Vec<f32> {
+    let base = step_snow(Rng::new(rng.next_u64()));
+    let mut out = base.clone();
+    out.resize(len(0.34), 0.0);
+    let mut bp = BandPass::new(180.0, 1800.0);
+    let grit: Vec<f32> = (0..len(0.2))
+        .map(|i| {
+            let t = i as f32 / SR;
+            let spike = if rng.chance(0.04) { noise(&mut rng) * 1.4 } else { 0.0 };
+            (bp.run(noise(&mut rng)) * 1.6 + spike * 0.5) * env(t, 0.01, 14.0)
+        })
+        .collect();
+    mix_at(&mut out, 0.045, &grit, 0.9);
+    normalize(out, 0.55)
+}
+
+/// Dry snow below about -10F squeaks and creaks underfoot: a high squeal.
+fn step_snow_squeak(mut rng: Rng, v: f32) -> Vec<f32> {
+    let f0 = 2100.0 + 500.0 * v + rng.range(-120.0, 120.0);
+    let mut phase = 0.0f32;
+    let mut lp = LowPass::new(4200.0);
+    let out: Vec<f32> = (0..len(0.22))
+        .map(|i| {
+            let t = i as f32 / SR;
+            let u = t / 0.22;
+            phase += TAU * (f0 * (1.0 + 0.25 * u + 0.03 * (TAU * 31.0 * t).sin())) / SR;
+            let squeal = phase.sin() * 0.4 + (phase * 2.01).sin() * 0.12;
+            let crunch = lp.run(noise(&mut rng)) * 0.5;
+            (squeal + crunch) * env(t, 0.01, 11.0)
+        })
+        .collect();
+    normalize(out, 0.3)
+}
+
+/// The sound as heard through a wall, a door or a thicket: the highs gone,
+/// the body dulled. (Two cascaded one-pole low-passes.)
+pub fn muffled(samples: &[f32]) -> Vec<f32> {
+    let peak = samples.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    let mut a = LowPass::new(900.0);
+    let mut b = LowPass::new(900.0);
+    let mut out: Vec<f32> = samples.iter().map(|&x| b.run(a.run(x))).collect();
+    let after = out.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    if after > 1e-6 {
+        // Keep roughly the original loudness (a muffled shot is still a loud shot,
+        // just a dull one), but never louder than before.
+        let k = (peak / after).min(2.5);
+        for v in &mut out {
+            *v *= k;
+        }
+    }
+    out
+}
+
+impl Sound {
+    /// Does it matter what's between you and it? Gunfire, voices and boots
+    /// get a muffled version for when you hear them through a wall or trees.
+    pub fn muffleable(self) -> bool {
+        matches!(
+            self,
+            Sound::RifleShot
+                | Sound::ShotgunShot
+                | Sound::RevolverShot
+                | Sound::ShotTailOutdoor
+                | Sound::ShotTailIndoor
+                | Sound::BoltClack
+                | Sound::HammerCock
+                | Sound::Snarl
+                | Sound::Yelp
+                | Sound::Growl
+                | Sound::HowlNear
+                | Sound::HowlFar
+                | Sound::MooseBellow
+                | Sound::MooseGrunt
+                | Sound::Caw
+                | Sound::RaiderShout
+                | Sound::RaiderGrunt
+                | Sound::StepSnow
+                | Sound::StepSnowRun
+                | Sound::StepSnowSqueak
+                | Sound::StepIce
+                | Sound::StepRoad
+                | Sound::StepConcrete
+                | Sound::StepWood
+                | Sound::Hoof
+        )
+    }
+
+    /// The same clip as heard through something in the way.
+    pub fn samples_muffled(self, variant: usize) -> Vec<f32> {
+        muffled(&self.samples(variant))
+    }
+
+    pub fn wav_muffled(self, variant: usize) -> Vec<u8> {
+        encode_wav(&self.samples_muffled(variant))
+    }
+}
+
 /// 16-bit mono PCM WAV file.
 pub fn encode_wav(samples: &[f32]) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
@@ -1578,6 +1972,59 @@ mod tests {
                 assert!(p <= 1.0 + 1e-3, "{sound:?}/{v} clips (peak {p})");
             }
         }
+    }
+
+    #[test]
+    fn muffled_sounds_lose_their_highs_but_not_their_weight() {
+        // Energy above ~2 kHz, as a fraction of the whole (crudely: the high-passed remainder).
+        fn brightness(s: &[f32]) -> f32 {
+            let mut lp = LowPass::new(2000.0);
+            let hi: f32 = s.iter().map(|&x| (x - lp.run(x)).powi(2)).sum();
+            let all: f32 = s.iter().map(|x| x * x).sum::<f32>().max(1e-9);
+            hi / all
+        }
+        for sound in [Sound::RifleShot, Sound::ShotgunShot, Sound::Snarl, Sound::RaiderShout, Sound::StepSnow] {
+            let dry = sound.samples(0);
+            let wet = sound.samples_muffled(0);
+            assert_eq!(dry.len(), wet.len());
+            assert!(brightness(&wet) < brightness(&dry) * 0.5, "{sound:?}: {} vs {}", brightness(&wet), brightness(&dry));
+            let (pd, pw) = (peak(&dry), peak(&wet));
+            assert!(pw > 0.2 * pd && pw <= 1.0 + 1e-3, "{sound:?} {pd} {pw}");
+        }
+        assert!(Sound::RifleShot.muffleable() && !Sound::UiTab.muffleable() && !Sound::WindLow.muffleable());
+    }
+
+    #[test]
+    fn indoor_tails_are_short_and_outdoor_tails_roll_on() {
+        let indoor = Sound::ShotTailIndoor.samples(0);
+        let outdoor = Sound::ShotTailOutdoor.samples(0);
+        assert!(outdoor.len() > indoor.len() * 2, "{} vs {}", outdoor.len(), indoor.len());
+        // When has it fallen below 10% of its peak and stayed there?
+        let settle = |s: &[f32]| {
+            let p = peak(s) * 0.1;
+            s.iter().rposition(|v| v.abs() > p).unwrap_or(0) as f32 / SR
+        };
+        assert!(settle(&indoor) < 0.5, "indoor settles in {}", settle(&indoor));
+        assert!(settle(&outdoor) > 0.8, "outdoor rolls on for {}", settle(&outdoor));
+    }
+
+    #[test]
+    fn guns_have_real_bass_under_the_crack() {
+        // The energy below 120 Hz (a one-pole low-pass at 120 Hz) is a solid share of the shot.
+        for sound in [Sound::RifleShot, Sound::ShotgunShot, Sound::RevolverShot] {
+            let s = sound.samples(0);
+            let mut lp = LowPass::new(120.0);
+            let low: f32 = s.iter().map(|&x| lp.run(x).powi(2)).sum();
+            let all: f32 = s.iter().map(|x| x * x).sum();
+            assert!(low / all > 0.04, "{sound:?} bass share {}", low / all);
+        }
+        // The shotgun is the deepest.
+        let low = |sound: Sound| {
+            let s = sound.samples(0);
+            let mut lp = LowPass::new(120.0);
+            s.iter().map(|&x| lp.run(x).powi(2)).sum::<f32>() / s.iter().map(|x| x * x).sum::<f32>()
+        };
+        assert!(low(Sound::ShotgunShot) > low(Sound::RevolverShot));
     }
 
     #[test]

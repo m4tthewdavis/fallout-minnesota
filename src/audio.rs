@@ -20,12 +20,15 @@ use bevy::audio::{AudioSinkPlayback, SpatialAudioSink, SpatialScale, Volume};
 use bevy::prelude::*;
 
 use crate::player::Player;
+use crate::sim::collision::segment_cover;
+use crate::sim::interiors::{self, Interior};
 use crate::sim::rng::Rng;
 use crate::sim::sfx::{self, approach, Mix, Mood, MusicContext, MusicDirector};
+use crate::sim::soundscape::{self, Shelter};
 use crate::sim::synth::{Bus, Sound};
 use crate::sim::terrain::{self, SHELTERS};
 use crate::sim::weather::Phase;
-use crate::state::{alive, Hostile, Messages, SfxQueue, WeatherRes};
+use crate::state::{alive, Colliders, CurrentInterior, Hostile, Messages, SfxQueue, SfxReq, WeatherRes};
 
 /// The player's volume sliders and mute switch (shown in the Pip-Boy).
 #[derive(Resource, Default)]
@@ -35,22 +38,33 @@ pub struct AudioSettings(pub Mix);
 #[derive(Resource)]
 pub struct GeigerOn(pub bool);
 
-/// Every generated clip: (sound, variant) -> handle.
+/// Every generated clip: (sound, variant, heard through something) -> handle.
+/// Gunfire, voices and boots also have a muffled version for when walls or
+/// trees are in the way.
 #[derive(Resource, Default)]
-struct SoundBank(HashMap<(Sound, usize), Handle<AudioSource>>);
+struct SoundBank(HashMap<(Sound, usize, bool), Handle<AudioSource>>);
 
 impl SoundBank {
-    fn get(&self, sound: Sound, variant: usize) -> Option<Handle<AudioSource>> {
-        self.0.get(&(sound, variant)).cloned()
+    fn get(&self, sound: Sound, variant: usize, muffled: bool) -> Option<Handle<AudioSource>> {
+        // Until the muffled clip has been generated, play the clear one.
+        self.0.get(&(sound, variant, muffled)).or_else(|| self.0.get(&(sound, variant, false))).cloned()
     }
     fn has_all(&self, sounds: &[Sound]) -> bool {
-        sounds.iter().all(|s| (0..s.variants()).all(|v| self.0.contains_key(&(*s, v))))
+        sounds.iter().all(|s| (0..s.variants()).all(|v| self.0.contains_key(&(*s, v, false))))
     }
 }
 
 /// Clips arriving from the generator threads.
 #[derive(Resource)]
-struct BankLoader(Mutex<mpsc::Receiver<(Sound, usize, Vec<u8>)>>);
+struct BankLoader(Mutex<mpsc::Receiver<(Sound, usize, bool, Vec<u8>)>>);
+
+/// Sounds waiting out their delay (the echo of a shot, a bolt's clack).
+#[derive(Resource, Default)]
+struct PendingSfx(Vec<(f32, SfxReq)>);
+
+/// Seconds until the room's next creak or drip.
+#[derive(Resource, Default)]
+struct RoomNoiseTimer(f32);
 
 /// Everything the audio systems remember between frames.
 #[derive(Resource)]
@@ -64,24 +78,32 @@ struct AudioState {
     /// Smoothed volume of each steered loop.
     levels: HashMap<LoopKind, f32>,
     loops_started: bool,
+    /// FMN_AUDIO_LOG=1: say what plays, and why it sounds the way it does.
+    log: bool,
 }
 
 #[derive(Component, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum LoopKind {
+    WindBreeze,
     WindLow,
     WindMid,
     WindHigh,
+    WindHowl,
+    RoomHum,
     Siren,
     Music(Mood),
     PipHum,
 }
 
 impl LoopKind {
-    const ALL: [LoopKind; 8] = [
+    const ALL: [LoopKind; 11] = [
         LoopKind::PipHum,
+        LoopKind::WindBreeze,
         LoopKind::WindLow,
         LoopKind::WindMid,
         LoopKind::WindHigh,
+        LoopKind::WindHowl,
+        LoopKind::RoomHum,
         LoopKind::Siren,
         LoopKind::Music(Mood::Calm),
         LoopKind::Music(Mood::Tense),
@@ -90,9 +112,12 @@ impl LoopKind {
 
     fn sound(self) -> Sound {
         match self {
+            LoopKind::WindBreeze => Sound::WindBreeze,
             LoopKind::WindLow => Sound::WindLow,
             LoopKind::WindMid => Sound::WindMid,
             LoopKind::WindHigh => Sound::WindHigh,
+            LoopKind::WindHowl => Sound::WindHowl,
+            LoopKind::RoomHum => Sound::RoomHum,
             LoopKind::Siren => Sound::Siren,
             LoopKind::PipHum => Sound::PipHum,
             LoopKind::Music(m) => m.sound(),
@@ -115,6 +140,8 @@ impl Plugin for SoundPlugin {
         let mut rng = Rng::new(seed ^ 0xA0D10);
         let director = MusicDirector::new(&mut rng);
         app.init_resource::<SoundBank>()
+            .init_resource::<PendingSfx>()
+            .init_resource::<RoomNoiseTimer>()
             .init_resource::<AudioSettings>()
             .insert_resource(GeigerOn(true))
             .insert_resource(AudioState {
@@ -125,6 +152,7 @@ impl Plugin for SoundPlugin {
                 gust_timer: 8.0,
                 levels: HashMap::new(),
                 loops_started: false,
+                log: std::env::var("FMN_AUDIO_LOG").is_ok(),
             })
             .add_systems(Startup, start_generators)
             .add_systems(
@@ -132,6 +160,7 @@ impl Plugin for SoundPlugin {
                 (
                     receive_sounds,
                     audio_controls,
+                    room_noises,
                     play_queued,
                     start_loops,
                     steer_loops,
@@ -148,7 +177,7 @@ impl Plugin for SoundPlugin {
 fn start_generators(mut commands: Commands) {
     let (tx, rx) = mpsc::channel();
     // Screenshot mode has no audio device and wants every core for rendering.
-    if std::env::var("FMN_SHOT").is_ok() {
+    if std::env::var("FMN_SHOT").is_ok() && std::env::var("FMN_AUDIO_LOG").is_err() {
         commands.insert_resource(BankLoader(Mutex::new(rx)));
         return;
     }
@@ -159,8 +188,14 @@ fn start_generators(mut commands: Commands) {
             let mut i = 0;
             for &s in Sound::ALL {
                 for v in 0..s.variants() {
-                    if i % threads == t && tx.send((s, v, s.wav(v))).is_err() {
-                        return;
+                    if i % threads == t {
+                        if tx.send((s, v, false, s.wav(v))).is_err() {
+                            return;
+                        }
+                        // The same clip as heard through a wall or a thicket.
+                        if s.muffleable() && tx.send((s, v, true, s.wav_muffled(v))).is_err() {
+                            return;
+                        }
                     }
                     i += 1;
                 }
@@ -172,11 +207,11 @@ fn start_generators(mut commands: Commands) {
 
 fn receive_sounds(loader: Res<BankLoader>, mut bank: ResMut<SoundBank>, mut sources: ResMut<Assets<AudioSource>>) {
     let Ok(rx) = loader.0.lock() else { return };
-    let total: usize = Sound::ALL.iter().map(|s| s.variants()).sum();
-    for _ in 0..12 {
+    let total: usize = Sound::ALL.iter().map(|s| s.variants() * if s.muffleable() { 2 } else { 1 }).sum();
+    for _ in 0..16 {
         match rx.try_recv() {
-            Ok((sound, variant, wav)) => {
-                bank.0.insert((sound, variant), sources.add(AudioSource { bytes: wav.into() }));
+            Ok((sound, variant, muffled, wav)) => {
+                bank.0.insert((sound, variant, muffled), sources.add(AudioSource { bytes: wav.into() }));
                 if bank.0.len() == total {
                     info!("sound bank ready ({total} clips)");
                 }
@@ -222,21 +257,59 @@ fn audio_controls(
     }
 }
 
+/// Play what gameplay code asked for: work out how much of each positioned
+/// sound gets through the trees and walls between it and you (and use the
+/// dull version of the clip if not much), give gunshots the echo of the place
+/// they were fired in, and hold back anything with a delay.
+#[allow(clippy::too_many_arguments)]
 fn play_queued(
     mut commands: Commands,
     real: Res<Time<Real>>,
     bank: Res<SoundBank>,
     settings: Res<AudioSettings>,
+    colliders: Res<Colliders>,
+    interior: Res<CurrentInterior>,
     mut queue: ResMut<SfxQueue>,
+    mut pending: ResMut<PendingSfx>,
     mut state: ResMut<AudioState>,
+    listener: Query<&Transform, With<Player>>,
 ) {
     let now = real.elapsed_secs();
     let state = &mut *state;
-    for req in queue.0.drain(..) {
-        let Some(play) = state.player.request(req.sound, now, req.gain, &mut state.rng) else {
+    let here = listener.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
+    let listener_room = interior.0;
+
+    // Anything whose time has come joins this frame's requests.
+    let mut due: Vec<SfxReq> = Vec::new();
+    pending.0.retain(|(at, req)| {
+        if *at <= now {
+            due.push(*req);
+            false
+        } else {
+            true
+        }
+    });
+    let mut echoes: Vec<SfxReq> = Vec::new();
+    for req in queue.0.drain(..).chain(due) {
+        if req.delay > 0.0 {
+            pending.0.push((now + req.delay, SfxReq { delay: 0.0, ..req }));
+            continue;
+        }
+        // What stands between the sound and you?
+        let source_room = req.pos.and_then(|p| interiors::zone_at(p.x, p.z));
+        let (heard, muffled) = match req.pos {
+            Some(p) if p.distance(here) < 160.0 || source_room != listener_room => {
+                let (trees, walls) = segment_cover((here.x, here.z), (p.x, p.z), &colliders.0);
+                let h = soundscape::heard(soundscape::occlusion(source_room, listener_room, trees, walls));
+                (h.gain, h.muffled)
+            }
+            _ => (1.0, false),
+        };
+        let Some(play) = state.player.request(req.sound, now, req.gain * heard, &mut state.rng) else {
             continue;
         };
-        let Some(handle) = bank.get(req.sound, play.variant) else {
+        let muffled = muffled && req.sound.muffleable();
+        let Some(handle) = bank.get(req.sound, play.variant, muffled) else {
             continue; // still being generated
         };
         let prof = req.sound.profile();
@@ -244,21 +317,46 @@ fn play_queued(
         if volume < 0.002 {
             continue;
         }
-        let settings = PlaybackSettings::DESPAWN
-            .with_volume(Volume::Linear(volume))
-            .with_speed(play.speed);
-        match (req.pos, prof.spatial_ref) {
+        // A gunshot leaves an echo: long and rolling in the open, short and bright in a room.
+        if soundscape::is_gunshot(req.sound) {
+            let room = if req.pos.is_some() { source_room } else { listener_room };
+            let gain = req.gain * soundscape::tail_gain(req.sound);
+            let tail = SfxReq { sound: soundscape::shot_tail(room), gain, delay: if room.is_some() { 0.025 } else { 0.07 }, ..req };
+            echoes.push(tail);
+        }
+        if state.log {
+            info!("sfx: {:?} v{} muffled={muffled} heard={heard:.2} volume={volume:.2} speed={:.2} spatial={:?} room={:?}->{:?} at={:?}", req.sound, play.variant, play.speed, prof.spatial_ref.or(req.reference), source_room, listener_room, req.pos);
+        }
+        let playback = PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)).with_speed(play.speed);
+        match (req.pos, prof.spatial_ref.or(req.reference)) {
             (Some(pos), Some(reference)) => {
                 commands.spawn((
                     AudioPlayer::new(handle),
-                    settings.with_spatial(true).with_spatial_scale(SpatialScale::new(1.0 / reference)),
+                    playback.with_spatial(true).with_spatial_scale(SpatialScale::new(1.0 / reference)),
                     Transform::from_translation(pos),
                 ));
             }
             _ => {
-                commands.spawn((AudioPlayer::new(handle), settings));
+                commands.spawn((AudioPlayer::new(handle), playback));
             }
         }
+    }
+    for e in echoes {
+        pending.0.push((now + e.delay, SfxReq { delay: 0.0, ..e }));
+    }
+}
+
+/// The random small noises a room makes: timber creaking in a fish house,
+/// drips in the stockroom.
+fn room_noises(real: Res<Time<Real>>, interior: Res<CurrentInterior>, mut timer: ResMut<RoomNoiseTimer>, mut state: ResMut<AudioState>, mut sfx: ResMut<SfxQueue>) {
+    let Some((sound, lo, hi)) = soundscape::room_noise(interior.0) else {
+        timer.0 = 3.0;
+        return;
+    };
+    timer.0 -= real.delta_secs();
+    if timer.0 <= 0.0 {
+        timer.0 = state.rng.range(lo, hi);
+        sfx.play_gain(sound, state.rng.range(0.6, 1.0));
     }
 }
 
@@ -273,7 +371,7 @@ fn start_loops(mut commands: Commands, bank: Res<SoundBank>, mut state: ResMut<A
     }
     state.loops_started = true;
     for kind in LoopKind::ALL {
-        if let Some(handle) = bank.get(kind.sound(), 0) {
+        if let Some(handle) = bank.get(kind.sound(), 0, false) {
             commands.spawn((
                 AudioPlayer::new(handle),
                 PlaybackSettings::LOOP.with_volume(Volume::Linear(0.0)),
@@ -294,6 +392,7 @@ fn steer_loops(
     hostiles: Query<&Transform, (With<Hostile>, Without<Player>)>,
     mut sinks: Query<(&mut AudioSink, &LoopKind)>,
     pip: Res<crate::state::PipOpen>,
+    interior: Res<CurrentInterior>,
 ) {
     let dt = real.delta_secs().min(0.25);
     let phase = weather.weather.phase;
@@ -302,8 +401,10 @@ fn steer_loops(
     let w = state.wind;
 
     let ppos = player.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
-    let sheltered = terrain::cover_at(ppos.x, ppos.z).sheltered();
-    let muffle = if sheltered { 0.45 } else { 1.0 };
+    // Layers of wind: breeze, rumble, rush, hiss and (in a blizzard) a howl; behind
+    // walls only the dull rumble gets through.
+    let mix = soundscape::wind_mix(w, Shelter::of(interior.0));
+    let hum = soundscape::room_hum_level(interior.0);
 
     let enemy_dist = hostiles
         .iter()
@@ -319,9 +420,12 @@ fn steer_loops(
 
     for (mut sink, kind) in &mut sinks {
         let (target, bus) = match kind {
-            LoopKind::WindLow => ((0.45 + 0.5 * w) * 0.6, Bus::Ambience),
-            LoopKind::WindMid => ((0.08 + 0.9 * w) * 0.55 * muffle, Bus::Ambience),
-            LoopKind::WindHigh => ((0.03 + 0.95 * w * w) * 0.5 * muffle, Bus::Ambience),
+            LoopKind::WindBreeze => (mix.breeze, Bus::Ambience),
+            LoopKind::WindLow => (mix.low, Bus::Ambience),
+            LoopKind::WindMid => (mix.mid, Bus::Ambience),
+            LoopKind::WindHigh => (mix.high, Bus::Ambience),
+            LoopKind::WindHowl => (mix.howl, Bus::Ambience),
+            LoopKind::RoomHum => (hum, Bus::Ambience),
             LoopKind::Siren => (if phase == Phase::Warning { 1.0 } else { 0.0 } * Sound::Siren.profile().volume, Bus::Ambience),
             LoopKind::Music(m) => (music[*m as usize], Bus::Music),
             LoopKind::PipHum => (if pip.0 { Sound::PipHum.profile().volume } else { 0.0 }, Bus::Sfx),
@@ -360,9 +464,17 @@ fn fire_loops(
     let p = ptf.translation;
     let prof = Sound::Fire.profile();
     let gain = prof.volume * settings.0.gain(prof.bus);
+    // Fires 0..4 are the barrels beside the fish houses; 4..8 are the stoves inside them.
     let fire_pos = |i: usize| {
-        let (sx, sz) = SHELTERS[i];
-        Vec3::new(sx + 1.5, terrain::walk_height(sx + 1.5, sz) + 1.1, sz)
+        if i < SHELTERS.len() {
+            let (sx, sz) = SHELTERS[i];
+            Vec3::new(sx + 1.5, terrain::walk_height(sx + 1.5, sz) + 1.1, sz)
+        } else {
+            let room = Interior::FishHouse((i - SHELTERS.len()) as u8);
+            let (hw, hd) = room.half();
+            let (x, z) = room.at(hw - 0.75, -hd + 0.8);
+            Vec3::new(x, interiors::FLOOR_Y + 1.0, z)
+        }
     };
 
     for (entity, fire, mut sink) in &mut fires {
@@ -373,11 +485,11 @@ fn fire_loops(
         }
     }
     let running: Vec<usize> = fires.iter().map(|(_, f, _)| f.0).chain(pending.iter().map(|f| f.0)).collect();
-    for i in 0..SHELTERS.len() {
+    for i in 0..SHELTERS.len() * 2 {
         if running.contains(&i) || fire_pos(i).distance(p) > 45.0 {
             continue;
         }
-        let Some(handle) = bank.get(Sound::Fire, i % Sound::Fire.variants()) else { continue };
+        let Some(handle) = bank.get(Sound::Fire, i % Sound::Fire.variants(), false) else { continue };
         let reference = prof.spatial_ref.unwrap_or(5.0);
         commands.spawn((
             AudioPlayer::new(handle),

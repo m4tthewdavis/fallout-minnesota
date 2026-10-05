@@ -10,7 +10,6 @@ use bevy::window::{CursorGrabMode, PrimaryWindow};
 use crate::sim::collision;
 use crate::sim::daynight::Clock;
 use crate::sim::survival::{self, Aid, Exposure, Survival};
-use crate::sim::sfx;
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE, PLAYER_SPAWN};
 use crate::sim::weather::Weather;
@@ -182,6 +181,8 @@ fn move_player(
     mut sfx: ResMut<SfxQueue>,
     mut fx: ResMut<FxQueue>,
     mut rng: ResMut<RngRes>,
+    weather: Res<WeatherRes>,
+    clock: Res<ClockRes>,
     mut q: Query<(&mut Transform, &mut Player)>,
 ) {
     let dt = time.delta_secs();
@@ -229,7 +230,10 @@ fn move_player(
             let base = if p.sprinting { STEP_SPRINT_SECS } else { STEP_WALK_SECS };
             p.step_timer = base * rng.0.range(0.9, 1.1);
             let surface = terrain::surface_at(tf.translation.x, tf.translation.z);
-            sfx.play_gain(sfx::step_sound(surface), if p.sprinting { 1.0 } else { 0.7 });
+            // Running crunches harder than walking, and in deep cold dry snow squeaks.
+            let temp = weather.weather.conditions().air_temp_f + clock.0.temp_offset_f();
+            let (sound, gain) = crate::sim::soundscape::footstep(surface, p.sprinting, temp, rng.0.f32());
+            sfx.play_gain(sound, gain);
             fx.spawn(Fx::Footstep(crate::particles::feet(tf.translation) + wish.normalize() * 0.3));
         }
     } else {
