@@ -122,6 +122,7 @@ pub(crate) fn interact(
     mut sfx: ResMut<SfxQueue>,
     mut prompt: ResMut<Prompt>,
     claim: Res<FixtureClaim>,
+    perks: Res<crate::quest::Perks>,
     player: Query<&Transform, With<Player>>,
     mut containers: Query<(&Transform, &mut Container), Without<Player>>,
     benches: Query<&Transform, (With<Workbench>, Without<Player>)>,
@@ -142,7 +143,12 @@ pub(crate) fn interact(
         if keys.just_pressed(KeyCode::KeyE) {
             c.opened = true;
             let Game { inv, arsenal, .. } = &mut *game;
+            let scrap_before = inv.scrap;
             let gained = loot::grant(&c.loot, inv, arsenal);
+            if inv.scrap > scrap_before {
+                // Scrounger.
+                inv.scrap += perks.0.extra_scrap;
+            }
             msgs.show(format!("{}: {}", c.name, gained.join(", ")), 5.0);
             sfx.play_at(Sound::ContainerOpen, tf.translation + Vec3::Y * 0.5);
             commands.entity(c.ring).insert(Visibility::Hidden);

@@ -30,6 +30,7 @@ mod particles;
 mod pipboy;
 mod player;
 mod props;
+mod quest;
 mod saves;
 mod sim;
 mod sky;
@@ -92,6 +93,6 @@ fn main() {
             interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, saves::SavePlugin, devshot::DevShotPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, devshot::DevShotPlugin))
         .run();
 }

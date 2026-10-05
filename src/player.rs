@@ -261,6 +261,7 @@ fn survival_tick(
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
     mut fx: ResMut<FxQueue>,
+    perks: Res<crate::quest::Perks>,
     mut q: Query<(&mut Transform, &mut Player)>,
 ) {
     let dt = time.delta_secs();
@@ -305,8 +306,8 @@ fn survival_tick(
         near_heat: cover.warm(),
         rads_per_sec: terrain::ambient_rads(x, z) + if sheltered { 0.0 } else { cond.rads_per_sec },
         sprinting: p.sprinting,
-        insulation: game.inv.insulation(),
-        rad_resist: 0.0,
+        insulation: game.inv.insulation() + perks.0.insulation,
+        rad_resist: perks.0.rad_resist,
     };
     if let Some(cause) = game.survival.tick(&exposure, dt) {
         game.death = Some(cause);
@@ -323,8 +324,14 @@ fn survival_tick(
 }
 
 /// Use one aid item and tell the player what happened. Returns true if it was used.
-pub fn use_aid(aid: Aid, game: &mut Game, msgs: &mut Messages) -> bool {
+pub fn use_aid(aid: Aid, game: &mut Game, msgs: &mut Messages, heal_mult: f32) -> bool {
+    let before = game.survival.health;
     let result = survival::use_aid(aid, &mut game.inv, &mut game.survival);
+    if result.used() && heal_mult > 1.0 {
+        // Field Medic: the healing goes further.
+        let healed = game.survival.health - before;
+        game.survival.heal(healed * (heal_mult - 1.0));
+    }
     let secs = if result.used() && aid == Aid::Hotdish { 3.0 } else if result.used() { 2.0 } else { 1.5 };
     msgs.show(result.message(), secs);
     result.used()
@@ -335,11 +342,12 @@ fn use_items(
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
+    perks: Res<crate::quest::Perks>,
     q: Query<&Transform, With<Player>>,
 ) {
     for (key, aid) in [(KeyCode::KeyH, Aid::Stimpak), (KeyCode::KeyX, Aid::RadAway), (KeyCode::KeyF, Aid::Hotdish)] {
         if keys.just_pressed(key) {
-            use_aid(aid, &mut game, &mut msgs);
+            use_aid(aid, &mut game, &mut msgs, perks.0.aid_heal);
         }
     }
     let Game { inv, .. } = &mut *game;

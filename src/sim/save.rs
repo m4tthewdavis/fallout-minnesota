@@ -508,7 +508,8 @@ impl SaveGame {
     pub fn level(&self) -> u32 {
         let places = self.fog.found.iter().filter(|f| **f).count();
         let upgrades = self.arsenal.weapons.iter().map(|w| w.upgrades.iter().filter(|u| **u).count()).sum();
-        progress::level(progress::experience(self.kills, places, upgrades, self.inventory.has_frostfang_coat)).0
+        let flags: super::quest::Flags = self.flags.iter().cloned().collect();
+        progress::level(progress::experience(self.kills, places, upgrades, self.inventory.has_frostfang_coat, super::quest::quest_xp(&flags))).0
     }
 
     /// One line for a slot in the menu: day and time, level, place, play time.

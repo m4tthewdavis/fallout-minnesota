@@ -18,7 +18,10 @@ use crate::assets::GameAssets;
 use crate::interact::{spawn_container, ContainerAssets, FixtureClaim};
 use crate::meshes::to_mesh_tangents;
 use crate::player::{Player, EYE_HEIGHT};
-use crate::saves::AutosaveRequest;
+use crate::quest::{Perks, StartTalk, UseSpot};
+use crate::saves::{AutosaveRequest, StoryFlags};
+use crate::sim::dialogue::Npc;
+use crate::sim::quest::{self, Spot, Stage};
 use crate::sim::collision::Shape;
 use crate::sim::combat::WeaponKind;
 use crate::sim::interiors::{self, Fade, Interior};
@@ -36,25 +39,33 @@ const REACH: f32 = 1.9;
 struct InteriorRoot(Interior);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Door {
+pub(crate) enum Door {
     Enter(Interior),
     Leave(Interior),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum FixtureKind {
+pub(crate) enum FixtureKind {
     Door(Door),
     Bunk,
     Stove,
-    Terminal,
+    /// A survivor to talk to, or the Overseer's terminal.
+    Talk(Npc),
+    /// A place the quest line asks you to use, out in the world.
+    Spot(Spot),
 }
 
 /// Something you can use with E. `space` is where it is: a room, or `None`
 /// for out in the world.
 #[derive(Component)]
-struct Fixture {
-    kind: FixtureKind,
-    space: Option<Interior>,
+pub(crate) struct Fixture {
+    pub(crate) kind: FixtureKind,
+    pub(crate) space: Option<Interior>,
+}
+
+/// Put something usable in the world (not in a room) at `pos`.
+pub(crate) fn spawn_spot(commands: &mut Commands, pos: Vec3, spot: Spot) {
+    commands.spawn((Transform::from_translation(pos), Fixture { kind: FixtureKind::Spot(spot), space: None }));
 }
 
 /// What a fade in progress is for.
@@ -112,6 +123,9 @@ struct Kit {
     strip: Handle<StandardMaterial>,
     screen: Handle<StandardMaterial>,
     cold_light: Handle<StandardMaterial>,
+    skin: Handle<StandardMaterial>,
+    /// Parkas for the four survivors, by fish house.
+    parkas: [Handle<StandardMaterial>; 4],
 }
 
 fn make_kit(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> Kit {
@@ -132,6 +146,13 @@ fn make_kit(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> Ki
         strip: glow(materials, Color::srgb(0.9, 0.95, 1.0), LinearRgba::rgb(3.0, 3.4, 4.0)),
         screen: glow(materials, Color::srgb(1.0, 0.6, 0.2), LinearRgba::rgb(2.4, 1.2, 0.3)),
         cold_light: glow(materials, Color::srgb(0.7, 0.8, 0.95), LinearRgba::rgb(0.9, 1.2, 1.8)),
+        skin: mat(materials, Color::srgb(0.72, 0.55, 0.44)),
+        parkas: [
+            mat(materials, Color::srgb(0.75, 0.38, 0.1)),
+            mat(materials, Color::srgb(0.22, 0.34, 0.2)),
+            mat(materials, Color::srgb(0.18, 0.28, 0.5)),
+            mat(materials, Color::srgb(0.55, 0.45, 0.25)),
+        ],
     }
 }
 
@@ -291,6 +312,33 @@ fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, 
     }
     cylinder(r, meshes, &k.rust, [hw - 0.15, 0.55, 0.9], 0.04, 1.1);
     light(r, Color::srgb(1.0, 0.85, 0.6), 60_000.0, 6.0, [0.0, 2.2, 1.2]);
+    // The survivor who lives here, by the table and facing the door.
+    survivor(r, meshes, k, i, [-0.95, 0.0, 0.3], PI + 0.5);
+    solid.push(Shape::Circle { x: ox - 0.95, z: oz + 0.3, r: 0.4 });
+    r.spawn((Transform::from_xyz(-0.95, 1.0, 0.3), Fixture { kind: FixtureKind::Talk(Npc::for_house(i)), space: Some(room) }));
+}
+
+/// A person in a parka and hood, standing at `at` (the floor), facing `yaw`
+/// (0 faces north, -z).
+fn survivor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, house: u8, at: [f32; 3], yaw: f32) {
+    let parka = &k.parkas[house as usize % 4];
+    r.spawn((Transform::from_xyz(at[0], at[1], at[2]).with_rotation(Quat::from_rotation_y(yaw)), Visibility::default())).with_children(|p| {
+        let mut part = |p: &mut ChildSpawnerCommands, mesh: Mesh, material: &Handle<StandardMaterial>, at: Vec3, rot: Quat| {
+            p.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(at).with_rotation(rot)));
+        };
+        for x in [-0.1f32, 0.1] {
+            part(p, Cuboid::new(0.16, 0.8, 0.2).into(), &k.dark, Vec3::new(x, 0.4, 0.0), Quat::IDENTITY);
+        }
+        // Parka body and arms.
+        part(p, Capsule3d::new(0.24, 0.42).into(), parka, Vec3::new(0.0, 1.12, 0.0), Quat::IDENTITY);
+        for x in [-0.3f32, 0.3] {
+            part(p, Capsule3d::new(0.075, 0.45).into(), parka, Vec3::new(x, 1.1, -0.06), Quat::from_rotation_x(0.25));
+        }
+        // Head with the hood pushed back, and a dark scarf.
+        part(p, Sphere::new(0.125).into(), &k.skin, Vec3::new(0.0, 1.66, -0.02), Quat::IDENTITY);
+        part(p, Sphere::new(0.17).into(), parka, Vec3::new(0.0, 1.68, 0.06), Quat::IDENTITY);
+        part(p, Cylinder::new(0.17, 0.08).into(), &k.dark, Vec3::new(0.0, 1.5, -0.01), Quat::IDENTITY);
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -372,7 +420,7 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
     ));
     light(r, Color::srgb(1.0, 0.65, 0.3), 90_000.0, 6.0, [0.0, 1.5, -hd + 2.0]);
     solid.push(Shape::rect_centered(ox, oz - hd + 1.0, 3.6, 1.2));
-    r.spawn((Transform::from_xyz(0.0, 1.0, -hd + 1.9), Fixture { kind: FixtureKind::Terminal, space: Some(room) }));
+    r.spawn((Transform::from_xyz(0.0, 1.0, -hd + 1.9), Fixture { kind: FixtureKind::Talk(Npc::Overseer), space: Some(room) }));
     // An office chair, two benches along the east wall.
     block(r, meshes, &k.dark, [0.0, 0.5, -hd + 2.2], [0.5, 0.08, 0.5]);
     block(r, meshes, &k.dark, [0.0, 0.85, -hd + 2.42], [0.5, 0.6, 0.07]);
@@ -520,6 +568,10 @@ fn use_fixtures(
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
+    flags: Res<StoryFlags>,
+    perks: Res<Perks>,
+    mut talks: EventWriter<StartTalk>,
+    mut spots: EventWriter<UseSpot>,
     player: Query<&Transform, With<Player>>,
     fixtures: Query<(&GlobalTransform, &Fixture)>,
 ) {
@@ -542,7 +594,15 @@ fn use_fixtures(
         FixtureKind::Door(Door::Leave(room)) => format!("[E] Leave {}", room.name()),
         FixtureKind::Bunk => "[E] Sleep until morning (saves your game)".to_string(),
         FixtureKind::Stove => format!("[E] Heat a hotdish on the stove ({} left)", game.inv.hotdish),
-        FixtureKind::Terminal => "[E] Use the Overseer's terminal".to_string(),
+        FixtureKind::Talk(Npc::Overseer) => match quest::stage(&flags.0) {
+            Stage::Unstarted => "[E] Play the Overseer's recording",
+            Stage::Active => "[E] Check the Overseer's log",
+            Stage::ReadyToReport => "[E] Report to the Overseer",
+            Stage::Complete => "[E] Use the Overseer's terminal",
+        }
+        .to_string(),
+        FixtureKind::Talk(npc) => format!("[E] Talk to {}", npc.name()),
+        FixtureKind::Spot(spot) => spot.prompt(&flags.0, game.inv.scrap),
     };
     prompt.0.push(line);
     if !keys.just_pressed(KeyCode::KeyE) {
@@ -558,13 +618,19 @@ fn use_fixtures(
         }
         FixtureKind::Stove => {
             let Game { inv, survival, .. } = &mut *game;
+            let before = survival.health;
             let result = interiors::cook_hotdish(inv, survival);
+            if result.used() && perks.0.aid_heal > 1.0 {
+                survival.heal((survival.health - before) * (perks.0.aid_heal - 1.0));
+            }
             msgs.show(result.message(), 3.0);
             sfx.play(if result.used() { Sound::PickupFood } else { Sound::DryClick });
         }
-        FixtureKind::Terminal => {
-            msgs.show("The terminal hums and shows the Vault 143 logo. Nothing new to report yet.", 3.5);
-            sfx.play(Sound::UiTab);
+        FixtureKind::Talk(npc) => {
+            talks.write(StartTalk(npc));
+        }
+        FixtureKind::Spot(spot) => {
+            spots.write(UseSpot(spot));
         }
     }
 }

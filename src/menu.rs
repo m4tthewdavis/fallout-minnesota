@@ -221,6 +221,7 @@ fn menu_system(
     time: Res<Time<Real>>,
     keys: Res<ButtonInput<KeyCode>>,
     pip: Res<PipOpen>,
+    talking: Res<crate::state::Talking>,
     game: Res<Game>,
     slots: Res<SlotSummaries>,
     mut paused: ResMut<Paused>,
@@ -232,11 +233,14 @@ fn menu_system(
     mut exit: EventWriter<AppExit>,
     rows: Query<(&MenuRow, &Interaction, &RelativeCursorPosition), Changed<Interaction>>,
     mut pip_was_open: Local<bool>,
+    mut talk_was_open: Local<bool>,
 ) {
     let esc = keys.just_pressed(KeyCode::Escape);
     // Esc that just closed the Pip-Boy must not also open the menu.
-    let pip_busy = pip.0 || *pip_was_open;
+    // The same goes for Esc that just left a conversation.
+    let pip_busy = pip.0 || *pip_was_open || talking.0 || *talk_was_open;
     *pip_was_open = pip.0;
+    *talk_was_open = talking.0;
     if !paused.0 {
         if esc && !pip_busy {
             info!("menu: opened");

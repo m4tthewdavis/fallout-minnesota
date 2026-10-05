@@ -48,11 +48,13 @@ fn setup_fx(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materi
     });
 }
 
-fn weapon_timers(time: Res<Time>, mut game: ResMut<Game>, mut msgs: ResMut<Messages>) {
+fn weapon_timers(time: Res<Time>, perks: Res<crate::quest::Perks>, mut game: ResMut<Game>, mut msgs: ResMut<Messages>) {
     let dt = time.delta_secs();
     let was_jammed = game.weapon().jammed;
     game.arsenal.tick(dt);
-    if game.weapon_mut().tick(dt) && was_jammed {
+    // Quick Hands: a reload in hand runs faster.
+    let held_dt = if game.weapon().is_reloading() && !was_jammed { dt / perks.0.reload_time } else { dt };
+    if game.weapon_mut().tick(held_dt) && was_jammed {
         msgs.show("Jam cleared.", 1.5);
     }
     game.hurt_flash = (game.hurt_flash - dt * 1.5).max(0.0);

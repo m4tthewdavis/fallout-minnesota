@@ -1,9 +1,9 @@
 //! Experience and level, shown on the Pip-Boy. You earn XP for kills,
 //! places discovered, weapon upgrades and crafting your coat.
 
-/// Total XP for what you've done so far.
-pub fn experience(kills: u32, places: usize, upgrades: usize, coat: bool) -> u32 {
-    kills * 25 + places as u32 * 20 + upgrades as u32 * 15 + if coat { 40 } else { 0 }
+/// Total XP for what you've done so far; `quest` is what the quest line has paid out.
+pub fn experience(kills: u32, places: usize, upgrades: usize, coat: bool, quest: u32) -> u32 {
+    kills * 25 + places as u32 * 20 + upgrades as u32 * 15 + if coat { 40 } else { 0 } + quest
 }
 
 /// XP needed to reach `level` (level 1 needs none, then 100, 300, 600...).
@@ -31,7 +31,8 @@ mod tests {
         assert_eq!(level(99).0, 1);
         assert_eq!(level(100), (2, 0, 200));
         assert_eq!(level(650), (4, 50, 400));
-        assert!(experience(4, 3, 1, true) > experience(4, 3, 1, false));
-        assert_eq!(experience(0, 0, 0, false), 0);
+        assert!(experience(4, 3, 1, true, 0) > experience(4, 3, 1, false, 0));
+        assert_eq!(experience(0, 0, 0, false, 0), 0);
+        assert_eq!(experience(0, 0, 0, false, 80), 80, "quest XP counts");
     }
 }

@@ -8,7 +8,7 @@
 //!   condition) and S.P.E.C.I.A.L.
 //! * ITEMS: WEAPONS, APPAREL and AID (Enter uses the selected aid item).
 //! * DATA: WORLD MAP (the fogged terrain map with markers and a cursor) and
-//!   NOTES (objectives, places, settings).
+//!   NOTES (the quest, objectives, perks, places).
 //!
 //! Keys: 1 2 3 or the buttons under the screen pick STATS / ITEMS / DATA,
 //! Q and E (or clicking) change the page along the bottom, W/S or the arrows
@@ -25,7 +25,6 @@ use bevy::ui::{FocusPolicy, RelativeCursorPosition};
 use bevy::window::PrimaryWindow;
 
 use crate::assets::GameAssets;
-use crate::audio::{AudioSettings, GeigerOn};
 use crate::player::{set_grab, use_aid, Player};
 use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::sim::mapdata::{self, Fog, Kind};
@@ -33,6 +32,8 @@ use crate::menu::{SaveRequest, SlotSummaries};
 use crate::sim::menu::{slot_name, AUTOSAVE, QUICKSAVE, SLOTS};
 use crate::sim::pipnav::{Layout, Main, Nav, Page};
 use crate::sim::progress;
+use crate::sim::quest;
+use crate::saves::StoryFlags;
 use crate::sim::survival::{Aid, Exposure, Inventory, Survival};
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
@@ -658,6 +659,7 @@ fn toggle_pipboy(
     keys: Res<ButtonInput<KeyCode>>,
     mut open: ResMut<PipOpen>,
     paused: Res<crate::state::Paused>,
+    talking: Res<crate::state::Talking>,
     game: Res<Game>,
     mut st: ResMut<PipState>,
     trees: Res<TreePositions>,
@@ -668,7 +670,7 @@ fn toggle_pipboy(
     mut base: Query<&mut ImageNode, With<MapBase>>,
     player: Query<&Transform, With<Player>>,
 ) {
-    if paused.0 {
+    if paused.0 || talking.0 {
         return;
     }
     let want_toggle = keys.just_pressed(KeyCode::Tab) || keys.just_pressed(KeyCode::KeyM);
@@ -834,6 +836,7 @@ fn pipboy_input(
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     slots: Res<SlotSummaries>,
+    perks: Res<crate::quest::Perks>,
     mut saves: EventWriter<SaveRequest>,
     player: Query<&Transform, With<Player>>,
 ) {
@@ -859,7 +862,7 @@ fn pipboy_input(
         st.nav.clamp_selection(count);
         if st.nav.page == Page::Aid && (keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space)) {
             let aid = Aid::ALL[st.nav.selected_row().min(2)];
-            if use_aid(aid, &mut game, &mut msgs) {
+            if use_aid(aid, &mut game, &mut msgs, perks.0.aid_heal) {
                 sfx.play(Sound::PickupMed);
             } else {
                 sfx.play(Sound::DryClick);
@@ -1005,16 +1008,16 @@ fn bar(v: f32, width: usize) -> String {
     format!("[{}{}]", "#".repeat(n), "-".repeat(width - n))
 }
 
-fn total_upgrades(game: &Game) -> usize {
+pub(crate) fn total_upgrades(game: &Game) -> usize {
     WeaponKind::ALL.iter().filter(|k| game.arsenal.owned[k.slot()]).map(|k| Upgrade::ALL.iter().filter(|u| game.arsenal.get(*k).has_upgrade(**u)).count()).sum()
 }
 
 /// Header: level and XP, vitals, scrap and the date.
-fn update_header(st: Res<PipState>, game: Res<Game>, clock: Res<ClockRes>, mut q: Query<&mut Text, With<HeaderInfo>>) {
+fn update_header(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, clock: Res<ClockRes>, mut q: Query<&mut Text, With<HeaderInfo>>) {
     let Ok(mut t) = q.single_mut() else { return };
     let s = &game.survival;
     let places = st.fog.landmarks_found.iter().filter(|f| **f).count();
-    let xp = progress::experience(game.kills, places, total_upgrades(&game), game.inv.has_frostfang_coat);
+    let xp = progress::experience(game.kills, places, total_upgrades(&game), game.inv.has_frostfang_coat, quest::quest_xp(&flags.0));
     let (lvl, into, span) = progress::level(xp);
     t.0 = format!(
         "LVL {}   HP {:.0}/{:.0}   HEAT {:.0}%   RAD {:.0}   XP {}/{}   DAY {} {}",
@@ -1259,8 +1262,8 @@ fn update_list(
     }
 }
 
-/// NOTES: objectives (ticked as you go), places found, and settings.
-fn update_notes(st: Res<PipState>, game: Res<Game>, audio: Res<AudioSettings>, geiger: Res<GeigerOn>, mut q: Query<&mut Text, With<NotesText>>) {
+/// NOTES: the quest log, objectives (ticked as you go), perks and places found.
+fn update_notes(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, mut q: Query<&mut Text, With<NotesText>>) {
     if st.nav.page != Page::Notes {
         return;
     }
@@ -1269,11 +1272,19 @@ fn update_notes(st: Res<PipState>, game: Res<Game>, audio: Res<AudioSettings>, g
     let owned = game.arsenal.owned.iter().filter(|o| **o).count();
     let marks = mapdata::landmarks();
     let found: Vec<&str> = marks.iter().enumerate().filter(|(i, _)| st.fog.landmarks_found[*i]).map(|(_, l)| l.name).collect();
-    let pct = |v: f32| (v * 100.0).round() as i32;
+    let mut quest_text = format!("QUEST: {}\n", quest::TITLE);
+    for l in quest::log(&flags.0) {
+        quest_text.push_str(&format!("  {} {}\n", tick(l.done), l.text));
+    }
+    if let Some(hint) = quest::next_hint(&flags.0) {
+        quest_text.push_str(&format!("  > {hint}\n"));
+    }
+    let perks = quest::perks_taken(&flags.0);
+    let perk_text = if perks.is_empty() { "none yet (one pick per level)".to_string() } else { perks.iter().map(|p| p.name()).collect::<Vec<_>>().join(", ") };
     t.0 = format!(
-        "OBJECTIVES\n  {} Leave Vault 143\n  {} Find a better gun than the pipe rifle ({}/4 weapons)\n  {} Mod a weapon at a fish house workbench\n  {} Craft a Frostfang coat ({}/{} pelts)\n  {} Explore Mille Lacs ({}/{} places, {:.0}% of the map)\n\n\
+        "{quest_text}\nPERKS  {perk_text}\n\nOBJECTIVES\n  {} Leave Vault 143\n  {} Find a better gun than the pipe rifle ({}/4 weapons)\n  {} Mod a weapon at a fish house workbench\n  {} Craft a Frostfang coat ({}/{} pelts)\n  {} Explore Mille Lacs ({}/{} places, {:.0}% of the map)\n\n\
          PLACES FOUND\n  {}\n\n\
-         SETTINGS\n  Sound: master {}%  effects {}%  music {}%  ambience {}%{}\n  Geiger counter {}   (F10/F11, F5-F8, F9 mute, G Geiger)",
+         Settings and volume: Esc menu.",
         tick(true),
         tick(owned > 1),
         owned,
@@ -1286,12 +1297,6 @@ fn update_notes(st: Res<PipState>, game: Res<Game>, audio: Res<AudioSettings>, g
         marks.len(),
         st.fog.fraction() * 100.0,
         if found.is_empty() { "none yet".to_string() } else { found.join(", ") },
-        pct(audio.0.master),
-        pct(audio.0.sfx),
-        pct(audio.0.music),
-        pct(audio.0.ambience),
-        if audio.0.muted { "  MUTED" } else { "" },
-        if geiger.0 { "ON" } else { "OFF" },
     );
 }
 

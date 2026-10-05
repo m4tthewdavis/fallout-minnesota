@@ -144,7 +144,7 @@ impl Plugin for DevShotPlugin {
             wait: std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0),
             taken: None,
         })
-        .add_systems(Update, take_shot)
+        .add_systems(Update, (dev_story, dev_slay, take_shot).chain())
         .add_systems(PreUpdate, inject_keys.run_if(resource_exists::<KeyScript>).after(bevy::input::InputSystem))
         .add_systems(PostStartup, spawn_extras)
         .add_systems(Startup, resize_window);
@@ -177,6 +177,28 @@ fn resize_window(mut windows: Query<&mut Window, With<bevy::window::PrimaryWindo
     let v: Vec<f32> = size.split(',').filter_map(|s| s.trim().parse().ok()).collect();
     if let (Some(&w), Some(&h), Ok(mut window)) = (v.first(), v.get(1), windows.single_mut()) {
         window.resolution.set(w, h);
+    }
+}
+
+/// `FMN_FLAGS=quest.started,found.convoy` sets story flags on the first frame,
+/// and `FMN_TALK=<npc|perks>` opens that conversation.
+fn dev_story(mut done: Local<bool>, mut flags: ResMut<crate::saves::StoryFlags>, mut talk: ResMut<crate::quest::Talk>, mut talking: ResMut<crate::state::Talking>) {
+    if std::mem::replace(&mut *done, true) {
+        return;
+    }
+    if let Ok(list) = std::env::var("FMN_FLAGS") {
+        flags.0.extend(list.split(',').map(str::trim).filter(|f| !f.is_empty()).map(String::from));
+    }
+    if let Ok(name) = std::env::var("FMN_TALK") {
+        crate::quest::open_dev_talk(&name, &flags.0, &mut talk, &mut talking);
+    }
+}
+
+/// `FMN_SLAY=1`: a few seconds in, fell Sven's Glowmoose.
+fn dev_slay(mut commands: Commands, time: Res<Time<Real>>, mut done: Local<bool>) {
+    if !*done && time.elapsed_secs() > 6.0 && std::env::var("FMN_SLAY").is_ok() {
+        *done = true;
+        commands.run_system_cached(crate::quest::dev_slay);
     }
 }
 

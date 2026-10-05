@@ -193,6 +193,11 @@ pub fn outdoors(interior: Res<CurrentInterior>) -> bool {
     interior.0.is_none()
 }
 
+/// True while a conversation or the level-up screen is open: the world holds
+/// still and the keyboard drives the dialogue.
+#[derive(Resource, Default)]
+pub struct Talking(pub bool);
+
 /// True while the pause menu is open (the game is paused).
 #[derive(Resource, Default)]
 pub struct Paused(pub bool);
@@ -202,9 +207,9 @@ pub struct Paused(pub bool);
 pub struct TreePositions(pub Vec<(f32, f32)>);
 
 /// Run condition: gameplay systems only run while the player is alive and
-/// neither the Pip-Boy, the pause menu nor a door's fade is in the way.
-pub fn alive(game: Res<Game>, pip: Res<PipOpen>, paused: Res<Paused>, transition: Res<Transition>) -> bool {
-    game.death.is_none() && !pip.0 && !paused.0 && !transition.active
+/// none of the Pip-Boy, the pause menu, a conversation or a door's fade is in the way.
+pub fn alive(game: Res<Game>, pip: Res<PipOpen>, paused: Res<Paused>, transition: Res<Transition>, talking: Res<Talking>) -> bool {
+    game.death.is_none() && !pip.0 && !paused.0 && !transition.active && !talking.0
 }
 
 /// Despawns short-lived effects (muzzle flashes, tracers).
@@ -235,6 +240,7 @@ impl Plugin for StatePlugin {
             .init_resource::<Prompt>()
             .init_resource::<PipOpen>()
             .init_resource::<Paused>()
+            .init_resource::<Talking>()
             .init_resource::<CurrentInterior>()
             .init_resource::<Transition>()
             .init_resource::<TreePositions>()

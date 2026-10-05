@@ -595,6 +595,7 @@ fn collect_pickups(
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
+    perks: Res<crate::quest::Perks>,
     player: Query<&Transform, With<Player>>,
     pickups: Query<(Entity, &Transform, &Pickup), (Without<Player>, Without<Collected>)>,
     rings: Query<(Entity, &LootRing)>,
@@ -604,6 +605,10 @@ fn collect_pickups(
         let d = tf.translation - ptf.translation;
         if d.x * d.x + d.z * d.z < 2.2 * 2.2 && d.y.abs() < 3.0 {
             game.inv.add(pickup.item);
+            if pickup.item == crate::sim::survival::Item::Scrap {
+                // Scrounger.
+                game.inv.scrap += perks.0.extra_scrap;
+            }
             sfx.play(sfx::pickup_sound(pickup.item));
             let n = pickup.item.amount();
             let extra = if n > 1 { format!(" (+{n})") } else { String::new() };

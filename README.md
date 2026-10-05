@@ -65,6 +65,20 @@ Walk up to a door and press E: the screen fades, you step inside, and the weathe
 
 Wolves and the moose stay out of the rooms and are frozen while you're inside. Saving inside a room puts you back inside when you load.
 
+## The quest: Why Did the Overseer Open the Door?
+
+Play the Overseer's recording on the terminal in the Vault 143 lobby (E). It sends you to do three things, in any order (and any you've already done count):
+
+1. **Investigate the missing supply convoy** on the old US-169 highway, west of the lake road. Search the wreck (E). Lundgren, in the first fish house, saw the trucks go by.
+2. **Restore power at Golden Atomic Mills.** Rewire the breaker panel by the silos (3 scrap, E). The beacon on the tallest silo lights up. Olson has the details.
+3. **Defeat the territorial Glowmoose** east of Sven's Shanty (a bigger, tougher bull than the ones that wander). Sven will tell you how.
+
+Then report back to the Overseer, and choose what to tell the vault: the truth, or a cover story. Ole reacts to your choice. The NOTES page of the Pip-Boy (DATA tab) keeps the log and says what to do next.
+
+Conversations are keyboard-driven: Up/Down (or W/S) to move, Enter or 1-4 to choose, Esc to leave. Survivors give a gift once.
+
+**XP and perks.** XP comes from kills, places found, weapon mods, the coat and the quest. Each level after the first earns a perk pick, offered when nothing dangerous is near (Esc puts it off for a minute): Frost Hardy (lose heat 20% slower), Rad Resistant (30% less radiation), Quick Hands (reload 25% faster), Scrounger (+1 scrap on every scrap find), Field Medic (Stimpaks, hotdish and the stove heal 50% more).
+
 ## Saving
 
 Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.json` in `%APPDATA%\FalloutMinnesota` on Windows (`~/.local/share/fallout-minnesota` elsewhere; set `FMN_DATA_DIR` to change it). A save remembers where you are, your health, heat, rads, inventory, weapons and upgrades, the map you've seen, the crates you've opened and items you've taken, the time and weather, and your quest progress. Wolves and moose aren't saved: they repopulate when you load. The world itself is the same every game. Saves carry a format version; a file from a newer version of the game is refused with a message instead of being misread.
@@ -148,6 +162,8 @@ src/
     weather.rs   Calm / siren / blizzard cycle and conditions
     terrain.rs   Height field, lakes, shelters, radiation zones, highway
     interiors.rs Rooms: layout, sleeping, cooking, door fade timing
+    quest.rs     The quest line: stages, flags, XP, perks
+    dialogue.rs  Conversation graphs and the replies you can pick
     combat.rs    Pipe rifle, jams, ray-sphere hits
     wolf.rs      Frostfang behaviour decisions
     rng.rs       Small deterministic RNG

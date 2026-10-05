@@ -40,6 +40,10 @@ pub struct StoryFlags(pub BTreeSet<String>);
 #[derive(Event)]
 pub struct AutosaveRequest;
 
+/// A save has just been loaded (other systems drop what they remembered).
+#[derive(Event)]
+pub struct Loaded;
+
 /// A save that has been read and checked and is about to be applied.
 #[derive(Resource)]
 struct PendingLoad {
@@ -54,6 +58,7 @@ impl Plugin for SavePlugin {
         app.init_resource::<PlayTime>()
             .init_resource::<StoryFlags>()
             .add_event::<AutosaveRequest>()
+            .add_event::<Loaded>()
             .add_systems(Startup, refresh_slots)
             .add_systems(
                 Update,
@@ -256,6 +261,7 @@ fn apply_world_state(
     pickups: Query<(Entity, &Transform), (With<Pickup>, Without<Player>, Without<Container>)>,
     rings: Query<(Entity, &LootRing)>,
     bodies: Query<Entity, With<Body>>,
+    mut loaded: EventWriter<Loaded>,
 ) {
     let s = &pending.save;
     if let Ok((mut tf, mut p)) = player.single_mut() {
@@ -302,5 +308,6 @@ fn apply_world_state(
     if paused.0 {
         close_menu(&mut paused, &mut vtime, &mut windows);
     }
+    loaded.write(Loaded);
     commands.remove_resource::<PendingLoad>();
 }
