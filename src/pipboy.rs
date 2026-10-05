@@ -1,5 +1,5 @@
 //! The Pip-Boy 3000, New Vegas style. Tab or M raises your wrist into view
-//! (the game pauses) and the amber CRT powers on: scanlines, curved glass,
+//! (the game pauses) and the ice-blue CRT powers on: scanlines, curved glass,
 //! flicker, a rolling scan bar, and a burst of static whenever the page
 //! changes.
 //!
@@ -18,6 +18,7 @@
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
+use crate::theme::{self, ACCENT, ACCENT_DIM, ACCENT_FAINT, BEAM, HINT, LAMP_OFF, SCREEN_BG, SCREEN_WELL, SELECTED, SELECTED_FILL, STATIC_TINT};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::ui::widget::NodeImageMode;
@@ -40,11 +41,6 @@ use crate::sim::terrain::{self, HALF_SIZE};
 use crate::sim::weather::Phase;
 use crate::state::{ClockRes, Game, Messages, PipOpen, SfxQueue, TreePositions, WeatherRes};
 
-/// New Vegas amber.
-const AMBER: Color = Color::srgb(1.0, 0.72, 0.3);
-const AMBER_DIM: Color = Color::srgba(1.0, 0.72, 0.3, 0.45);
-const AMBER_FAINT: Color = Color::srgba(1.0, 0.72, 0.3, 0.14);
-const SCREEN_BG: Color = Color::srgb(0.075, 0.042, 0.012);
 
 /// The device art is 1500x1000 px, drawn at 1000x667 logical px.
 const DEVICE_W: f32 = 1000.0;
@@ -366,11 +362,11 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                 padding: UiRect::bottom(Val::Px(3.0)),
                 ..default()
             },
-            BorderColor(AMBER),
+            BorderColor(ACCENT),
         ))
         .with_children(|h| {
-            h.spawn((Text::new("STATS"), font(24.0), TextColor(AMBER), MainTitle));
-            h.spawn((Text::new(""), font(14.0), TextColor(AMBER), HeaderInfo));
+            h.spawn((Text::new("STATS"), font(24.0), TextColor(ACCENT), MainTitle));
+            h.spawn((Text::new(""), font(14.0), TextColor(ACCENT), HeaderInfo));
         });
 
         // Page area.
@@ -385,7 +381,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                 .with_children(|p| {
                     p.spawn(Node { width: Val::Px(170.0), flex_direction: FlexDirection::Column, ..default() })
                         .with_children(|c| {
-                            c.spawn((Text::new(""), font(14.0), TextColor(AMBER), StatusSide));
+                            c.spawn((Text::new(""), font(14.0), TextColor(ACCENT), StatusSide));
                         });
                     p.spawn(Node {
                         width: Val::Px(190.0),
@@ -395,20 +391,20 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                     })
                     .with_children(|c| {
                         c.spawn(Node { width: Val::Px(160.0), height: Val::Px(224.0), ..default() }).with_children(|m| {
-                            m.spawn((fill(), img(&glow, AMBER.with_alpha(0.0)), StatusGlow));
-                            m.spawn((fill(), img(&mascot.idle, AMBER), StatusMascot));
+                            m.spawn((fill(), img(&glow, ACCENT.with_alpha(0.0)), StatusGlow));
+                            m.spawn((fill(), img(&mascot.idle, ACCENT), StatusMascot));
                         });
                         for (i, label) in ["HP", "HEAT", "RAD"].into_iter().enumerate() {
                             c.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(6.0), margin: UiRect::top(Val::Px(4.0)), ..default() }).with_children(|row| {
-                                row.spawn((Text::new(label), font(13.0), TextColor(AMBER), Node { width: Val::Px(38.0), ..default() }));
-                                row.spawn((Node { width: Val::Px(120.0), height: Val::Px(9.0), border: UiRect::all(Val::Px(1.0)), padding: UiRect::all(Val::Px(1.0)), ..default() }, BorderColor(AMBER_DIM)))
+                                row.spawn((Text::new(label), font(13.0), TextColor(ACCENT), Node { width: Val::Px(38.0), ..default() }));
+                                row.spawn((Node { width: Val::Px(120.0), height: Val::Px(9.0), border: UiRect::all(Val::Px(1.0)), padding: UiRect::all(Val::Px(1.0)), ..default() }, BorderColor(ACCENT_DIM)))
                                     .with_children(|b| {
-                                        b.spawn((Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(AMBER), StatusBar(i)));
+                                        b.spawn((Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(ACCENT), StatusBar(i)));
                                     });
                             });
                         }
                     });
-                    p.spawn((Text::new(""), font(14.0), TextColor(AMBER), Node { flex_grow: 1.0, ..default() }, StatusText));
+                    p.spawn((Text::new(""), font(14.0), TextColor(ACCENT), Node { flex_grow: 1.0, ..default() }, StatusText));
                 });
 
             // ---- Lists (S.P.E.C.I.A.L., WEAPONS, APPAREL, AID) ----
@@ -424,13 +420,13 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                                 ListRow(i),
                             ))
                             .with_children(|r| {
-                                r.spawn((Text::new(""), font(15.0), TextColor(AMBER)));
+                                r.spawn((Text::new(""), font(15.0), TextColor(ACCENT)));
                             });
                         }
                     });
                     p.spawn(Node { flex_grow: 1.0, flex_direction: FlexDirection::Column, ..default() }).with_children(|col| {
-                        col.spawn((Node { width: Val::Px(110.0), height: Val::Px(154.0), align_self: AlignSelf::Center, ..default() }, img(&mascot.idle, AMBER), DetailMascot));
-                        col.spawn((Text::new(""), font(14.0), TextColor(AMBER), DetailText));
+                        col.spawn((Node { width: Val::Px(110.0), height: Val::Px(154.0), align_self: AlignSelf::Center, ..default() }, img(&mascot.idle, ACCENT), DetailMascot));
+                        col.spawn((Text::new(""), font(14.0), TextColor(ACCENT), DetailText));
                     });
                 });
 
@@ -439,8 +435,8 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                 .with_children(|page| {
                     page.spawn((
                         Node { width: Val::Px(VIEW), height: Val::Px(VIEW), overflow: Overflow::clip(), border: UiRect::all(Val::Px(1.0)), ..default() },
-                        BorderColor(AMBER_DIM),
-                        BackgroundColor(Color::srgb(0.03, 0.02, 0.005)),
+                        BorderColor(ACCENT_DIM),
+                        BackgroundColor(SCREEN_WELL),
                         RelativeCursorPosition::default(),
                         MapView,
                     ))
@@ -464,8 +460,8 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                                             border: UiRect::all(Val::Px(2.0)),
                                             ..default()
                                         },
-                                        BorderColor(AMBER),
-                                        BackgroundColor(if filled { AMBER } else { SCREEN_BG.with_alpha(0.6) }),
+                                        BorderColor(ACCENT),
+                                        BackgroundColor(if filled { ACCENT } else { SCREEN_BG.with_alpha(0.6) }),
                                         Transform::from_rotation(Quat::from_rotation_z(0.785)),
                                         Visibility::Hidden,
                                         LandmarkMarker(i),
@@ -483,7 +479,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                                             LandmarkLabel(i),
                                         ))
                                         .with_children(|label| {
-                                            label.spawn((Text::new(lm.name), font(12.0), TextColor(AMBER)));
+                                            label.spawn((Text::new(lm.name), font(12.0), TextColor(ACCENT)));
                                         });
                                 }
                                 world.spawn((
@@ -496,22 +492,22 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                                         margin: UiRect::all(Val::Px(-11.0)),
                                         ..default()
                                     },
-                                    ImageNode { image: arrow.clone(), color: AMBER, image_mode: NodeImageMode::Stretch, ..default() },
+                                    ImageNode { image: arrow.clone(), color: ACCENT, image_mode: NodeImageMode::Stretch, ..default() },
                                     PlayerMarker,
                                 ));
                             });
                         // The map cursor: crosshair lines and a readout of what's under it.
-                        view.spawn((Node { position_type: PositionType::Absolute, width: Val::Px(VIEW), height: Val::Px(1.0), ..default() }, BackgroundColor(AMBER_FAINT), MapCursor, FocusPolicy::Pass));
-                        view.spawn((Node { position_type: PositionType::Absolute, width: Val::Px(1.0), height: Val::Px(VIEW), ..default() }, BackgroundColor(AMBER_FAINT), MapCursor, FocusPolicy::Pass));
-                        view.spawn((Node { position_type: PositionType::Absolute, ..default() }, Text::new(""), font(12.0), TextColor(AMBER), CursorLabel));
+                        view.spawn((Node { position_type: PositionType::Absolute, width: Val::Px(VIEW), height: Val::Px(1.0), ..default() }, BackgroundColor(ACCENT_FAINT), MapCursor, FocusPolicy::Pass));
+                        view.spawn((Node { position_type: PositionType::Absolute, width: Val::Px(1.0), height: Val::Px(VIEW), ..default() }, BackgroundColor(ACCENT_FAINT), MapCursor, FocusPolicy::Pass));
+                        view.spawn((Node { position_type: PositionType::Absolute, ..default() }, Text::new(""), font(12.0), TextColor(ACCENT), CursorLabel));
                     });
-                    page.spawn((Text::new(""), font(13.0), TextColor(AMBER), Node { flex_grow: 1.0, ..default() }, InfoText));
+                    page.spawn((Text::new(""), font(13.0), TextColor(ACCENT), Node { flex_grow: 1.0, ..default() }, InfoText));
                 });
 
             // ---- NOTES ----
             area.spawn((Node { width: Val::Percent(100.0), height: Val::Percent(100.0), display: Display::None, ..default() }, LayoutNode(Layout::Notes)))
                 .with_children(|p| {
-                    p.spawn((Text::new(""), font(14.0), TextColor(AMBER), NotesText));
+                    p.spawn((Text::new(""), font(14.0), TextColor(ACCENT), NotesText));
                 });
         });
 
@@ -524,7 +520,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BorderColor(AMBER),
+            BorderColor(ACCENT),
             Footer,
         ))
         .with_children(|f| {
@@ -537,7 +533,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
                     SubTab(i),
                 ))
                 .with_children(|b| {
-                    b.spawn((Text::new(""), font(15.0), TextColor(AMBER)));
+                    b.spawn((Text::new(""), font(15.0), TextColor(ACCENT)));
                 });
             }
         });
@@ -555,7 +551,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
         ));
         s.spawn((
             Node { position_type: PositionType::Absolute, left: Val::Px(0.0), width: Val::Percent(100.0), height: Val::Px(46.0), ..default() },
-            BackgroundColor(AMBER.with_alpha(0.03)),
+            BackgroundColor(ACCENT.with_alpha(0.03)),
             ScanBar,
             FocusPolicy::Pass,
         ));
@@ -563,7 +559,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
             fill(),
             ImageNode {
                 image: static_frames[0].clone(),
-                color: Color::srgba(1.0, 0.8, 0.5, 0.05),
+                color: STATIC_TINT.with_alpha(0.05),
                 image_mode: NodeImageMode::Tiled { tile_x: true, tile_y: true, stretch_value: 1.0 },
                 ..default()
             },
@@ -576,7 +572,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
         s.spawn((fill(), BackgroundColor(Color::BLACK), ScreenCover, FocusPolicy::Pass));
         s.spawn((
             Node { position_type: PositionType::Absolute, left: Val::Px(0.0), top: Val::Percent(50.0), width: Val::Percent(100.0), height: Val::Px(2.0), ..default() },
-            BackgroundColor(Color::srgb(1.0, 0.9, 0.7)),
+            BackgroundColor(BEAM),
             Visibility::Hidden,
             Beam,
             FocusPolicy::Pass,
@@ -589,12 +585,12 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
     for (i, main) in Main::ALL.into_iter().enumerate() {
         let x = 220.0 + i as f32 * 193.3;
         commands.spawn((Button, abs(x, 566.7, 133.3, 43.3), BackgroundColor(Color::NONE), MainButton(main), ChildOf(device)));
-        commands.spawn((abs(x + 50.0, 556.0, 33.0, 5.0), BackgroundColor(AMBER), MainLamp(main), ChildOf(device)));
+        commands.spawn((abs(x + 50.0, 556.0, 33.0, 5.0), BackgroundColor(SELECTED), MainLamp(main), ChildOf(device)));
     }
     commands.spawn((
         Text::new("TAB close   1 2 3 tabs   Q E pages   W S select   ENTER use / save   L load"),
         font(13.0),
-        TextColor(Color::srgba(1.0, 0.9, 0.7, 0.75)),
+        TextColor(HINT),
         Node { position_type: PositionType::Absolute, left: Val::Px(160.0), top: Val::Px(DEVICE_H - 34.0), ..default() },
         ChildOf(device),
     ));
@@ -688,12 +684,10 @@ fn toggle_pipboy(
         if st.base.is_none() {
             let started = std::time::Instant::now();
             let mut data = mapdata::render_base(MAP_PX, &trees.0);
-            // The map is drawn in Pip-Boy green; recolour it for the amber screen.
+            // The map is drawn in Pip-Boy green; recolour it for the ice-blue screen.
             for px in data.as_chunks_mut::<4>().0 {
-                let l = px[0].max(px[1]).max(px[2]) as f32;
-                px[0] = l as u8;
-                px[1] = (l * 0.72) as u8;
-                px[2] = (l * 0.3) as u8;
+                let c = theme::ice_ramp(px[0].max(px[1]).max(px[2]) as f32);
+                px[..3].copy_from_slice(&c);
             }
             info!("pip-boy map drawn in {:.2}s", started.elapsed().as_secs_f32());
             st.base = Some(images.add(rgba_image(MAP_PX as u32, MAP_PX as u32, data)));
@@ -815,7 +809,7 @@ fn animate_device(
         let frame = ((t * 24.0) as usize + (*seed >> 30) as usize) % 4;
         img.image = st.static_frames[frame].clone();
         let a = 0.045 + st.burst / 0.22 * 0.55;
-        img.color = Color::srgba(1.0, 0.8, 0.5, a);
+        img.color = STATIC_TINT.with_alpha(a);
     }
     // Faint brightness flicker.
     if let Ok(mut f) = flicker.single_mut() {
@@ -978,7 +972,7 @@ fn show_layout(
         }
     }
     for (lamp, mut bg) in &mut lamps {
-        bg.0 = if lamp.0 == st.nav.page.main() { AMBER } else { Color::srgba(0.2, 0.15, 0.05, 0.8) };
+        bg.0 = if lamp.0 == st.nav.page.main() { SELECTED } else { LAMP_OFF };
     }
     let pages = st.nav.page.main().pages();
     for (tab, mut node, mut border, mut bg, children) in &mut subs {
@@ -988,8 +982,8 @@ fn show_layout(
         };
         node.display = Display::Flex;
         let active = *page == st.nav.page;
-        border.0 = if active { AMBER } else { Color::NONE };
-        bg.0 = if active { AMBER_FAINT } else { Color::NONE };
+        border.0 = if active { SELECTED } else { Color::NONE };
+        bg.0 = if active { SELECTED_FILL } else { Color::NONE };
         if let Some(&child) = children.first() {
             if let Ok(mut t) = texts.get_mut(child) {
                 if t.0 != page.label() {
@@ -1066,7 +1060,7 @@ fn update_status(
     }
     if let Ok(mut g) = glow.single_mut() {
         let a = if irradiated { (0.35 + 0.3 * (t * 4.0).sin()) * (s.rads / 400.0).clamp(0.4, 1.0) } else { 0.0 };
-        g.color = AMBER.with_alpha(a);
+        g.color = ACCENT.with_alpha(a);
     }
     for (mut node, b) in &mut bars {
         let v = match b.0 {
@@ -1242,8 +1236,8 @@ fn update_list(
         };
         node.display = Display::Flex;
         let active = row.0 == sel;
-        border.0 = if active { AMBER } else { Color::NONE };
-        bg.0 = if active { AMBER_FAINT } else { Color::NONE };
+        border.0 = if active { SELECTED } else { Color::NONE };
+        bg.0 = if active { SELECTED_FILL } else { Color::NONE };
         if let Some(&child) = children.first() {
             if let Ok(mut t) = texts.get_mut(child) {
                 if &t.0 != label {

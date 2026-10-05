@@ -1,5 +1,5 @@
 //! The first quest line, "Why Did the Overseer Open the Door?", on screen:
-//! the conversation panel (Pip-Boy amber, replies you pick with the keyboard),
+//! the conversation panel (Pip-Boy ice blue, replies you pick with the keyboard),
 //! the places the quest sends you (the wrecked convoy, the Mills' breaker
 //! panel), the Glowmoose that has to die, and the level-up perk screen.
 //! What gets said, and the rules for stages, XP and perks, are in
@@ -7,6 +7,7 @@
 
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
+use crate::theme::{ACCENT, ACCENT_DIM, MENU_PANEL, SELECTED_FILL};
 
 use crate::assets::GameAssets;
 use crate::enemy::{Body, Dying, Species};
@@ -24,10 +25,6 @@ use crate::sim::terrain::{self, RAD_SOURCES, SHELTERS};
 use crate::state::{alive, outdoors, Colliders, Game, Hostile, Messages, RngRes, SfxQueue, Talking};
 use crate::world::{glow, ground, mat, prop, PulseLight};
 
-const AMBER: Color = Color::srgb(1.0, 0.72, 0.3);
-const PANEL: Color = Color::srgba(0.07, 0.04, 0.01, 0.95);
-const HIGHLIGHT: Color = Color::srgba(1.0, 0.72, 0.3, 0.2);
-const DIM: Color = Color::srgba(1.0, 0.72, 0.3, 0.55);
 
 /// Where the wrecked convoy lies, on the highway west of the lake road.
 pub const CONVOY_AT: (f32, f32) = (-110.0, 97.0);
@@ -481,24 +478,24 @@ fn build_talk_ui(mut commands: Commands, assets: Res<GameAssets>) {
                     border: UiRect::all(Val::Px(2.0)),
                     ..default()
                 },
-                BackgroundColor(PANEL),
-                BorderColor(AMBER.with_alpha(0.7)),
+                BackgroundColor(MENU_PANEL),
+                BorderColor(ACCENT.with_alpha(0.7)),
             ))
             .with_children(|p| {
-                p.spawn((Text::new(""), font(19.0), TextColor(AMBER), TalkSpeaker));
-                p.spawn((Text::new(""), font(17.0), TextColor(AMBER.with_alpha(0.9)), TalkBody));
-                p.spawn(Node { height: Val::Px(2.0), width: Val::Percent(100.0), margin: UiRect::vertical(Val::Px(4.0)), ..default() }).insert(BackgroundColor(DIM));
+                p.spawn((Text::new(""), font(19.0), TextColor(ACCENT), TalkSpeaker));
+                p.spawn((Text::new(""), font(17.0), TextColor(ACCENT.with_alpha(0.9)), TalkBody));
+                p.spawn(Node { height: Val::Px(2.0), width: Val::Percent(100.0), margin: UiRect::vertical(Val::Px(4.0)), ..default() }).insert(BackgroundColor(ACCENT_DIM));
                 for i in 0..ROWS {
                     p.spawn((
                         Node { padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)), display: Display::None, ..default() },
                         Text::new(""),
                         font(17.0),
-                        TextColor(AMBER),
+                        TextColor(ACCENT),
                         BackgroundColor(Color::NONE),
                         TalkRow(i),
                     ));
                 }
-                p.spawn((Text::new(""), font(12.0), TextColor(DIM), TalkHint));
+                p.spawn((Text::new(""), font(12.0), TextColor(ACCENT_DIM), TalkHint));
             });
         });
 }
@@ -552,7 +549,7 @@ fn render_talk(
             Some(item) => {
                 node.display = Display::Flex;
                 t.set_if_neq(Text::new(format!("{} {}. {}", if row.0 == selected { ">" } else { " " }, row.0 + 1, item)));
-                bg.set_if_neq(BackgroundColor(if row.0 == selected { HIGHLIGHT } else { Color::NONE }));
+                bg.set_if_neq(BackgroundColor(if row.0 == selected { SELECTED_FILL } else { Color::NONE }));
             }
             None => node.display = Display::None,
         }

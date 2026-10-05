@@ -4,6 +4,7 @@
 //! CRT scanlines, vignette, frost, radiation and damage overlays.
 
 use bevy::prelude::*;
+use crate::theme::{ACCENT, ACCENT_DIM, DANGER, FROST, HUD_PANEL, SELECTED, WARN};
 use bevy::ui::widget::NodeImageMode;
 
 use crate::assets::{GameAssets, MissingAssets};
@@ -15,11 +16,6 @@ use crate::sim::weather::Phase;
 use crate::state::{ClockRes, Game, Messages, WeatherRes};
 
 /// New Vegas amber, matching the Pip-Boy screen.
-const HUD_AMBER: Color = Color::srgb(1.0, 0.72, 0.3);
-const HUD_DIM: Color = Color::srgba(1.0, 0.72, 0.3, 0.35);
-const PANEL: Color = Color::srgba(0.07, 0.04, 0.01, 0.55);
-const WARN: Color = Color::srgb(1.0, 0.92, 0.7);
-const DANGER: Color = Color::srgb(1.0, 0.3, 0.25);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Stat {
@@ -57,6 +53,10 @@ struct FrostOverlay;
 struct RadOverlay;
 #[derive(Component)]
 struct HelpText;
+
+/// The dark disc behind the crosshair.
+#[derive(Component)]
+struct CrosshairPill;
 #[derive(Component)]
 struct MissingBanner;
 #[derive(Component)]
@@ -72,7 +72,7 @@ pub struct HudPlugin;
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_hud)
-            .add_systems(Update, (update_hud.run_if(|pip: Res<crate::state::PipOpen>| !pip.0), missing_banner, fade_crosshair, scale_ui, show_prompt, hide_with_pip));
+            .add_systems(Update, (update_hud.run_if(|pip: Res<crate::state::PipOpen>| !pip.0), missing_banner, fade_help, fade_crosshair, scale_ui, show_prompt, hide_with_pip));
     }
 }
 
@@ -94,8 +94,8 @@ fn panel(node: Node) -> (Node, BackgroundColor, BorderColor, BorderRadius) {
             padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
             ..node
         },
-        BackgroundColor(PANEL),
-        BorderColor(HUD_DIM),
+        BackgroundColor(HUD_PANEL),
+        BorderColor(ACCENT_DIM),
         BorderRadius::all(Val::Px(3.0)),
     )
 }
@@ -137,7 +137,16 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
 
     // Crosshair.
     commands.spawn((full_screen(), HideWithPip)).with_children(|p| {
-        p.spawn((Text::new("+"), font(24.0), TextColor(HUD_AMBER.with_alpha(0.85)), Crosshair));
+        // A navy pill behind it so it shows against bright snow as well as dark sky.
+        p.spawn((
+            Node { width: Val::Px(26.0), height: Val::Px(26.0), align_items: AlignItems::Center, justify_content: JustifyContent::Center, ..default() },
+            BorderRadius::MAX,
+            BackgroundColor(HUD_PANEL),
+            CrosshairPill,
+        ))
+        .with_children(|c| {
+            c.spawn((Text::new("+"), font(22.0), TextColor(SELECTED.with_alpha(0.95)), Crosshair));
+        });
     });
 
     // Controls reminder (fades after the first minute).
@@ -150,12 +159,14 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
              G Geiger on/off  F9 mute  F10/F11 volume",
         ),
         font(13.0),
-        TextColor(HUD_AMBER.with_alpha(0.6)),
+        TextColor(FROST.with_alpha(0.9)),
+        BackgroundColor(HUD_PANEL),
         Node {
             position_type: PositionType::Absolute,
             left: Val::Px(12.0),
             top: Val::Px(10.0),
             max_width: Val::Percent(24.0),
+            padding: UiRect::all(Val::Px(6.0)),
             ..default()
         },
         HelpText,
@@ -183,8 +194,8 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                 ..default()
             }))
             .with_children(|c| {
-                c.spawn((Text::new(""), font(16.0), TextColor(HUD_AMBER), CompassText));
-                c.spawn((Text::new(""), font(12.0), TextColor(HUD_AMBER.with_alpha(0.7)), HeadingText));
+                c.spawn((Text::new(""), font(16.0), TextColor(ACCENT), CompassText));
+                c.spawn((Text::new(""), font(12.0), TextColor(ACCENT.with_alpha(0.7)), HeadingText));
             });
             p.spawn((
                 Text::new(""),
@@ -242,14 +253,14 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                 })
                 .with_children(|row| {
                     row.spawn((
-                        image(icon, HUD_AMBER, NodeImageMode::Stretch),
+                        image(icon, ACCENT, NodeImageMode::Stretch),
                         Node {
                             width: Val::Px(20.0),
                             height: Val::Px(20.0),
                             ..default()
                         },
                     ));
-                    row.spawn((Text::new(label), font(15.0), TextColor(HUD_AMBER)));
+                    row.spawn((Text::new(label), font(15.0), TextColor(ACCENT)));
                     row.spawn((
                         Node {
                             width: Val::Px(190.0),
@@ -258,7 +269,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                             padding: UiRect::all(Val::Px(1.0)),
                             ..default()
                         },
-                        BorderColor(HUD_DIM),
+                        BorderColor(ACCENT_DIM),
                     ))
                     .with_children(|bar| {
                         bar.spawn((
@@ -267,7 +278,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                                 height: Val::Percent(100.0),
                                 ..default()
                             },
-                            BackgroundColor(HUD_AMBER),
+                            BackgroundColor(ACCENT),
                             BarFill(stat),
                         ));
                         if stat == Stat::Hp {
@@ -288,7 +299,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                     row.spawn((
                         Text::new(""),
                         font(15.0),
-                        TextColor(HUD_AMBER),
+                        TextColor(ACCENT),
                         Node {
                             min_width: Val::Px(120.0),
                             ..default()
@@ -297,7 +308,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
                     ));
                 });
             }
-            p.spawn((Text::new(""), font(14.0), TextColor(HUD_AMBER.with_alpha(0.85)), InfoText));
+            p.spawn((Text::new(""), font(14.0), TextColor(ACCENT.with_alpha(0.85)), InfoText));
         });
 
     // Weapon panel (bottom-right).
@@ -312,11 +323,11 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
         }))
         .insert(ChildOf(bottom))
         .with_children(|p| {
-            p.spawn((Text::new(""), font(30.0), TextColor(HUD_AMBER), AmmoText));
+            p.spawn((Text::new(""), font(30.0), TextColor(ACCENT), AmmoText));
             p.spawn((
                 Text::new(""),
                 font(14.0),
-                TextColor(HUD_AMBER),
+                TextColor(ACCENT),
                 TextLayout::new_with_justify(JustifyText::Right),
                 WeaponText,
             ));
@@ -338,7 +349,7 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
             p.spawn((
                 Text::new(""),
                 font(19.0),
-                TextColor(HUD_AMBER),
+                TextColor(ACCENT),
                 TextLayout::new_with_justify(JustifyText::Center),
                 PromptText,
             ));
@@ -414,9 +425,22 @@ fn show_prompt(prompt: Res<crate::state::Prompt>, mut q: Query<&mut Text, With<P
 }
 
 /// The iron sights replace the crosshair while aiming.
-fn fade_crosshair(aim: Res<crate::gun::AimAmount>, mut q: Query<&mut TextColor, With<Crosshair>>) {
+/// The controls reminder fades out after the first minute.
+fn fade_help(time: Res<Time>, mut help: Query<(&mut TextColor, &mut BackgroundColor), With<HelpText>>) {
+    let fade = (1.0 - (time.elapsed_secs() - 45.0) * 0.083).clamp(0.0, 1.0);
+    for (mut c, mut bg) in &mut help {
+        c.set_if_neq(TextColor(FROST.with_alpha(0.9 * fade)));
+        bg.set_if_neq(BackgroundColor(HUD_PANEL.with_alpha(HUD_PANEL.alpha() * fade)));
+    }
+}
+
+fn fade_crosshair(aim: Res<crate::gun::AimAmount>, mut q: Query<&mut TextColor, With<Crosshair>>, mut pill: Query<&mut BackgroundColor, With<CrosshairPill>>) {
+    let visible = (1.0 - aim.0 * 1.5).clamp(0.0, 1.0);
     for mut c in &mut q {
-        c.set_if_neq(TextColor(HUD_AMBER.with_alpha(0.85 * (1.0 - aim.0 * 1.5).clamp(0.0, 1.0))));
+        c.set_if_neq(TextColor(SELECTED.with_alpha(0.95 * visible)));
+    }
+    for mut bg in &mut pill {
+        bg.set_if_neq(BackgroundColor(HUD_PANEL.with_alpha(HUD_PANEL.alpha() * visible)));
     }
 }
 
@@ -518,7 +542,6 @@ fn update_hud(
         Query<&mut Text, With<CompassText>>,
         Query<&mut Text, With<HeadingText>>,
     )>,
-    mut help: Query<&mut TextColor, (With<HelpText>, Without<ValueText>, Without<AmmoText>, Without<MessageText>)>,
     mut overlays: ParamSet<(
         Query<&mut BackgroundColor, (With<HurtOverlay>, Without<BarFill>)>,
         Query<&mut ImageNode, With<FrostOverlay>>,
@@ -545,7 +568,7 @@ fn update_hud(
         let (frac, color) = match fill.0 {
             Stat::Hp => {
                 let f = s.health / Survival::BASE_MAX_HEALTH;
-                (f, if f < 0.25 { DANGER } else { HUD_AMBER })
+                (f, if f < 0.25 { DANGER } else { ACCENT })
             }
             Stat::Heat => {
                 let f = s.body_heat / 100.0;
@@ -554,11 +577,11 @@ fn update_hud(
                 } else if f < 0.3 {
                     Color::srgb(0.55, 0.85, 1.0)
                 } else {
-                    HUD_AMBER
+                    ACCENT
                 };
                 (f, c)
             }
-            Stat::Rads => (s.rads / Survival::MAX_RADS, if rad_rate > 0.0 { WARN } else { HUD_AMBER }),
+            Stat::Rads => (s.rads / Survival::MAX_RADS, if rad_rate > 0.0 { WARN } else { ACCENT }),
         };
         set_width(&mut node, frac.clamp(0.0, 1.0) * 100.0);
         // Pulse a bar that's in trouble.
@@ -596,7 +619,7 @@ fn update_hud(
             }
         };
         text.set_if_neq(Text::new(value));
-        color.set_if_neq(TextColor(if warn { WARN } else { HUD_AMBER }));
+        color.set_if_neq(TextColor(if warn { WARN } else { ACCENT }));
     }
 
     // ---- Conditions line ----
@@ -639,7 +662,7 @@ fn update_hud(
             Some(ammo) => format!("{:>2} / {}", wpn.mag, game.inv.reserve(ammo)),
             None => "MELEE".to_string(),
         }));
-        color.set_if_neq(TextColor(if wpn.jammed || (wpn.mag == 0 && !wpn.melee) { WARN } else { HUD_AMBER }));
+        color.set_if_neq(TextColor(if wpn.jammed || (wpn.mag == 0 && !wpn.melee) { WARN } else { ACCENT }));
     }
     let inv = &game.inv;
     let coat = if inv.has_frostfang_coat {
@@ -718,9 +741,6 @@ fn update_hud(
         text.set_if_neq(Text::new(format!("{deg:03}   V vault   H shelter")));
     }
 
-    if let Ok(mut c) = help.single_mut() {
-        c.set_if_neq(TextColor(HUD_AMBER.with_alpha((0.6 - (t - 45.0) * 0.05).clamp(0.0, 0.6))));
-    }
 
     // ---- Overlays ----
     let hurt_alpha = if game.death.is_some() { 0.45 } else { game.hurt_flash * 0.35 };

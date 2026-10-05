@@ -39,6 +39,7 @@ mod sky;
 mod snow;
 mod state;
 mod storage;
+mod theme;
 mod tracks;
 mod vehicles;
 mod weather_fx;

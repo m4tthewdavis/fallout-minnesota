@@ -711,7 +711,7 @@ fn run_trips(
         if let Some(r) = report {
             t.set_if_neq(Text::new(r));
         }
-        c.set_if_neq(TextColor(Color::srgba(1.0, 0.72, 0.3, step.alpha)));
+        c.set_if_neq(TextColor(crate::theme::FROST.with_alpha(step.alpha)));
     }
     if step.done {
         moving.0 = None;
@@ -756,7 +756,7 @@ fn build_fade_overlay(mut commands: Commands, assets: Res<GameAssets>) {
             o.spawn((
                 Text::new(""),
                 TextFont { font: assets.font.clone(), font_size: 30.0, ..default() },
-                TextColor(Color::srgba(1.0, 0.72, 0.3, 0.0)),
+                TextColor(crate::theme::FROST.with_alpha(0.0)),
                 TextLayout::new_with_justify(JustifyText::Center),
                 FadeText,
             ));

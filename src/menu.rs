@@ -1,11 +1,12 @@
 //! The pause menu (Esc): Resume, Save, Load, Settings and Quit, in the same
-//! amber CRT style as the Pip-Boy. The rules (screens, rows, what each choice
+//! ice-blue CRT style as the Pip-Boy. The rules (screens, rows, what each choice
 //! does) are in `sim::menu` and `sim::settings`; this file draws them, applies
 //! the settings to the running game (shadows, view distance, UI size, volume)
 //! and keeps them in `settings.json`.
 
 use bevy::pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
 use bevy::prelude::*;
+use crate::theme::{ACCENT, ACCENT_DIM, ACCENT_OFF, MENU_PANEL, SELECTED, SELECTED_FILL};
 use bevy::ui::widget::NodeImageMode;
 use bevy::ui::{FocusPolicy, RelativeCursorPosition};
 use bevy::window::PrimaryWindow;
@@ -19,11 +20,6 @@ use crate::state::{Game, Messages, Paused, PipOpen};
 use crate::storage;
 use crate::world::{PointShadows, Sun};
 
-const AMBER: Color = Color::srgb(1.0, 0.72, 0.3);
-const AMBER_DIM: Color = Color::srgba(1.0, 0.72, 0.3, 0.4);
-const AMBER_FAINT: Color = Color::srgba(1.0, 0.72, 0.3, 0.16);
-const AMBER_OFF: Color = Color::srgba(1.0, 0.72, 0.3, 0.28);
-const PANEL_BG: Color = Color::srgba(0.075, 0.042, 0.012, 0.96);
 /// Most rows any screen has (the settings screen).
 const MAX_ROWS: usize = 8;
 
@@ -132,19 +128,19 @@ fn build_menu(mut commands: Commands, assets: Res<GameAssets>) {
                     overflow: Overflow::clip(),
                     ..default()
                 },
-                BackgroundColor(PANEL_BG),
-                BorderColor(AMBER),
+                BackgroundColor(MENU_PANEL),
+                BorderColor(ACCENT),
                 BorderRadius::all(Val::Px(14.0)),
             ))
             .with_children(|p| {
                 p.spawn((
                     Node { border: UiRect::bottom(Val::Px(2.0)), padding: UiRect::bottom(Val::Px(6.0)), margin: UiRect::bottom(Val::Px(6.0)), ..default() },
-                    BorderColor(AMBER),
+                    BorderColor(ACCENT),
                 ))
                 .with_children(|h| {
-                    h.spawn((Text::new("PAUSED"), font(32.0), TextColor(AMBER), MenuTitle));
+                    h.spawn((Text::new("PAUSED"), font(32.0), TextColor(ACCENT), MenuTitle));
                 });
-                p.spawn((Text::new(""), font(15.0), TextColor(AMBER_DIM), MenuNote));
+                p.spawn((Text::new(""), font(15.0), TextColor(ACCENT_DIM), MenuNote));
                 for i in 0..MAX_ROWS {
                     p.spawn((
                         Button,
@@ -162,14 +158,14 @@ fn build_menu(mut commands: Commands, assets: Res<GameAssets>) {
                         MenuRow(i),
                     ))
                     .with_children(|r| {
-                        r.spawn((Text::new(""), font(22.0), TextColor(AMBER), RowLabel(i)));
-                        r.spawn((Text::new(""), font(18.0), TextColor(AMBER), RowValue(i)));
+                        r.spawn((Text::new(""), font(22.0), TextColor(ACCENT), RowLabel(i)));
+                        r.spawn((Text::new(""), font(18.0), TextColor(ACCENT), RowValue(i)));
                     });
                 }
                 p.spawn((
                     Text::new("W S select    ENTER choose    A D change    ESC back"),
                     font(13.0),
-                    TextColor(AMBER_DIM),
+                    TextColor(ACCENT_DIM),
                     Node { margin: UiRect::top(Val::Px(12.0)), ..default() },
                 ));
                 // Scanlines over the panel.
@@ -378,18 +374,18 @@ fn render_menu(
             node.display = display;
         }
         let active = row.0 == menu.selected;
-        border.set_if_neq(BorderColor(if active { AMBER } else { Color::NONE }));
-        bg.set_if_neq(BackgroundColor(if active { AMBER_FAINT } else { Color::NONE }));
+        border.set_if_neq(BorderColor(if active { SELECTED } else { Color::NONE }));
+        bg.set_if_neq(BackgroundColor(if active { SELECTED_FILL } else { Color::NONE }));
     }
     for (l, mut text, mut color) in &mut labels {
         let Some(r) = list.get(l.0) else { continue };
         text.set_if_neq(Text::new(r.label.clone()));
-        color.set_if_neq(TextColor(if r.enabled { AMBER } else { AMBER_OFF }));
+        color.set_if_neq(TextColor(if r.enabled { ACCENT } else { ACCENT_OFF }));
     }
     for (v, mut text, mut color) in &mut values {
         let Some(r) = list.get(v.0) else { continue };
         text.set_if_neq(Text::new(r.value.clone()));
-        color.set_if_neq(TextColor(if r.enabled { AMBER } else { AMBER_OFF }));
+        color.set_if_neq(TextColor(if r.enabled { ACCENT } else { ACCENT_OFF }));
     }
 }
 
