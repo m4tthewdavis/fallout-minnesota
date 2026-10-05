@@ -41,11 +41,17 @@ pub struct ContainerAssets {
     ring_mat: Handle<StandardMaterial>,
 }
 
+/// Set while a door, bunk or stove is in reach: it takes E, so a stash
+/// beside it stays shut.
+#[derive(Resource, Default)]
+pub struct FixtureClaim(pub bool);
+
 pub struct InteractPlugin;
 
 impl Plugin for InteractPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, setup_assets)
+        app.init_resource::<FixtureClaim>()
+            .add_systems(PreStartup, setup_assets)
             .add_systems(Update, (reset_prompt, interact).chain().run_if(alive));
     }
 }
@@ -104,17 +110,18 @@ pub fn spawn_container(
         .id()
 }
 
-fn reset_prompt(mut prompt: ResMut<Prompt>) {
+pub(crate) fn reset_prompt(mut prompt: ResMut<Prompt>) {
     prompt.0.clear();
 }
 
-fn interact(
+pub(crate) fn interact(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
     mut prompt: ResMut<Prompt>,
+    claim: Res<FixtureClaim>,
     player: Query<&Transform, With<Player>>,
     mut containers: Query<(&Transform, &mut Container), Without<Player>>,
     benches: Query<&Transform, (With<Workbench>, Without<Player>)>,
@@ -126,7 +133,7 @@ fn interact(
     // ---- Containers (E) ----
     let nearest = containers
         .iter_mut()
-        .filter(|(_, c)| !c.opened)
+        .filter(|(_, c)| !c.opened && !claim.0)
         .map(|(tf, c)| (flat(tf.translation), tf, c))
         .filter(|(d, _, _)| *d < REACH)
         .min_by(|a, b| a.0.total_cmp(&b.0));

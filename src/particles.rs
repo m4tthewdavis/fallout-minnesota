@@ -134,6 +134,17 @@ struct FlameSheet {
 /// sparks, smoke, a flickering light and a glow on the ground. `scale` 1 is
 /// a fire-barrel fire.
 pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool) {
+    spawn_fire_in(commands, meshes, materials, soft, at, scale, seed, shadows, false);
+}
+
+/// A fire in a stove inside a room: no smoke into the rafters and no glow
+/// patch on the snow (there isn't any).
+pub fn spawn_indoor_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32) {
+    spawn_fire_in(commands, meshes, materials, soft, at, scale, seed, false, true);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_fire_in(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool, indoors: bool) {
     // A big central tongue and smaller ones round it.
     let tongues = [(0.0f32, 0.0f32, 0.55f32, 1.05f32), (0.14, 0.05, 0.38, 0.75), (-0.13, -0.04, 0.36, 0.7), (0.03, -0.13, 0.32, 0.62), (-0.04, 0.13, 0.3, 0.55)];
     for (k, (dx, dz, w, h)) in tongues.into_iter().enumerate() {
@@ -145,7 +156,9 @@ pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials:
     }
     commands.spawn((Transform::from_translation(at + Vec3::Y * 0.15 * scale), Emitter::new(EmitterKind::Embers, 0.12 / scale)));
     commands.spawn((Transform::from_translation(at + Vec3::Y * 0.3 * scale), Emitter::new(EmitterKind::Sparks, 0.09 / scale)));
-    commands.spawn((Transform::from_translation(at + Vec3::Y * 0.9 * scale), Emitter::new(EmitterKind::FireSmoke, 0.22 / scale)));
+    if !indoors {
+        commands.spawn((Transform::from_translation(at + Vec3::Y * 0.9 * scale), Emitter::new(EmitterKind::FireSmoke, 0.22 / scale)));
+    }
     let base = 400_000.0 * scale;
     let light = commands
         .spawn((
@@ -155,6 +168,9 @@ pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials:
         .id();
     if shadows {
         commands.entity(light).insert(crate::world::PointShadows);
+    }
+    if indoors {
+        return;
     }
     // Warm glow on the snow, following the ground.
     let r = 3.2 * scale;

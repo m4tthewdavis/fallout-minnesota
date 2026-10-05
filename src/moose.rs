@@ -15,7 +15,7 @@ use crate::sim::meshgen;
 use crate::sim::moose::{self as brain, Event, Mode, Moose};
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
-use crate::state::{alive, Colliders, Game, Hostile, Messages, RngRes, SfxQueue};
+use crate::state::{alive, outdoors, Colliders, Game, Hostile, Messages, RngRes, SfxQueue};
 
 const MOOSE_COUNT: usize = 2;
 /// Pivot of the neck and head: the top of the shoulders.
@@ -76,7 +76,7 @@ pub struct MoosePlugin;
 impl Plugin for MoosePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, (setup_assets, spawn_initial).chain().after(crate::state::WorldGen))
-            .add_systems(Update, (moose_ai.run_if(alive), animate_moose));
+            .add_systems(Update, (moose_ai.run_if(alive.and(outdoors)), animate_moose));
     }
 }
 

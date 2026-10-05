@@ -302,7 +302,7 @@ fn steer_loops(
     let w = state.wind;
 
     let ppos = player.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
-    let sheltered = terrain::shelter_at(ppos.x, ppos.z).is_some();
+    let sheltered = terrain::cover_at(ppos.x, ppos.z).sheltered();
     let muffle = if sheltered { 0.45 } else { 1.0 };
 
     let enemy_dist = hostiles
@@ -405,7 +405,7 @@ fn geiger(
     }
     let Ok(ptf) = player.single() else { return };
     let (x, z) = (ptf.translation.x, ptf.translation.z);
-    let sheltered = terrain::shelter_at(x, z).is_some();
+    let sheltered = terrain::cover_at(x, z).sheltered();
     let rate = terrain::ambient_rads(x, z) + if sheltered { 0.0 } else { weather.weather.conditions().rads_per_sec };
     let cps = sfx::geiger_clicks_per_sec(rate);
     if cps <= 0.0 {

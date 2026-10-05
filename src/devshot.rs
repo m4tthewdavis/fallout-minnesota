@@ -19,7 +19,7 @@ use crate::player::{Player, EYE_HEIGHT};
 use crate::sim::terrain;
 use crate::sim::weather::Phase;
 use crate::sim::combat::{Upgrade, WeaponKind};
-use crate::state::{ClockRes, Game, WeatherRes};
+use crate::state::{ClockRes, CurrentInterior, Game, WeatherRes};
 
 #[derive(Resource)]
 struct Shot {
@@ -38,6 +38,9 @@ struct Shot {
     recoil: f32,
     swing: Option<f32>,
     out: String,
+    /// `FMN_FREE=1`: pose the player once, then let the game run (to test doors).
+    free: bool,
+    placed: bool,
     /// Real seconds to wait for assets to load before shooting.
     wait: f32,
     taken: Option<f32>,
@@ -136,6 +139,8 @@ impl Plugin for DevShotPlugin {
             recoil: v.get(10).copied().unwrap_or(0.0),
             swing: v.get(11).copied().filter(|r| *r > 0.0),
             out,
+            free: std::env::var("FMN_FREE").is_ok(),
+            placed: false,
             wait: std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0),
             taken: None,
         })
@@ -181,52 +186,58 @@ fn take_shot(
     mut shot: ResMut<Shot>,
     mut clock: ResMut<ClockRes>,
     mut weather: ResMut<WeatherRes>,
+    mut interior: ResMut<CurrentInterior>,
     mut game: ResMut<Game>,
     mut aim: ResMut<ForceAim>,
     mut player: Query<(&mut Transform, &mut Player)>,
     mut exit: EventWriter<AppExit>,
     script: Option<Res<KeyScript>>,
 ) {
-    clock.0.hours = shot.hour;
-    if shot.blizzard {
-        weather.weather.phase = Phase::Blizzard;
-        weather.weather.timer = 30.0;
-    } else {
-        weather.weather.timer = 60.0;
-    }
-    aim.0 = shot.aim;
-    if let Some(slot) = shot.weapon {
-        for k in WeaponKind::ALL {
-            game.arsenal.unlock(k);
+    if !(shot.free && shot.placed) {
+        clock.0.hours = shot.hour;
+        if shot.blizzard {
+            weather.weather.phase = Phase::Blizzard;
+            weather.weather.timer = 30.0;
+        } else {
+            weather.weather.timer = 60.0;
         }
-        if game.arsenal.current != slot.min(3) {
-            game.arsenal.current = slot.min(3);
-        }
-        game.arsenal.draw = 0.0;
-        if shot.upgrades {
-            for w in game.arsenal.weapons.iter_mut() {
-                for up in Upgrade::ALL {
-                    let _ = w.apply_upgrade(up);
+        aim.0 = shot.aim;
+        if let Some(slot) = shot.weapon {
+            for k in WeaponKind::ALL {
+                game.arsenal.unlock(k);
+            }
+            if game.arsenal.current != slot.min(3) {
+                game.arsenal.current = slot.min(3);
+            }
+            game.arsenal.draw = 0.0;
+            if shot.upgrades {
+                for w in game.arsenal.weapons.iter_mut() {
+                    for up in Upgrade::ALL {
+                        let _ = w.apply_upgrade(up);
+                    }
                 }
             }
         }
-    }
-    if let Some(r) = shot.reload {
-        let w = game.weapon_mut();
-        w.busy = w.reload_time * (1.0 - r);
-    }
-    if shot.recoil > 0.0 {
-        game.recoil = shot.recoil;
-    }
-    if let Some(p) = shot.swing {
-        let w = game.weapon_mut();
-        w.cooldown = w.fire_interval * (1.0 - p);
-    }
-    if let Ok((mut tf, mut p)) = player.single_mut() {
-        p.yaw = shot.yaw;
-        p.pitch = shot.pitch;
-        tf.translation = Vec3::new(shot.x, terrain::walk_height(shot.x, shot.z) + EYE_HEIGHT, shot.z);
-        tf.rotation = Quat::from_euler(EulerRot::YXZ, p.yaw, p.pitch, 0.0);
+        if let Some(r) = shot.reload {
+            let w = game.weapon_mut();
+            w.busy = w.reload_time * (1.0 - r);
+        }
+        if shot.recoil > 0.0 {
+            game.recoil = shot.recoil;
+        }
+        if let Some(p) = shot.swing {
+            let w = game.weapon_mut();
+            w.cooldown = w.fire_interval * (1.0 - p);
+        }
+        if let Ok((mut tf, mut p)) = player.single_mut() {
+            p.yaw = shot.yaw;
+            p.pitch = shot.pitch;
+            tf.translation = Vec3::new(shot.x, terrain::walk_height(shot.x, shot.z) + EYE_HEIGHT, shot.z);
+            // Off-map coordinates inside a room's floor put you in that room.
+            interior.set_if_neq(CurrentInterior(crate::sim::interiors::zone_at(shot.x, shot.z)));
+            tf.rotation = Quat::from_euler(EulerRot::YXZ, p.yaw, p.pitch, 0.0);
+        }
+        shot.placed = true;
     }
     let now = time.elapsed_secs();
     match shot.taken {

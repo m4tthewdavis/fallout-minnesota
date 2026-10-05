@@ -23,7 +23,8 @@ use crate::player::{Player, EYE_HEIGHT};
 use crate::sim::menu::{slot_name, AUTOSAVE, QUICKSAVE, SLOTS};
 use crate::sim::save::{world_key, PlayerSave, SaveGame, Snapshot, WorldKey};
 use crate::sim::terrain;
-use crate::state::{alive, ClockRes, Game, Messages, Paused, WeatherRes};
+use crate::sim::interiors::Interior;
+use crate::state::{alive, ClockRes, CurrentInterior, Game, Messages, Paused, WeatherRes};
 use crate::storage;
 use crate::world::{Collected, LootRing, Pickup};
 
@@ -34,10 +35,6 @@ pub struct PlayTime(pub f32);
 /// Story and quest flags, saved with the game.
 #[derive(Resource, Default)]
 pub struct StoryFlags(pub BTreeSet<String>);
-
-/// The interior the player is in, if any (an id; see interiors).
-#[derive(Resource, Default)]
-pub struct CurrentInterior(pub Option<String>);
 
 /// Ask for the autosave slot to be written (sleeping, taking shelter).
 #[derive(Event)]
@@ -56,7 +53,6 @@ impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayTime>()
             .init_resource::<StoryFlags>()
-            .init_resource::<CurrentInterior>()
             .add_event::<AutosaveRequest>()
             .add_systems(Startup, refresh_slots)
             .add_systems(
@@ -153,7 +149,7 @@ impl WorldView<'_, '_> {
             saved_at,
             opened,
             collected,
-            interior: self.interior.0.clone(),
+            interior: self.interior.0.map(|i| i.id()),
             flags: self.flags.0.iter().cloned().collect(),
         })
     }
@@ -241,7 +237,7 @@ fn apply_game_state(
     // The map picture is redrawn from the restored fog next time it's needed.
     pip.dirty = true;
     flags.0 = s.flags.iter().cloned().collect();
-    interior.0 = s.interior.clone();
+    interior.0 = s.interior.as_deref().and_then(Interior::parse);
     play.0 = s.play_secs;
 }
 

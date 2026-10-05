@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use super::combat::{Arsenal, Upgrade, Weapon, WeaponKind};
 use super::daynight::Clock;
+use super::interiors::{self, Interior};
 use super::mapdata::{self, Fog, FOG_CELLS};
 use super::progress;
 use super::survival::{Inventory, Survival};
@@ -360,6 +361,10 @@ impl SaveGame {
     pub fn sanitize(&mut self) {
         self.version = SAVE_VERSION;
         self.play_secs = finite_or(self.play_secs, 0.0).clamp(0.0, 1.0e8);
+        // An interior we don't know (from a newer game, or edited) means outdoors.
+        if self.interior.as_deref().is_some_and(|id| Interior::parse(id).is_none()) {
+            self.interior = None;
+        }
         let d = PlayerSave::default();
         let p = &mut self.player;
         let on_map = |v: f32| v.is_finite() && v.abs() <= HALF_SIZE - 2.0;
@@ -371,6 +376,12 @@ impl SaveGame {
         } else {
             p.x = finite_or(p.x, d.x).clamp(-5000.0, 5000.0);
             p.z = finite_or(p.z, d.z).clamp(-5000.0, 5000.0);
+            // Standing outside the room you're said to be in: put you at its door.
+            let room = self.interior.as_deref().and_then(Interior::parse);
+            if room.is_some_and(|r| interiors::zone_at(p.x, p.z) != Some(r)) {
+                let (ex, ez, _) = room.map(Interior::entry).unwrap_or((d.x, d.z, 0.0));
+                (p.x, p.z, p.y) = (ex, ez, interiors::FLOOR_Y);
+            }
         }
         p.y = finite_or(p.y, 0.0).clamp(-500.0, 500.0);
         p.yaw = finite_or(p.yaw, 0.0);
@@ -511,9 +522,12 @@ impl SaveGame {
     }
 }
 
-/// "near Lundgren's Fish House" for the closest named place within 90 m,
-/// otherwise "Mille Lacs".
+/// "inside Lundgren's Fish House" in a room, "near Lundgren's Fish House" for
+/// the closest named place within 90 m, otherwise "Mille Lacs".
 pub fn place_name(x: f32, z: f32) -> String {
+    if let Some(room) = interiors::zone_at(x, z) {
+        return format!("inside {}", room.name());
+    }
     mapdata::landmarks()
         .iter()
         .map(|l| (l, (l.x - x).hypot(l.z - z)))
@@ -683,6 +697,8 @@ mod tests {
         let first = &mapdata::landmarks()[0];
         assert_eq!(place_name(first.x, first.z + 5.0), format!("near {}", first.name));
         assert_eq!(place_name(-9000.0, 9000.0), "Mille Lacs");
+        let (ox, oz) = Interior::VaultLobby.origin();
+        assert_eq!(place_name(ox, oz), "inside Vault 143");
     }
 
     #[test]
@@ -772,10 +788,24 @@ mod tests {
 
     #[test]
     fn interiors_keep_their_off_map_positions_but_outdoor_positions_are_checked() {
-        let inside = SaveGame::parse(r#"{ "version": 1, "interior": "fish_house_1", "player": { "x": 1500.0, "y": 0.0, "z": 1500.0 } }"#).unwrap();
-        assert_eq!((inside.player.x, inside.player.z), (1500.0, 1500.0));
+        let (ox, oz) = Interior::FishHouse(1).origin();
+        let inside = SaveGame::parse(&format!(r#"{{ "version": 1, "interior": "fish_house_1", "player": {{ "x": {ox}, "y": 0.0, "z": {oz} }} }}"#)).unwrap();
+        assert_eq!((inside.player.x, inside.player.z), (ox, oz));
         let outside = SaveGame::parse(r#"{ "version": 1, "player": { "x": 1500.0, "z": 1500.0 } }"#).unwrap();
         assert_ne!(outside.player.x, 1500.0);
+    }
+
+    #[test]
+    fn an_unknown_interior_means_outdoors_and_a_stray_position_goes_to_the_door() {
+        let lost = SaveGame::parse(r#"{ "version": 1, "interior": "castle", "player": { "x": 1000.0, "z": 1000.0 } }"#).unwrap();
+        assert_eq!(lost.interior, None, "a room we don't know isn't a room");
+        assert_eq!((lost.player.x, lost.player.z), (PlayerSave::default().x, PlayerSave::default().z), "and the off-map position is replaced");
+        let wandered = SaveGame::parse(r#"{ "version": 1, "interior": "vault_lobby", "player": { "x": 5.0, "z": 5.0, "y": 9.0 } }"#).unwrap();
+        let (ex, ez, _) = Interior::VaultLobby.entry();
+        assert_eq!((wandered.player.x, wandered.player.z, wandered.player.y), (ex, ez, interiors::FLOOR_Y), "you're put at the lobby's door");
+        let fine = SaveGame::parse(&format!(r#"{{ "version": 1, "interior": "mart", "player": {{ "x": {}, "z": {} }} }}"#, Interior::Mart.origin().0, Interior::Mart.origin().1)).unwrap();
+        assert_eq!(fine.interior.as_deref(), Some("mart"));
+        assert_eq!(fine.player.x, Interior::Mart.origin().0, "a position inside its room is kept");
     }
 
     #[test]

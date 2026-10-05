@@ -535,7 +535,8 @@ fn update_hud(
         .single()
         .map(|(tf, p)| (tf.translation, p.yaw))
         .unwrap_or((Vec3::ZERO, 0.0));
-    let sheltered = terrain::shelter_at(pos.x, pos.z).is_some();
+    let cover = terrain::cover_at(pos.x, pos.z);
+    let sheltered = cover.sheltered();
     let ambient_rads = terrain::ambient_rads(pos.x, pos.z);
     let rad_rate = ambient_rads + if sheltered { 0.0 } else { cond.rads_per_sec };
 
@@ -580,7 +581,7 @@ fn update_hud(
             Stat::Heat => {
                 let note = if s.frostbite {
                     " FROSTBITE"
-                } else if sheltered {
+                } else if cover.warm() {
                     " warming"
                 } else if s.body_heat < 30.0 {
                     " freezing"

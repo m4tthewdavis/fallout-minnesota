@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::assets::GameAssets;
 use crate::player::Player;
 use crate::sim::weather::{Phase, Weather};
-use crate::state::{ClockRes, Messages, RngRes, WeatherRes};
+use crate::state::{ClockRes, CurrentInterior, Messages, RngRes, WeatherRes};
 use crate::world::Sun;
 
 const FLAKES: usize = 900;
@@ -149,6 +149,7 @@ fn smooth_visuals(time: Res<Time>, weather: Res<WeatherRes>, mut vis: ResMut<Vis
 
 fn apply_atmosphere(
     vis: Res<VisualWeather>,
+    interior: Res<CurrentInterior>,
     clock: Res<ClockRes>,
     mut fog: Query<&mut DistanceFog>,
     mut sun: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
@@ -176,6 +177,22 @@ fn apply_atmosphere(
         f.falloff = FogFalloff::Exponential { density: vis.fog };
     }
     clear.0 = color;
+
+    // Indoors the weather, sun and sky don't reach you: just the room's own light.
+    if let Some(room) = interior.0 {
+        for mut f in &mut fog {
+            f.color = Color::srgb(0.02, 0.02, 0.025);
+            f.falloff = FogFalloff::Exponential { density: 0.004 };
+        }
+        clear.0 = Color::BLACK;
+        for (mut light, _) in &mut sun {
+            light.illuminance = 0.0;
+        }
+        let (c, brightness) = room.ambient();
+        ambient.color = Color::srgb(c[0], c[1], c[2]);
+        ambient.brightness = brightness;
+        return;
+    }
 
     // Sun by day, moon by night.
     let (dir, strength, light_color) = if sky.sun >= sky.moon * 0.3 {
@@ -205,6 +222,7 @@ fn apply_atmosphere(
 fn move_flakes(
     time: Res<Time>,
     vis: Res<VisualWeather>,
+    interior: Res<CurrentInterior>,
     mut rng: ResMut<RngRes>,
     flake_mat: Res<FlakeMaterial>,
     clock: Res<ClockRes>,
@@ -223,7 +241,7 @@ fn move_flakes(
         m.base_color = Color::LinearRgba(LinearRgba::new(c.x, c.y, c.z, 0.9));
     }
     let dt = time.delta_secs();
-    let active = (vis.snow * FLAKES as f32) as usize;
+    let active = if interior.0.is_some() { 0 } else { (vis.snow * FLAKES as f32) as usize };
     let speed_mul = 1.0 + vis.snow * 1.5;
 
     for (mut tf, mut visibility, flake) in &mut flakes {

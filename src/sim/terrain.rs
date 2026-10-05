@@ -4,6 +4,7 @@
 //! The height function is shared by the renderer (terrain mesh) and gameplay
 //! (player/wolf ground height), so they always agree.
 
+use super::interiors::{self, Interior};
 use super::mathx::{lerp, smoothstep};
 
 pub const HALF_SIZE: f32 = 200.0;
@@ -103,6 +104,10 @@ pub fn lake_at(x: f32, z: f32) -> Option<usize> {
 
 /// Height you actually stand on: ice if you are over a lake, else the ground.
 pub fn walk_height(x: f32, z: f32) -> f32 {
+    // Indoors the floor is flat, wherever the rooms sit.
+    if interiors::zone_at(x, z).is_some() {
+        return interiors::FLOOR_Y;
+    }
     let h = height(x, z);
     if lake_at(x, z).is_some() {
         h.max(ICE_LEVEL)
@@ -157,11 +162,48 @@ pub fn ambient_rads(x: f32, z: f32) -> f32 {
     rads
 }
 
-/// Index of the shelter the point is inside / next to, if any.
+/// Index of the shelter the point is inside / next to, if any (inside a fish
+/// house counts too). Shelters have a workbench and a stove.
 pub fn shelter_at(x: f32, z: f32) -> Option<usize> {
+    if let Some(Interior::FishHouse(i)) = interiors::zone_at(x, z) {
+        return Some(i as usize);
+    }
     SHELTERS
         .iter()
         .position(|&(sx, sz)| dist(x, z, sx, sz) < SHELTER_RADIUS)
+}
+
+/// How much the weather reaches a spot.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Cover {
+    /// Out in the wind and the radiation.
+    Open,
+    /// Out of the wind and the fallout, but no warmer than the air.
+    Sheltered,
+    /// Sheltered, and heated (a fish house, the vault lobby).
+    Warm,
+}
+
+impl Cover {
+    pub fn sheltered(self) -> bool {
+        self != Cover::Open
+    }
+    pub fn warm(self) -> bool {
+        self == Cover::Warm
+    }
+}
+
+/// What kind of cover there is at a point: inside a room, near a shelter's
+/// fire, or none.
+pub fn cover_at(x: f32, z: f32) -> Cover {
+    if let Some(room) = interiors::zone_at(x, z) {
+        return if room.warm() { Cover::Warm } else { Cover::Sheltered };
+    }
+    if shelter_at(x, z).is_some() {
+        Cover::Warm
+    } else {
+        Cover::Open
+    }
 }
 
 /// Where to put a player who falls through the ice: just past the shore,
@@ -211,6 +253,9 @@ pub fn road_z(x: f32) -> f32 {
 /// The surface at a point, for footsteps. Ice beats everything (it is a lake),
 /// then decks, concrete, the road, and finally snow.
 pub fn surface_at(x: f32, z: f32) -> Surface {
+    if let Some(room) = interiors::zone_at(x, z) {
+        return room.surface();
+    }
     if lake_at(x, z).is_some() {
         return Surface::Ice;
     }
@@ -362,5 +407,22 @@ mod tests {
         let (cx, cz, r, s) = RAD_SOURCES[0];
         assert!((ambient_rads(cx, cz) - s).abs() < 1e-3);
         assert_eq!(ambient_rads(cx + r + 1.0, cz), 0.0);
+    }
+
+    #[test]
+    fn indoors_the_floor_is_flat_the_ground_sounds_right_and_the_weather_stays_out() {
+        for room in interiors::ALL {
+            let (x, z, _) = room.entry();
+            assert_eq!(walk_height(x, z), interiors::FLOOR_Y);
+            assert_eq!(surface_at(x, z), room.surface());
+            assert!(cover_at(x, z).sheltered(), "{room:?}");
+            assert_eq!(cover_at(x, z).warm(), room.warm(), "{room:?}");
+            assert_eq!(shelter_at(x, z).is_some(), matches!(room, Interior::FishHouse(_)), "only fish houses count as shelters");
+        }
+        // Outdoors nothing changed: open ground, a fire's warmth by a shelter.
+        assert_eq!(cover_at(0.0, 0.0), Cover::Open);
+        assert_eq!(cover_at(SHELTERS[0].0, SHELTERS[0].1), Cover::Warm);
+        assert_eq!(shelter_at(SHELTERS[2].0, SHELTERS[2].1), Some(2));
+        assert!((walk_height(10.0, 20.0) - height(10.0, 20.0)).abs() < 1e-6);
     }
 }

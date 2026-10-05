@@ -18,7 +18,7 @@ use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
 use crate::sim::weather::Phase;
 use crate::sim::wolf::{self, WolfMode, BITE_RANGE};
-use crate::state::{alive, random_point_around, ClockRes, Colliders, Fx, FxQueue, Game, Hostile, Messages, RngRes, SfxQueue, WeatherRes};
+use crate::state::{alive, outdoors, random_point_around, ClockRes, Colliders, Fx, FxQueue, Game, Hostile, Messages, RngRes, SfxQueue, WeatherRes};
 
 const MAX_WOLVES: usize = 16;
 const BITE_COOLDOWN: f32 = 1.3;
@@ -90,7 +90,7 @@ impl Plugin for WolfPlugin {
             .add_systems(
                 Update,
                 (
-                    (blizzard_packs, wolf_ai, distant_howls).chain().run_if(alive),
+                    (blizzard_packs, wolf_ai, distant_howls).chain().run_if(alive.and(outdoors)),
                     animate_wolves,
                 ),
             );

@@ -145,7 +145,6 @@ pub fn spawn_props(
     let (gx, gz, _, _) = RAD_SOURCES[1];
     let gzz = gz + 9.0;
     let finds = [
-        (WeaponKind::ScrapShotgun, assets.crate_military.clone(), Vec3::new(bx + 5.0, ground(bx + 5.0, bz - 4.5) + 0.1, bz - 4.5), 0.4, 1.3, "military footlocker"),
         (WeaponKind::Revolver, assets.crate_military.clone(), Vec3::new(gx + 4.0, ground(gx + 4.0, gzz - 7.0) + 0.1, gzz - 7.0), 2.6, 1.3, "armoury crate"),
         (WeaponKind::IceAxe, assets.toolbox.clone(), {
             let (sx, sz) = SHELTERS[1];

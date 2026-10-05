@@ -118,6 +118,7 @@ impl Plugin for WorldPlugin {
                 crate::props::spawn_props,
                 crate::nature::spawn_nature,
                 spawn_loot,
+                crate::interiors::spawn_interiors,
             )
                 .chain()
                 .in_set(crate::state::WorldGen),

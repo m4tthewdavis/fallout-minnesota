@@ -10,6 +10,7 @@ pub mod collision;
 pub mod combat;
 pub mod daynight;
 pub mod flora;
+pub mod interiors;
 pub mod loot;
 pub mod mathx;
 pub mod mapdata;

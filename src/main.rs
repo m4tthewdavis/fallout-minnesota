@@ -20,6 +20,7 @@ mod flora;
 mod gun;
 mod hud;
 mod interact;
+mod interiors;
 mod landmarks;
 mod menu;
 mod meshes;
@@ -88,6 +89,7 @@ fn main() {
             gun::GunPlugin,
             particles::ParticlePlugin,
             hud::HudPlugin,
+            interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
         .add_plugins((menu::MenuPlugin, saves::SavePlugin, devshot::DevShotPlugin))

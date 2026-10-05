@@ -1074,7 +1074,7 @@ fn update_status(
         node.width = Val::Percent(v.clamp(0.0, 1.0) * 100.0);
     }
     let pos = player.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
-    let sheltered = terrain::shelter_at(pos.x, pos.z).is_some();
+    let sheltered = terrain::cover_at(pos.x, pos.z).sheltered();
     let cond = weather.weather.conditions();
     let air = cond.air_temp_f + clock.0.temp_offset_f();
     let feels = Survival::effective_temp(&Exposure { air_temp_f: air, wind_chill_f: cond.wind_chill_f, sheltered, ..Default::default() });

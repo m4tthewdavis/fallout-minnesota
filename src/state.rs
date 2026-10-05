@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use crate::sim::collision::Shape;
 use crate::sim::combat::{Arsenal, Weapon};
 use crate::sim::daynight::Clock;
+use crate::sim::interiors::Interior;
 use crate::sim::rng::Rng;
 use crate::sim::survival::{DeathCause, Inventory, Survival};
 use crate::sim::synth::Sound;
@@ -175,6 +176,23 @@ fn reseed_after_world(mut rng: ResMut<RngRes>) {
     rng.0 = Rng::new(seed);
 }
 
+/// The room the player is in (a fish house, the vault lobby, the stockroom),
+/// or `None` out in the world.
+#[derive(Resource, Default, PartialEq, Eq)]
+pub struct CurrentInterior(pub Option<Interior>);
+
+/// True while a door's fade is under way (the game holds still).
+#[derive(Resource, Default)]
+pub struct Transition {
+    pub active: bool,
+}
+
+/// Run condition for anything that belongs to the outdoors (wolves, the moose,
+/// blizzard packs): it waits while the player is indoors.
+pub fn outdoors(interior: Res<CurrentInterior>) -> bool {
+    interior.0.is_none()
+}
+
 /// True while the pause menu is open (the game is paused).
 #[derive(Resource, Default)]
 pub struct Paused(pub bool);
@@ -184,9 +202,9 @@ pub struct Paused(pub bool);
 pub struct TreePositions(pub Vec<(f32, f32)>);
 
 /// Run condition: gameplay systems only run while the player is alive and
-/// neither the Pip-Boy nor the pause menu is open.
-pub fn alive(game: Res<Game>, pip: Res<PipOpen>, paused: Res<Paused>) -> bool {
-    game.death.is_none() && !pip.0 && !paused.0
+/// neither the Pip-Boy, the pause menu nor a door's fade is in the way.
+pub fn alive(game: Res<Game>, pip: Res<PipOpen>, paused: Res<Paused>, transition: Res<Transition>) -> bool {
+    game.death.is_none() && !pip.0 && !paused.0 && !transition.active
 }
 
 /// Despawns short-lived effects (muzzle flashes, tracers).
@@ -217,6 +235,8 @@ impl Plugin for StatePlugin {
             .init_resource::<Prompt>()
             .init_resource::<PipOpen>()
             .init_resource::<Paused>()
+            .init_resource::<CurrentInterior>()
+            .init_resource::<Transition>()
             .init_resource::<TreePositions>()
             .add_systems(PostStartup, reseed_after_world)
             .add_systems(Update, (tick_messages, tick_lifetimes));

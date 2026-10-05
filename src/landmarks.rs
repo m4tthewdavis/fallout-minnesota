@@ -18,7 +18,7 @@ use crate::sim::weather::WIND_DIR;
 use crate::world::{glow, ground, mat, prop, spawn_contact_shadow, spawn_drift, Blinker};
 
 /// Pre-war landmarks trees should stay away from: (x, z, clear radius).
-pub const RUINS: [(f32, f32, f32); 2] = [(-40.0, -110.0, 20.0), (140.0, -140.0, 18.0)];
+pub const RUINS: [(f32, f32, f32); 2] = [(crate::sim::interiors::MART_POS.0, crate::sim::interiors::MART_POS.1, 20.0), (140.0, -140.0, 18.0)];
 pub const CARS: [(f32, f32, f32); 6] = [
     (-150.0, 95.0, 1.62),
     (-128.0, 92.0, 1.4),
@@ -508,6 +508,34 @@ pub fn spawn_landmarks(
             Mesh3d(meshes.add(to_mesh_tangents(&meshgen::cuboid([size.x + 0.1, 0.18, size.z + 0.1], 2.0)))),
             MeshMaterial3d(assets.snow.clone()),
             Transform::from_translation(pos + Vec3::Y * (size.y / 2.0 + 0.09)),
+        ));
+    }
+    // The loading dock's roller door, jammed half open, with the stockroom beyond.
+    {
+        let (dx, dz) = (bx + 7.0, bz - 7.42);
+        let dy = ground(dx, dz);
+        let dock_dark = mat(&mut materials, Color::srgb(0.03, 0.03, 0.035));
+        commands.spawn((Mesh3d(meshes.add(Cuboid::new(3.2, 2.8, 0.06))), MeshMaterial3d(dock_dark), Transform::from_xyz(dx, dy + 1.1, dz)));
+        for k in 0..4 {
+            commands.spawn((
+                Mesh3d(meshes.add(to_mesh_tangents(&meshgen::cuboid([3.3, 0.16, 0.12], 1.0)))),
+                MeshMaterial3d(assets.rust.clone()),
+                Transform::from_xyz(dx, dy + 2.45 - k as f32 * 0.17, dz + 0.06),
+            ));
+        }
+        commands.spawn((
+            Mesh3d(meshes.add(to_mesh_tangents(&meshgen::cuboid([0.2, 2.9, 0.3], 1.0)))),
+            MeshMaterial3d(assets.rust.clone()),
+            Transform::from_xyz(dx - 1.7, dy + 1.15, dz + 0.03),
+        ));
+        commands.spawn((
+            Mesh3d(meshes.add(to_mesh_tangents(&meshgen::cuboid([0.2, 2.9, 0.3], 1.0)))),
+            MeshMaterial3d(assets.rust.clone()),
+            Transform::from_xyz(dx + 1.7, dy + 1.15, dz + 0.03),
+        ));
+        commands.spawn((
+            PointLight { color: Color::srgb(0.75, 0.85, 1.0), intensity: 40_000.0, range: 6.0, ..default() },
+            Transform::from_xyz(dx, dy + 1.4, dz - 1.2),
         ));
     }
     // Collapsed roof slab and twisted steel beams.

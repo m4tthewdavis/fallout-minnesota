@@ -48,11 +48,22 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
 | Esc | Pause menu: Resume, Save, Load, Settings (shadows, view distance, UI size, volume), Quit. Esc also closes the Pip-Boy |
+| E | Use a door, bunk, stove or terminal (a prompt shows what's in reach), or open a crate |
 | G | Geiger counter on / off |
 | F9 | Mute / unmute all sound |
 | F10 / F11 | Master volume down / up |
 | F5 / F6 | Effects volume down / up |
 | F7 / F8 | Music volume down / up |
+
+## Interiors
+
+Walk up to a door and press E: the screen fades, you step inside, and the weather and daylight are swapped for the room's own light.
+
+- **Fish houses** (four): a bunk (sleep eight hours: full health, warmed through, the storm blows over, frostbite eases, and the game autosaves), a stove (heat a hotdish for +60 Heat and +10 HP) and a stash. Entering one autosaves too.
+- **Vault 143 lobby**: the heavy cog door, the Overseer's terminal desk and a locker.
+- **Bullseye-Mart stockroom**: reach it by the loading-dock door in the ruin's north wall. Shelving, caches, and the military footlocker with the scrap shotgun, which used to sit out in the open.
+
+Wolves and the moose stay out of the rooms and are frozen while you're inside. Saving inside a room puts you back inside when you load.
 
 ## Saving
 
@@ -136,6 +147,7 @@ src/
     survival.rs  Body Heat, rads, health, inventory, crafting
     weather.rs   Calm / siren / blizzard cycle and conditions
     terrain.rs   Height field, lakes, shelters, radiation zones, highway
+    interiors.rs Rooms: layout, sleeping, cooking, door fade timing
     combat.rs    Pipe rifle, jams, ray-sphere hits
     wolf.rs      Frostfang behaviour decisions
     rng.rs       Small deterministic RNG

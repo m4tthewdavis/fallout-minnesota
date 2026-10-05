@@ -209,9 +209,12 @@ fn move_player(
     if moving {
         tf.translation += wish.normalize() * speed * dt;
     }
-    let limit = HALF_SIZE - 2.0;
-    tf.translation.x = tf.translation.x.clamp(-limit, limit);
-    tf.translation.z = tf.translation.z.clamp(-limit, limit);
+    // The map's edge doesn't apply inside a room, which is built beyond it.
+    if crate::sim::interiors::zone_at(tf.translation.x, tf.translation.z).is_none() {
+        let limit = HALF_SIZE - 2.0;
+        tf.translation.x = tf.translation.x.clamp(-limit, limit);
+        tf.translation.z = tf.translation.z.clamp(-limit, limit);
+    }
 
     // Slide around trees, walls and buildings.
     let (cx, cz) = collision::push_out(tf.translation.x, tf.translation.z, BODY_RADIUS, &colliders.0);
@@ -264,7 +267,8 @@ fn survival_tick(
     let Ok((mut tf, mut p)) = q.single_mut() else { return };
     let (x, z) = (tf.translation.x, tf.translation.z);
     let cond = weather.weather.conditions();
-    let sheltered = terrain::shelter_at(x, z).is_some();
+    let cover = terrain::cover_at(x, z);
+    let sheltered = cover.sheltered();
 
     // Nuclear ice: sprinting on it too long cracks it.
     if let Some(lake) = terrain::lake_at(x, z) {
@@ -298,7 +302,7 @@ fn survival_tick(
         air_temp_f: cond.air_temp_f + clock.0.temp_offset_f(),
         wind_chill_f: cond.wind_chill_f,
         sheltered,
-        near_heat: sheltered,
+        near_heat: cover.warm(),
         rads_per_sec: terrain::ambient_rads(x, z) + if sheltered { 0.0 } else { cond.rads_per_sec },
         sprinting: p.sprinting,
         insulation: game.inv.insulation(),
@@ -342,7 +346,7 @@ fn use_items(
     if keys.just_pressed(KeyCode::KeyC) {
         let at_shelter = q
             .single()
-            .map(|t| terrain::shelter_at(t.translation.x, t.translation.z).is_some())
+            .map(|t| terrain::cover_at(t.translation.x, t.translation.z).warm())
             .unwrap_or(false);
         if !at_shelter {
             msgs.show("You need a fish house workbench to craft. Find a shelter.", 2.5);
