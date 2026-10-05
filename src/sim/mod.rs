@@ -6,6 +6,7 @@
 //! weather, weapons, wolf behaviour, terrain) can be unit-tested with plain
 //! `cargo test` and reused if the renderer ever changes.
 
+pub mod atmosphere;
 pub mod collision;
 pub mod combat;
 pub mod crow;

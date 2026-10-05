@@ -2,11 +2,15 @@
 //! moving sun and moon, ambient light, and wind-blown snow that turns into a
 //! sickly green whiteout during rad-blizzards.
 
-use bevy::pbr::{DistanceFog, FogFalloff, NotShadowCaster};
+use bevy::asset::RenderAssetUsages;
+use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::pbr::{DistanceFog, FogFalloff, FogVolume, NotShadowCaster};
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::prelude::*;
 
 use crate::assets::GameAssets;
 use crate::player::Player;
+use crate::sim::atmosphere::{self, Conditions};
 use crate::sim::weather::{Phase, Weather};
 use crate::state::{ClockRes, CurrentInterior, Messages, RngRes, WeatherRes};
 use crate::world::Sun;
@@ -47,11 +51,12 @@ impl Plugin for WeatherPlugin {
             light: calm.light,
             sick: 0.0,
         })
-        .add_systems(Startup, spawn_flakes.after(crate::state::WorldGen))
+        .add_systems(Startup, (spawn_flakes.after(crate::state::WorldGen), spawn_fog_volume))
         .init_resource::<FlakeMaterial>()
+        .init_resource::<SkyLook>()
         .add_systems(
             Update,
-            (update_weather, smooth_visuals, apply_atmosphere, move_flakes).chain(),
+            (update_weather, smooth_visuals, apply_atmosphere.in_set(AtmosphereSet), update_fog_volume, move_flakes).chain(),
         );
     }
 }
@@ -147,10 +152,116 @@ fn smooth_visuals(time: Res<Time>, weather: Res<WeatherRes>, mut vis: ResMut<Vis
     vis.sick += (sick_target - vis.sick) * k;
 }
 
+/// The big box of fog that follows the player: banks that thicken in
+/// blizzards, hug the ground and drift with the wind.
+#[derive(Component)]
+struct BlizzardFog;
+
+const FOG_BOX: Vec3 = Vec3::new(180.0, 50.0, 180.0);
+
+fn spawn_fog_volume(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let (w, h, d) = (32usize, 16usize, 32usize);
+    let mut image = Image::new(
+        Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: d as u32 },
+        TextureDimension::D3,
+        atmosphere::fog_density_field(w, h, d),
+        TextureFormat::R8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::ClampToEdge,
+        address_mode_w: ImageAddressMode::Repeat,
+        ..ImageSamplerDescriptor::linear()
+    });
+    commands.spawn((
+        FogVolume { fog_color: Color::WHITE, density_factor: 0.0, density_texture: Some(images.add(image)), scattering: 0.35, absorption: 0.08, ..default() },
+        Transform::from_scale(FOG_BOX),
+        BlizzardFog,
+    ));
+}
+
+/// Fit the fog box round the player, scroll it with the wind and set how
+/// thick it is: a thin haze in calm weather, heavy banks in a blizzard.
+fn update_fog_volume(
+    time: Res<Time>,
+    vis: Res<VisualWeather>,
+    look: Res<SkyLook>,
+    interior: Res<CurrentInterior>,
+    settings: Res<crate::menu::GameSettings>,
+    player: Query<&Transform, With<Player>>,
+    mut volume: Query<(&mut FogVolume, &mut Transform), (With<BlizzardFog>, Without<Player>)>,
+) {
+    let (Ok(p), Ok((mut fog, mut tf))) = (player.single(), volume.single_mut()) else { return };
+    let ground = crate::sim::terrain::walk_height(p.translation.x, p.translation.z);
+    // Centre the box so its floor sits a little under the snow.
+    tf.translation = Vec3::new(p.translation.x, ground - 2.0 + FOG_BOX.y * 0.5, p.translation.z);
+    let t = time.elapsed_secs();
+    // Gusts: the banks pulse as they roll past.
+    let gust = 0.8 + 0.2 * (t * 0.37).sin() + 0.12 * (t * 0.91 + 1.3).sin();
+    let storm = ((vis.fog - 0.0075) / 0.03).clamp(0.0, 1.0);
+    let on = settings.0.volumetrics && interior.0.is_none();
+    fog.density_factor = if on { (0.0016 + 0.03 * storm * gust) * (1.0 + vis.snow * 0.5) } else { 0.0 };
+    // Lit by the day's own light: pale blue-white, green in a rad-blizzard.
+    let c = (look.horizon * 0.6 + look.zenith * 0.4).lerp(Vec3::new(0.45, 0.62, 0.42), vis.sick * 0.5);
+    let m = c / c.max_element().max(1e-3);
+    fog.fog_color = Color::linear_rgb(m.x, m.y, m.z);
+    // Scroll with the wind (the field tiles, so it never runs out).
+    let drift = Vec3::new(vis.wind, 0.0, vis.wind * 0.4) * t * 0.004;
+    fog.density_texture_offset = drift;
+}
+
+/// Runs once the sky's look for the frame is known.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AtmosphereSet;
+
+/// Exposure for the scattering model's colours.
+pub const SKY_EXPOSURE: f32 = 0.8;
+
+/// What the sky looks like this frame: worked out once here from the
+/// scattering model and the weather, then used by the sky dome, fog, sun and
+/// ambient light so they all agree.
+#[derive(Resource, Clone)]
+pub struct SkyLook {
+    pub conditions: Conditions,
+    /// The sky colour at the horizon (what the fog fades to), linear.
+    pub horizon: Vec3,
+    /// The sky colour overhead, linear.
+    pub zenith: Vec3,
+    /// Colour of direct sunlight (linear; black at night).
+    pub sun_light: Vec3,
+    /// 0 = clear, 1 = socked in.
+    pub overcast: f32,
+    /// 0..=1 radioactive green in the air.
+    pub sick: f32,
+}
+
+impl Default for SkyLook {
+    fn default() -> Self {
+        SkyLook {
+            conditions: Conditions { sun: [0.0, 1.0, 0.0], haze: 1.0, moon: 0.0 },
+            horizon: Vec3::splat(0.5),
+            zenith: Vec3::splat(0.3),
+            sun_light: Vec3::ONE,
+            overcast: 0.0,
+            sick: 0.0,
+        }
+    }
+}
+
+fn v3(c: [f32; 3]) -> Vec3 {
+    Vec3::from_array(c)
+}
+
+fn luma(c: Vec3) -> f32 {
+    c.dot(Vec3::new(0.2126, 0.7152, 0.0722))
+}
+
 fn apply_atmosphere(
     vis: Res<VisualWeather>,
-    interior: Res<CurrentInterior>,
     clock: Res<ClockRes>,
+    interior: Res<CurrentInterior>,
+    mut look: ResMut<SkyLook>,
     mut fog: Query<&mut DistanceFog>,
     mut sun: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
     mut ambient: ResMut<AmbientLight>,
@@ -159,22 +270,30 @@ fn apply_atmosphere(
     let sky = clock.0.sky();
     // 0 at deepest night, 1 in full day.
     let day = ((sky.daylight - 0.12) / 0.88).clamp(0.0, 1.0);
+    let overcast = ((vis.fog - 0.01) / 0.03).clamp(0.0, 1.0);
 
-    // Sky / fog colour: weather tint, darkened towards a deep-blue night,
-    // and warmed at sunrise and sunset.
-    let white = Vec3::new(0.70, 0.74, 0.78);
+    // The sky itself: scattering through winter air, hazier in a storm.
+    let conditions = Conditions { sun: sky.sun_pos, haze: 1.0 + 2.5 * overcast + 0.6 * vis.snow, moon: sky.moon * (1.0 - sky.sun) };
+    let clear_horizon = v3(atmosphere::horizon_color(&conditions, SKY_EXPOSURE));
+    let clear_zenith = v3(atmosphere::zenith_color(&conditions, SKY_EXPOSURE));
+    // A storm flattens it to a dull grey, lit from above; the blizzard adds a sick green.
+    let flat = |c: Vec3| Vec3::splat(luma(c)) * Vec3::new(0.93, 0.97, 1.0) * (0.45 + 0.55 * vis.light);
     let green = Vec3::new(0.45, 0.62, 0.42);
-    let weather_tint = white.lerp(green, vis.sick) * (0.55 + 0.45 * vis.light);
-    let night_tint = Vec3::new(0.04, 0.05, 0.09) + green * 0.08 * vis.sick;
-    let mut c = night_tint.lerp(weather_tint, day);
-    c = c.lerp(
-        Vec3::new(0.85, 0.55, 0.42) * (0.5 + 0.5 * vis.light),
-        sky.warmth * 0.35 * day.max(0.3),
-    );
-    let color = Color::srgb(c.x, c.y, c.z);
+    let mut horizon = clear_horizon.lerp(flat(clear_horizon), overcast * 0.85);
+    let mut zenith = clear_zenith.lerp(flat(clear_horizon) * 0.8, overcast * 0.85);
+    horizon = horizon.lerp(green * luma(horizon) / luma(green), vis.sick * 0.55);
+    zenith = zenith.lerp(green * luma(zenith) / luma(green), vis.sick * 0.4);
+    let sun_light = v3(atmosphere::sun_transmittance(sky.sun_pos, conditions.haze));
+    *look = SkyLook { conditions, horizon, zenith, sun_light, overcast, sick: vis.sick };
+
+    let color = Color::linear_rgb(horizon.x, horizon.y, horizon.z);
     for mut f in &mut fog {
         f.color = color;
         f.falloff = FogFalloff::Exponential { density: vis.fog };
+        // Fog toward the sun glows with its light (warm at sunrise and sunset).
+        let glare = sun_light * 0.55 * (1.0 - overcast);
+        f.directional_light_color = Color::linear_rgb(glare.x, glare.y, glare.z);
+        f.directional_light_exponent = 30.0;
     }
     clear.0 = color;
 
@@ -183,6 +302,7 @@ fn apply_atmosphere(
         for mut f in &mut fog {
             f.color = Color::srgb(0.02, 0.02, 0.025);
             f.falloff = FogFalloff::Exponential { density: 0.004 };
+            f.directional_light_color = Color::NONE;
         }
         clear.0 = Color::BLACK;
         for (mut light, _) in &mut sun {
@@ -194,29 +314,27 @@ fn apply_atmosphere(
         return;
     }
 
-    // Sun by day, moon by night.
+    // Sun by day (warm and low), moon by night.
     let (dir, strength, light_color) = if sky.sun >= sky.moon * 0.3 {
-        let warm = Vec3::new(1.0, 0.62, 0.38);
-        let noon = Vec3::new(0.95, 0.96, 1.0);
-        let lc = noon.lerp(warm, sky.warmth);
-        (Vec3::from_array(sky.sun_pos), 9_000.0 * sky.sun, lc)
+        // Illuminance follows the light that survives the atmosphere.
+        let lum = luma(sun_light).max(0.0).powf(0.8);
+        (Vec3::from_array(sky.sun_pos), 15_000.0 * lum * (1.0 - overcast * 0.3), sun_light)
     } else {
-        (
-            Vec3::new(-0.3, 0.8, -0.5).normalize(),
-            350.0 * sky.moon,
-            Vec3::new(0.6, 0.7, 1.0),
-        )
+        (Vec3::new(-0.3, 0.8, -0.5).normalize(), 350.0 * sky.moon, Vec3::new(0.6, 0.7, 1.0))
     };
     for (mut light, mut tf) in &mut sun {
         light.illuminance = strength * vis.light;
-        light.color = Color::srgb(light_color.x, light_color.y, light_color.z);
+        let m = light_color / light_color.max_element().max(1e-4);
+        light.color = Color::linear_rgb(m.x, m.y, m.z);
         *tf = Transform::from_translation(Vec3::ZERO).looking_at(-dir, Vec3::Y);
     }
 
-    let amb = Vec3::new(0.35, 0.42, 0.65).lerp(Vec3::new(0.75, 0.80, 0.90), day);
-    ambient.color = Color::srgb(amb.x, amb.y, amb.z);
+    // Ambient light is the sky's own: blue from above, pale at the horizon.
+    let amb = zenith.lerp(horizon, 0.45);
+    let m = amb / amb.max_element().max(1e-4);
+    ambient.color = Color::linear_rgb(m.x, m.y, m.z);
     // Less fill than sun so snow drifts, ripples and trees keep their shape.
-    ambient.brightness = ((170.0 + 230.0 * vis.light) * sky.daylight).max(60.0);
+    ambient.brightness = ((170.0 + 230.0 * vis.light) * sky.daylight).max(60.0) * (0.75 + 0.5 * day);
 }
 
 fn move_flakes(

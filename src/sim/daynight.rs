@@ -9,6 +9,9 @@ pub const START_HOUR: f32 = 7.5;
 /// How much colder the deepest night is than midday, in degrees F.
 pub const NIGHT_CHILL_F: f32 = 12.0;
 
+/// How high the midwinter noon sun gets (radians, about 24 degrees).
+pub const NOON_ALTITUDE: f32 = 0.42;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sky {
     /// Unit vector pointing from the ground towards the sun.
@@ -65,10 +68,11 @@ impl Clock {
     pub fn sky(&self) -> Sky {
         let angle = (self.hours - 6.0) / 12.0 * std::f32::consts::PI;
         let elev = angle.sin();
-        // The sun rises in the east (+x) and arcs over the southern sky (+z).
-        let raw = [angle.cos(), elev.max(-0.2), 0.35];
-        let len = (raw[0] * raw[0] + raw[1] * raw[1] + raw[2] * raw[2]).sqrt();
-        let sun_pos = [raw[0] / len, raw[1] / len, raw[2] / len];
+        // The sun rises in the east (+x) and arcs over the southern sky (+z),
+        // but it's deep winter at 46 degrees north: even at noon it only
+        // climbs about 24 degrees, so the light is low, long and warm all day.
+        let alt = if elev > 0.0 { NOON_ALTITUDE * elev } else { 0.7 * elev };
+        let sun_pos = [alt.cos() * angle.cos(), alt.sin(), alt.cos() * angle.sin()];
 
         let sun = smoothstep(-0.05, 0.25, elev);
         let moon = 1.0 - smoothstep(-0.15, 0.05, elev);
@@ -147,6 +151,23 @@ mod tests {
     fn labels() {
         assert_eq!(at(7.5).label(), "07:30");
         assert_eq!(at(23.99).label(), "23:59");
+    }
+
+    #[test]
+    fn the_winter_sun_stays_low_and_arcs_east_south_west() {
+        let noon = at(12.0).sky().sun_pos;
+        let alt = noon[1].asin();
+        assert!((alt - NOON_ALTITUDE).abs() < 0.01, "noon altitude {alt}");
+        assert!(noon[2] > 0.85, "due south at noon: {noon:?}");
+        let morning = at(7.0).sky().sun_pos;
+        let evening = at(17.0).sky().sun_pos;
+        assert!(morning[0] > 0.5 && evening[0] < -0.5, "east in the morning, west in the evening");
+        assert!(morning[1] > 0.0 && morning[1] < noon[1], "lower in the morning");
+        assert!(at(0.0).sky().sun_pos[1] < -0.3, "well below the horizon at midnight");
+        for h in 0..48 {
+            let a = at(h as f32 / 2.0).sky().sun_pos[1].asin();
+            assert!(a <= NOON_ALTITUDE + 1e-3, "never higher than noon");
+        }
     }
 
     #[test]

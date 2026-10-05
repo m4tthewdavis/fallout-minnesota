@@ -76,6 +76,14 @@ impl Default for Menu {
     }
 }
 
+fn on_off(v: bool) -> &'static str {
+    if v {
+        "On"
+    } else {
+        "Off"
+    }
+}
+
 fn button(label: &str, enabled: bool) -> Row {
     Row { label: label.to_string(), value: String::new(), kind: RowKind::Button, enabled }
 }
@@ -137,6 +145,8 @@ impl Menu {
                 volume("Effects Volume", s.sfx),
                 volume("Music Volume", s.music),
                 volume("Ambience Volume", s.ambience),
+                choice("Volumetric Fog", on_off(s.volumetrics)),
+                choice("Ambient Occlusion", on_off(s.ambient_occlusion)),
                 button("Back", true),
             ],
             Screen::Save => {
@@ -323,6 +333,8 @@ impl Menu {
                 };
                 *slot = if wrap && *slot >= 1.0 { 0.0 } else { (((*slot + dir as f32 * 0.1) * 10.0).round() / 10.0).clamp(0.0, 1.0) };
             }
+            7 => s.volumetrics = !s.volumetrics,
+            8 => s.ambient_occlusion = !s.ambient_occlusion,
             _ => {}
         }
         *s != before
@@ -563,7 +575,20 @@ mod tests {
         assert_eq!(r[0].kind, RowKind::Choice);
         assert_eq!(r[3].kind, RowKind::Slider);
         assert_eq!(r.last().unwrap().label, "Back");
-        assert_eq!(r.len(), 8);
+        assert_eq!(r.len(), 10);
+        assert_eq!((r[7].label.as_str(), r[7].value.as_str()), ("Volumetric Fog", "< On >"));
+        assert_eq!((r[8].label.as_str(), r[8].value.as_str()), ("Ambient Occlusion", "< On >"));
+    }
+
+    #[test]
+    fn the_effect_rows_toggle_on_and_off() {
+        let mut m = Menu { screen: Screen::Settings, selected: 7 };
+        let mut s = Settings::default();
+        assert!(m.adjust(1, &mut s) && !s.volumetrics);
+        assert!(m.adjust(1, &mut s) && s.volumetrics);
+        m.selected = 8;
+        assert!(m.adjust(-1, &mut s) && !s.ambient_occlusion);
+        assert!(s.volumetrics);
     }
 
     #[test]

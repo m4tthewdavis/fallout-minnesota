@@ -10,8 +10,9 @@ use crate::assets::GameAssets;
 use crate::meshes::to_mesh;
 use crate::player::Player;
 use crate::sim::meshgen::MeshData;
-use crate::sim::weather::Phase;
-use crate::state::{ClockRes, WeatherRes};
+use crate::sim::atmosphere;
+use crate::state::ClockRes;
+use crate::weather_fx::{SkyLook, SKY_EXPOSURE};
 
 const DOME_RADIUS: f32 = 900.0;
 
@@ -45,7 +46,7 @@ impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_sky)
             .add_systems(PostUpdate, follow_camera.before(bevy::transform::TransformSystem::TransformPropagate))
-            .add_systems(Update, update_sky);
+            .add_systems(Update, update_sky.after(crate::weather_fx::AtmosphereSet));
     }
 }
 
@@ -91,7 +92,7 @@ fn spawn_sky(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Gradient dome: vertex colours are rewritten every frame.
-    let mut dome_mesh: Mesh = Sphere::new(DOME_RADIUS).mesh().uv(48, 24);
+    let mut dome_mesh: Mesh = Sphere::new(DOME_RADIUS).mesh().uv(72, 40);
     let count = dome_mesh.count_vertices();
     dome_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[0.6f32, 0.65, 0.7, 1.0]; count]);
     let dome = meshes.add(dome_mesh);
@@ -184,15 +185,10 @@ fn follow_camera(cam: Query<&Transform, With<Player>>, mut q: Query<&mut Transfo
     }
 }
 
-fn lerp3(a: Vec3, b: Vec3, t: f32) -> Vec3 {
-    a + (b - a) * t.clamp(0.0, 1.0)
-}
-
 fn update_sky(
     time: Res<Time>,
     clock: Res<ClockRes>,
-    weather: Res<WeatherRes>,
-    clear: Res<ClearColor>,
+    look: Res<SkyLook>,
     handles: Option<Res<SkyHandles>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -202,47 +198,36 @@ fn update_sky(
         Query<&mut Transform, (With<SunDisc>, Without<Player>, Without<Stars>)>,
         Query<&mut Transform, (With<MoonDisc>, Without<Player>, Without<Stars>)>,
     )>,
-    mut overcast_smooth: Local<f32>,
 ) {
     let Some(h) = handles else { return };
     let Ok(cam) = cam.single() else { return };
     let sky = clock.0.sky();
     let day = ((sky.daylight - 0.12) / 0.88).clamp(0.0, 1.0);
-    let cond = weather.weather.conditions();
-    // 0 = clear, 1 = socked in by the storm.
-    let overcast_target = ((cond.fog_density - 0.01) / 0.03).clamp(0.0, 1.0);
-    let k = (time.delta_secs() * 0.5).min(1.0);
-    *overcast_smooth += (overcast_target - *overcast_smooth) * k;
-    let overcast = *overcast_smooth;
-    let sick = if weather.weather.phase == Phase::Blizzard { overcast } else { 0.0 };
+    let overcast = look.overcast;
+    let sun_dir = Vec3::from_array(look.conditions.sun).normalize_or_zero();
 
-    // The horizon matches the fog colour so distant terrain melts into the sky.
-    let horizon = clear.0.to_srgba();
-    let horizon = Vec3::new(horizon.red, horizon.green, horizon.blue);
-    let day_zenith = Vec3::new(0.30, 0.45, 0.72);
-    let night_zenith = Vec3::new(0.005, 0.01, 0.03);
-    let zenith = lerp3(lerp3(night_zenith, day_zenith, day), horizon, overcast * 0.85);
-    let zenith = lerp3(zenith, Vec3::new(0.25, 0.4, 0.2), sick * 0.3);
-    let sun_dir = Vec3::from_array(sky.sun_pos).normalize_or_zero();
-    let glow = Vec3::new(1.0, 0.55, 0.3);
-
+    // Repaint the dome from the scattering model (storms flatten it towards
+    // the weather colours the fog already uses).
     if let Some(mesh) = meshes.get_mut(&h.dome) {
         let positions: Vec<[f32; 3]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
             Some(VertexAttributeValues::Float32x3(p)) => p.clone(),
             _ => Vec::new(),
         };
+        let green = Vec3::new(0.45, 0.62, 0.42);
         let colors: Vec<[f32; 4]> = positions
             .iter()
             .map(|p| {
                 let d = Vec3::from_array(*p) / DOME_RADIUS;
-                let up = d.y.max(0.0);
-                let t = up.powf(0.45);
-                let mut c = lerp3(horizon, zenith, t);
-                // Warm halo around the low sun at dawn and dusk.
-                let near_sun = d.dot(sun_dir).max(0.0).powf(6.0);
-                c += glow * near_sun * sky.warmth * (1.0 - overcast) * 0.6;
                 if d.y < 0.0 {
-                    c = horizon;
+                    return [look.horizon.x, look.horizon.y, look.horizon.z, 1.0];
+                }
+                let model = Vec3::from_array(atmosphere::expose(atmosphere::sky_radiance(d.to_array(), &look.conditions), SKY_EXPOSURE));
+                // Under cloud the sky is a smooth ramp from horizon to zenith.
+                let overcast_c = look.horizon.lerp(look.zenith, d.y.max(0.0).powf(0.5));
+                let mut c = model.lerp(overcast_c, overcast * 0.9);
+                if look.sick > 0.0 {
+                    let l = c.dot(Vec3::new(0.2126, 0.7152, 0.0722));
+                    c = c.lerp(green * l / 0.6, look.sick * 0.4);
                 }
                 [c.x, c.y, c.z, 1.0]
             })
@@ -272,8 +257,11 @@ fn update_sky(
     // Sun and moon discs, facing the camera.
     let sun_alpha = (sky.sun * 1.5).min(1.0) * (1.0 - overcast * 0.9);
     if let Some(m) = materials.get_mut(&h.sun) {
-        let warm = lerp3(Vec3::new(4.0, 3.8, 3.3), Vec3::new(5.0, 2.2, 0.8), sky.warmth);
-        m.base_color = Color::LinearRgba(LinearRgba::new(warm.x, warm.y, warm.z, sun_alpha));
+        // The disc takes the colour of the light that survives the air: white-gold
+        // high up, orange then red as it sinks.
+        let t = look.sun_light;
+        let k = 5.0 / t.max_element().max(1e-3);
+        m.base_color = Color::LinearRgba(LinearRgba::new(t.x * k, t.y * k, t.z * k, sun_alpha));
     }
     for mut tf in &mut discs.p0() {
         let p = cam.translation + sun_dir * DOME_RADIUS * 0.9;

@@ -4,7 +4,8 @@
 //! the settings to the running game (shadows, view distance, UI size, volume)
 //! and keeps them in `settings.json`.
 
-use bevy::pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
+use bevy::core_pipeline::smaa::Smaa;
+use bevy::pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel, VolumetricFog, VolumetricLight};
 use bevy::prelude::*;
 use crate::theme::{ACCENT, ACCENT_DIM, ACCENT_OFF, MENU_PANEL, SELECTED, SELECTED_FILL};
 use bevy::ui::widget::NodeImageMode;
@@ -21,7 +22,7 @@ use crate::storage;
 use crate::world::{PointShadows, Sun};
 
 /// Most rows any screen has (the settings screen).
-const MAX_ROWS: usize = 8;
+const MAX_ROWS: usize = 10;
 
 const SETTINGS_FILE: &str = "settings.json";
 
@@ -76,7 +77,11 @@ impl Plugin for MenuPlugin {
                 Ok("medium") => ShadowQuality::Medium,
                 _ => ShadowQuality::High,
             };
-            Settings { shadows, ..Settings::default() }
+            // Ambient occlusion and volumetric fog are slow in software too, so they
+            // are off unless asked for: FMN_AO=on, FMN_VOL=on (or FMN_FX=on for both).
+            let fx = std::env::var("FMN_FX").is_ok_and(|v| v == "on");
+            let want = |name: &str| fx || std::env::var(name).is_ok_and(|v| v == "on");
+            Settings { shadows, volumetrics: want("FMN_VOL"), ambient_occlusion: want("FMN_AO"), ..Settings::default() }
         } else {
             storage::read(&storage::data_dir(), SETTINGS_FILE).and_then(|t| Settings::from_json(&t)).unwrap_or_default()
         };
@@ -399,6 +404,8 @@ fn apply_settings(
     mut suns: Query<(Entity, &mut DirectionalLight), With<Sun>>,
     mut point_lights: Query<&mut PointLight, With<PointShadows>>,
     mut cameras: Query<&mut Projection, With<Player>>,
+    main_camera: Query<Entity, With<Player>>,
+    all_cameras: Query<Entity, With<Camera3d>>,
 ) {
     let s = &settings.0;
     info!("settings applied: {s:?}");
@@ -426,6 +433,37 @@ fn apply_settings(
     }
     for mut light in &mut point_lights {
         light.shadows_enabled = q.point_light_shadows();
+    }
+    // Atmosphere: light shafts and fog banks, and ambient occlusion (which
+    // can't share a camera with MSAA, so SMAA smooths the edges instead).
+    for sun in suns.iter().map(|(e, _)| e) {
+        if s.volumetrics && q.sun_shadows() {
+            commands.entity(sun).insert(VolumetricLight);
+        } else {
+            commands.entity(sun).remove::<VolumetricLight>();
+        }
+    }
+    for cam in &main_camera {
+        let mut c = commands.entity(cam);
+        if s.volumetrics {
+            c.insert(VolumetricFog { ambient_intensity: 0.0, step_count: 40, jitter: 0.0, ..default() });
+        } else {
+            c.remove::<VolumetricFog>();
+        }
+        if s.ambient_occlusion {
+            c.insert(ScreenSpaceAmbientOcclusion { quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium, constant_object_thickness: 0.4 });
+        } else {
+            c.remove::<ScreenSpaceAmbientOcclusion>();
+        }
+    }
+    for cam in &all_cameras {
+        let mut c = commands.entity(cam);
+        if s.ambient_occlusion {
+            c.insert((Msaa::Off, Smaa::default()));
+        } else {
+            // (Screenshots in software never use MSAA: it costs gigabytes.)
+            c.insert(if std::env::var("FMN_SHOT").is_ok() { Msaa::Off } else { Msaa::Sample4 }).remove::<Smaa>();
+        }
     }
     // View distance.
     for mut proj in &mut cameras {

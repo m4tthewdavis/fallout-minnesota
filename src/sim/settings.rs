@@ -135,6 +135,10 @@ pub struct Settings {
     pub sfx: f32,
     pub music: f32,
     pub ambience: f32,
+    /// Volumetric fog and light shafts (blizzard banks, god rays through the haze).
+    pub volumetrics: bool,
+    /// Screen-space ambient occlusion (darkens creases, snow drifts and tree bases).
+    pub ambient_occlusion: bool,
 }
 
 impl Default for Settings {
@@ -147,6 +151,8 @@ impl Default for Settings {
             sfx: 1.0,
             music: 0.6,
             ambience: 0.8,
+            volumetrics: true,
+            ambient_occlusion: true,
         }
     }
 }
@@ -247,8 +253,16 @@ mod tests {
 
     #[test]
     fn settings_survive_a_round_trip() {
-        let s = Settings { shadows: ShadowQuality::Low, view: ViewDistance::Medium, ui_scale: 1.2, master: 0.5, sfx: 0.3, music: 0.0, ambience: 1.0 };
+        let s = Settings { shadows: ShadowQuality::Low, view: ViewDistance::Medium, ui_scale: 1.2, master: 0.5, sfx: 0.3, music: 0.0, ambience: 1.0, volumetrics: false, ambient_occlusion: false };
         assert_eq!(Settings::from_json(&s.to_json()), Some(s));
+    }
+
+    #[test]
+    fn the_atmosphere_effects_default_on_and_can_be_turned_off_in_a_file() {
+        let d = Settings::default();
+        assert!(d.volumetrics && d.ambient_occlusion);
+        let s = Settings::from_json(r#"{ "volumetrics": false }"#).unwrap();
+        assert!(!s.volumetrics && s.ambient_occlusion);
     }
 
     #[test]
