@@ -43,6 +43,10 @@ pub enum DeathCause {
     Cold,
     Radiation,
     Wounds,
+    /// Shot by Frozen Raiders.
+    Shot,
+    /// Pecked down by rad-crows.
+    Pecked,
 }
 
 impl DeathCause {
@@ -51,6 +55,8 @@ impl DeathCause {
             DeathCause::Cold => "You froze solid. Another statue for the Long Winter.",
             DeathCause::Radiation => "The glowing snow finally got you.",
             DeathCause::Wounds => "Mauled in the snow. The Frostfangs eat well tonight.",
+            DeathCause::Shot => "Shot down in the snow by Frozen Raiders. Nobody comes to bury you.",
+            DeathCause::Pecked => "Pecked to the bone by rad-crows. A sorry end for a vault dweller.",
         }
     }
 }
@@ -146,13 +152,19 @@ impl Survival {
     }
 
     pub fn damage(&mut self, amount: f32) -> Option<DeathCause> {
+        self.damage_by(amount, DeathCause::Wounds)
+    }
+
+    /// Take damage; if it kills, `cause` is what's blamed (unless you were
+    /// already frostbitten, which gets the credit).
+    pub fn damage_by(&mut self, amount: f32, cause: DeathCause) -> Option<DeathCause> {
         self.health -= amount;
         if self.health <= 0.0 {
             self.health = 0.0;
             Some(if self.frostbite {
                 DeathCause::Cold
             } else {
-                DeathCause::Wounds
+                cause
             })
         } else {
             None

@@ -101,9 +101,78 @@ pub fn blocked(x: f32, z: f32, radius: f32, shapes: &[Shape]) -> bool {
     shapes.iter().any(|s| s.push(x, z, radius) != (x, z))
 }
 
+impl Shape {
+    fn contains(&self, x: f32, z: f32) -> bool {
+        match *self {
+            Shape::Circle { x: cx, z: cz, r } => (x - cx).hypot(z - cz) < r,
+            Shape::Rect { x0, z0, x1, z1 } => x > x0 && x < x1 && z > z0 && z < z1,
+        }
+    }
+
+    /// Does the segment from `a` to `b` pass through this shape?
+    fn crossed_by(&self, a: (f32, f32), b: (f32, f32)) -> bool {
+        let (dx, dz) = (b.0 - a.0, b.1 - a.1);
+        match *self {
+            Shape::Circle { x: cx, z: cz, r } => {
+                let len2 = dx * dx + dz * dz;
+                let t = if len2 < 1e-9 { 0.0 } else { (((cx - a.0) * dx + (cz - a.1) * dz) / len2).clamp(0.0, 1.0) };
+                (a.0 + dx * t - cx).hypot(a.1 + dz * t - cz) < r
+            }
+            Shape::Rect { x0, z0, x1, z1 } => {
+                // Slab method.
+                let (mut t0, mut t1) = (0.0f32, 1.0f32);
+                for (p, d, lo, hi) in [(a.0, dx, x0, x1), (a.1, dz, z0, z1)] {
+                    if d.abs() < 1e-9 {
+                        if p < lo || p > hi {
+                            return false;
+                        }
+                    } else {
+                        let (u, v) = ((lo - p) / d, (hi - p) / d);
+                        t0 = t0.max(u.min(v));
+                        t1 = t1.min(u.max(v));
+                        if t0 > t1 {
+                            return false;
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+}
+
+/// True if something solid stands between `a` and `b` (a line of sight is
+/// cut). A shape that either end is inside of (someone leaning on a wall)
+/// doesn't count, so neither can hide from the other behind what they touch.
+pub fn segment_blocked(a: (f32, f32), b: (f32, f32), shapes: &[Shape]) -> bool {
+    shapes.iter().any(|s| !s.contains(a.0, a.1) && !s.contains(b.0, b.1) && s.crossed_by(a, b))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tree_or_a_wall_cuts_the_line_of_sight() {
+        let tree = [Shape::Circle { x: 5.0, z: 0.0, r: 0.6 }];
+        assert!(segment_blocked((0.0, 0.0), (10.0, 0.0), &tree));
+        assert!(!segment_blocked((0.0, 0.0), (10.0, 3.0), &tree), "passes well to one side");
+        assert!(!segment_blocked((0.0, 0.0), (4.0, 0.0), &tree), "stops short of it");
+        let wall = [Shape::rect_centered(5.0, 0.0, 1.0, 6.0)];
+        assert!(segment_blocked((0.0, 0.0), (10.0, 0.0), &wall));
+        assert!(segment_blocked((0.0, -2.0), (10.0, 2.0), &wall), "diagonally through it");
+        assert!(!segment_blocked((0.0, 4.0), (10.0, 4.0), &wall), "over the end of it");
+        assert!(!segment_blocked((0.0, 0.0), (10.0, 0.0), &[]));
+    }
+
+    #[test]
+    fn leaning_on_a_wall_does_not_hide_you_from_it() {
+        let wall = [Shape::rect_centered(0.0, 0.0, 10.0, 2.0)];
+        // Standing inside the (padded) collider, looking out.
+        assert!(!segment_blocked((0.0, 0.5), (0.0, 20.0), &wall));
+        let tree = [Shape::Circle { x: 0.0, z: 0.0, r: 1.0 }];
+        assert!(!segment_blocked((0.5, 0.0), (10.0, 0.0), &tree));
+    }
 
     #[test]
     fn clear_space_is_untouched() {

@@ -302,6 +302,8 @@ fn apply_world_state(
     }
     commands.run_system_cached(crate::wolves::spawn_initial_packs);
     commands.run_system_cached(crate::moose::spawn_initial);
+    commands.run_system_cached(crate::crows::spawn_initial);
+    commands.run_system_cached(crate::raiders::spawn_initial);
 
     info!("loaded {} at ({:.1}, {:.1}): {}", slot_name(pending.slot), s.player.x, s.player.z, s.describe());
     msgs.show(format!("Loaded: {}", slot_name(pending.slot)), 3.0);

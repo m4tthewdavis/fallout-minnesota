@@ -8,6 +8,7 @@
 
 pub mod collision;
 pub mod combat;
+pub mod crow;
 pub mod daynight;
 pub mod dialogue;
 pub mod flora;
@@ -21,6 +22,7 @@ pub mod mipmaps;
 pub mod moose;
 pub mod pipnav;
 pub mod progress;
+pub mod raider;
 pub mod quest;
 pub mod rng;
 pub mod save;

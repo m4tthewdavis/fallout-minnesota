@@ -144,7 +144,7 @@ impl Plugin for DevShotPlugin {
             wait: std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0),
             taken: None,
         })
-        .add_systems(Update, (dev_story, dev_slay, take_shot).chain())
+        .add_systems(Update, (dev_story, dev_slay, dev_bang, take_shot).chain())
         .add_systems(PreUpdate, inject_keys.run_if(resource_exists::<KeyScript>).after(bevy::input::InputSystem))
         .add_systems(PostStartup, spawn_extras)
         .add_systems(Startup, resize_window);
@@ -164,6 +164,12 @@ fn spawn_extras(mut commands: Commands, cameras: Query<Entity, With<Camera3d>>) 
         }
         Ok("moose") => {
             commands.run_system_cached(crate::moose::spawn_lineup);
+        }
+        Ok("crows") => {
+            commands.run_system_cached(crate::crows::spawn_lineup);
+        }
+        Ok("raiders") => {
+            commands.run_system_cached(crate::raiders::spawn_lineup);
         }
         Ok("trees") => {
             commands.run_system_cached(crate::flora::spawn_lineup);
@@ -199,6 +205,17 @@ fn dev_slay(mut commands: Commands, time: Res<Time<Real>>, mut done: Local<bool>
     if !*done && time.elapsed_secs() > 6.0 && std::env::var("FMN_SLAY").is_ok() {
         *done = true;
         commands.run_system_cached(crate::quest::dev_slay);
+    }
+}
+
+/// `FMN_BANG=1`: fire a (silent) gunshot from the player's position a few
+/// seconds in, to see what the crows and raiders do about it.
+fn dev_bang(mut shots: EventWriter<crate::state::Gunshot>, time: Res<Time<Real>>, mut done: Local<bool>, player: Query<&Transform, With<Player>>) {
+    if !*done && time.elapsed_secs() > 8.0 && std::env::var("FMN_BANG").is_ok() {
+        *done = true;
+        if let Ok(p) = player.single() {
+            shots.write(crate::state::Gunshot { pos: p.translation, by_player: true });
+        }
     }
 }
 

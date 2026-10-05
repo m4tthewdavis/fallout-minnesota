@@ -65,6 +65,12 @@ Walk up to a door and press E: the screen fades, you step inside, and the weathe
 
 Wolves and the moose stay out of the rooms and are frozen while you're inside. Saving inside a room puts you back inside when you load.
 
+## More things that want you dead
+
+- **Rad-crows** wheel in flocks over four roosts. A gunshot scatters the flock, and if you were close, the birds regroup over you and come down one at a time to peck, climb away, circle and dive again for about half a minute. They're fragile (one hit) and fall out of the sky. Crows don't count towards your kills or XP.
+- **Frozen Raiders** hold the two old camps and the wrecked convoy, three or two to a fire, each with a hunting rifle, a revolver or a scrap shotgun. They shoot only what they can see: trees, walls and cars between you and them block their aim, a blizzard cuts their sight to 18 m (35 m at night), their guns jam in the cold like yours, they miss more at range and more when you run, and a badly hurt one falls back to the fire (and shoots from there). A shot from you within about 90 m brings them to look, and one raider spotting you alerts his friends. They take hits, flinch, die and leave boot prints like the other enemies, and their pockets have ammo for their gun and scrap.
+- Enemies aren't saved; they return when you load. Both are paused while you're indoors.
+
 ## The quest: Why Did the Overseer Open the Door?
 
 Play the Overseer's recording on the terminal in the Vault 143 lobby (E). It sends you to do three things, in any order (and any you've already done count):
@@ -166,6 +172,8 @@ src/
     dialogue.rs  Conversation graphs and the replies you can pick
     combat.rs    Pipe rifle, jams, ray-sphere hits
     wolf.rs      Frostfang behaviour decisions
+    crow.rs      Rad-crow flocks: circling, scattering, diving
+    raider.rs    Frozen Raider guns, sight, jams and fighting
     rng.rs       Small deterministic RNG
   state.rs       Shared resources (Game, weather, messages, effect queue)
   assets.rs      Loads models, textures, font; builds materials and mipmaps
@@ -198,10 +206,8 @@ tools/           Scripts that download and generate the assets
 
 ## Possible next milestones
 
-- A real interior for Vault 143
-- Dialogue system and the first faction (the Skyfolk or the Lockkeepers' Compact)
-- Save/load and false-thaw events
-- Interiors you can enter (the Vault 143 lobby, the fish houses, Bullseye-Mart)
-- More enemy types (rad-crow flocks, frozen raiders) and a save/load system
-- A quest or two: why did the Overseer open the door?
-- Distance LODs for trees and a settings menu (shadow quality, view distance)
+- More of the vault: the reactor level, and the replacement pump
+- The first faction (the Skyfolk or the Lockkeepers' Compact)
+- False-thaw events
+- Raider camps to clear for loot, and follow-up quests from what the survivors said
+- Crows that roost on the dead trees and leave when it snows

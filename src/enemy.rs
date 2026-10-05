@@ -4,11 +4,15 @@
 
 use bevy::prelude::*;
 
+use crate::sim::terrain;
+
 /// Which creature this is (decides drops and messages).
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Species {
     Wolf { alpha: bool },
     Moose,
+    Crow,
+    Raider,
 }
 
 impl Species {
@@ -17,7 +21,14 @@ impl Species {
             Species::Wolf { alpha: true } => "Frostfang alpha",
             Species::Wolf { alpha: false } => "Frostfang",
             Species::Moose => "Glowmoose",
+            Species::Crow => "Rad-crow",
+            Species::Raider => "Frozen Raider",
         }
+    }
+
+    /// Does it fall out of the sky when killed?
+    pub fn flies(self) -> bool {
+        self == Species::Crow
     }
 }
 
@@ -89,11 +100,15 @@ pub struct Dying {
     center_y: f32,
     half_thickness: f32,
     scale: f32,
+    /// Metres above the ground it was when it died (birds drop to the snow).
+    drop: f32,
 }
 
 const FALL_SECS: f32 = 0.6;
 const LIE_SECS: f32 = 10.0;
 const SINK_SECS: f32 = 4.0;
+/// Seconds a falling bird takes to hit the ground.
+const DROP_SECS: f32 = 1.1;
 
 impl Dying {
     pub fn new(tf: &Transform, body: &Body, side: f32) -> Self {
@@ -105,6 +120,7 @@ impl Dying {
             center_y: body.center_y,
             half_thickness: body.radius * 0.3,
             scale: tf.scale.x,
+            drop: if body.species.flies() { (tf.translation.y - terrain::walk_height(tf.translation.x, tf.translation.z)).max(0.0) } else { 0.0 },
         }
     }
 
@@ -156,10 +172,13 @@ fn animate_dying(mut commands: Commands, time: Res<Time>, mut q: Query<(Entity, 
         let centre_offset = Vec3::Y * d.center_y * d.scale;
         let lying = Vec3::Y * d.half_thickness * d.scale;
         let sink = ((d.t - FALL_SECS - LIE_SECS) / SINK_SECS).clamp(0.0, 1.0);
+        // A bird plummets: gravity, so the drop speeds up.
+        let plunge = (d.t / DROP_SECS).clamp(0.0, 1.0);
+        let dropped = Vec3::Y * d.drop * plunge * plunge;
         let fall = roll.abs() / std::f32::consts::FRAC_PI_2;
         let rest = centre_offset + (lying - centre_offset) * fall;
         tf.rotation = rot;
-        tf.translation = d.base + rest - rot * centre_offset - Vec3::Y * sink * 1.2 * d.scale;
+        tf.translation = d.base - dropped + rest - rot * centre_offset - Vec3::Y * sink * 1.2 * d.scale;
     }
 }
 

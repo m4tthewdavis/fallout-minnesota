@@ -193,6 +193,14 @@ pub fn outdoors(interior: Res<CurrentInterior>) -> bool {
     interior.0.is_none()
 }
 
+/// A gun went off. Crows startle and raiders come to look.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct Gunshot {
+    pub pos: Vec3,
+    /// Fired by the player (raiders only come to look at those).
+    pub by_player: bool,
+}
+
 /// True while a conversation or the level-up screen is open: the world holds
 /// still and the keyboard drives the dialogue.
 #[derive(Resource, Default)]
@@ -241,6 +249,7 @@ impl Plugin for StatePlugin {
             .init_resource::<PipOpen>()
             .init_resource::<Paused>()
             .init_resource::<Talking>()
+            .add_event::<Gunshot>()
             .init_resource::<CurrentInterior>()
             .init_resource::<Transition>()
             .init_resource::<TreePositions>()

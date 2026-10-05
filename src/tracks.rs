@@ -159,6 +159,9 @@ fn creature_prints(
         let (kind, stride, gauge) = match body.species {
             Species::Wolf { .. } => (Kind::Paw, 0.9, 0.09),
             Species::Moose => (Kind::Hoof, 1.4, 0.2),
+            Species::Raider => (Kind::Boot, 0.8, 0.13),
+            // Birds fly.
+            Species::Crow => continue,
         };
         let entry = last.entry(e).or_insert((here, false));
         let step = here - entry.0;

@@ -17,7 +17,7 @@ use crate::sim::combat::{ray_sphere, FireResult, WeaponKind};
 use crate::sim::rng::Rng;
 use crate::sim::sfx;
 use crate::sim::synth::Sound;
-use crate::state::{alive, ClockRes, Fx, FxQueue, Game, Hostile, Lifetime, Messages, RngRes, SfxQueue, WeatherRes};
+use crate::state::{alive, ClockRes, Fx, FxQueue, Game, Gunshot, Hostile, Lifetime, Messages, RngRes, SfxQueue, WeatherRes};
 
 #[derive(Resource)]
 struct FxAssets {
@@ -182,6 +182,7 @@ fn fire(
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
     mut fxq: ResMut<FxQueue>,
+    mut shots: EventWriter<Gunshot>,
     clock: Res<ClockRes>,
     cam: Query<&GlobalTransform, With<Player>>,
     gun: Query<&GlobalTransform, With<GunModel>>,
@@ -267,6 +268,7 @@ fn fire(
         .map(|g| g.transform_point(muzzle_local(kind)))
         .unwrap_or(origin + right * 0.25 - up * 0.18 + dir * 0.8);
     fxq.spawn(Fx::Muzzle(muzzle, dir, right, kind == WeaponKind::PipeRifle));
+    shots.write(Gunshot { pos: origin, by_player: true });
 
     let mut strikes: Vec<Strike> = Vec::new();
     let mut ricochets = 0;
@@ -360,7 +362,10 @@ fn strike(
             continue;
         }
         fxq.spawn(Fx::WolfDeath(body.center(tf), tf.scale.x));
-        game.kills += 1;
+        // Crows are vermin: they don't count towards your kills (or XP).
+        if body.species != Species::Crow {
+            game.kills += 1;
+        }
         match body.species {
             Species::Wolf { .. } => {
                 game.inv.pelts += 1;
@@ -370,6 +375,9 @@ fn strike(
                     2.5,
                 );
             }
+            Species::Crow => msgs.show("Rad-crow down.", 1.5),
+            // The raider's pockets are turned out by `raiders.rs`.
+            Species::Raider => {}
             Species::Moose => {
                 // Meat for the hotdish pot and antler for scrap.
                 game.inv.hotdish += 2;

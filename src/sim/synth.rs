@@ -58,6 +58,8 @@ pub enum Sound {
     MooseBellow,
     MooseGrunt,
     Hoof,
+    // Rad-crows.
+    Caw,
     // World.
     IceCrack,
     IceCreak,
@@ -143,6 +145,7 @@ impl Sound {
         Sound::MooseBellow,
         Sound::MooseGrunt,
         Sound::Hoof,
+        Sound::Caw,
         Sound::IceCrack,
         Sound::IceCreak,
         Sound::Geiger,
@@ -182,6 +185,7 @@ impl Sound {
             Sound::HowlNear | Sound::HowlFar | Sound::Snarl | Sound::Yelp => 4,
             Sound::Growl => 3,
             Sound::MooseBellow | Sound::MooseGrunt | Sound::Hoof => 3,
+            Sound::Caw => 4,
             Sound::IceCrack => 2,
             Sound::IceCreak => 3,
             Sound::Geiger => 5,
@@ -259,6 +263,7 @@ impl Sound {
             Sound::MooseBellow => p(Sfx, 0.65, 0.05, 0.1, 6.0, self, true, Some(40.0)),
             Sound::MooseGrunt => p(Sfx, 0.7, 0.06, 0.15, 4.0, self, true, Some(18.0)),
             Sound::Hoof => p(Sfx, 0.8, 0.08, 0.2, 0.2, self, false, Some(20.0)),
+            Sound::Caw => p(Sfx, 0.55, 0.1, 0.2, 0.3, self, true, Some(28.0)),
             Sound::IceCrack => p(Sfx, 0.9, 0.04, 0.05, 0.5, self, false, None),
             Sound::IceCreak => p(Sfx, 0.7, 0.08, 0.15, 1.5, self, true, None),
             Sound::Geiger => p(Sfx, 0.3, 0.12, 0.35, 0.06, self, false, None),
@@ -316,6 +321,7 @@ impl Sound {
             Sound::MooseBellow => moose_bellow(rng, vf),
             Sound::MooseGrunt => moose_grunt(rng, vf),
             Sound::Hoof => hoof(rng, vf),
+            Sound::Caw => caw(rng, vf),
             Sound::IceCrack => ice_crack(rng),
             Sound::IceCreak => ice_creak(rng, vf),
             Sound::Geiger => geiger(rng, vf),
@@ -927,6 +933,29 @@ fn yelp(rng: Rng, v: f32) -> Vec<f32> {
             (phase.sin() + 0.3 * (2.0 * phase).sin()) * env(t, 0.01, 8.0 + 3.0 * v)
         })
         .collect();
+    normalize(out, 0.45)
+}
+
+/// A crow's caw: two or three harsh, falling, nasal barks.
+fn caw(mut rng: Rng, v: f32) -> Vec<f32> {
+    let barks = 2 + (v * 1.99) as usize;
+    let mut out: Vec<f32> = Vec::new();
+    for k in 0..barks {
+        let secs = 0.2 + 0.07 * v + 0.03 * k as f32;
+        let f0 = 520.0 + 100.0 * v - 35.0 * k as f32;
+        let mut phase = 0.0;
+        let mut lp = LowPass::new(2600.0);
+        for i in 0..len(secs) {
+            let t = i as f32 / SR;
+            // Pitch drops through the bark; a fast flutter roughens it.
+            let f = f0 * (1.0 - 0.3 * t / secs) * (1.0 + 0.04 * (TAU * 85.0 * t).sin());
+            phase += TAU * f / SR;
+            let buzz = phase.sin() + 0.6 * (2.0 * phase).sin() + 0.45 * (3.0 * phase).sin() + 0.3 * (4.0 * phase).sin();
+            let rasp = 0.75 + 0.25 * (TAU * 70.0 * t).sin().signum();
+            out.push(lp.run(buzz * rasp * 0.5 + noise(&mut rng) * 0.12) * env(t, 0.012, 7.0));
+        }
+        out.extend(std::iter::repeat_n(0.0, len(0.08)));
+    }
     normalize(out, 0.45)
 }
 

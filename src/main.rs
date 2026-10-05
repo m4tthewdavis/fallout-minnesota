@@ -14,6 +14,7 @@
 mod assets;
 mod audio;
 mod combat;
+mod crows;
 mod devshot;
 mod enemy;
 mod flora;
@@ -31,6 +32,7 @@ mod pipboy;
 mod player;
 mod props;
 mod quest;
+mod raiders;
 mod saves;
 mod sim;
 mod sky;
@@ -93,6 +95,6 @@ fn main() {
             interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, devshot::DevShotPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
         .run();
 }
