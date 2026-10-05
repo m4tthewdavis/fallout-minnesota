@@ -69,6 +69,8 @@ pub struct Survival {
     /// 0..=MAX_RADS. Every 10 rads removes 1 max health.
     pub rads: f32,
     pub frostbite: bool,
+    /// God mode (a cheat, never saved): nothing hurts.
+    pub god: bool,
 }
 
 impl Default for Survival {
@@ -91,6 +93,7 @@ impl Survival {
             body_heat: 100.0,
             rads: 0.0,
             frostbite: false,
+            god: false,
         }
     }
 
@@ -127,6 +130,13 @@ impl Survival {
         let resist = exp.rad_resist.clamp(0.0, 1.0);
         self.rads = (self.rads + exp.rads_per_sec.max(0.0) * (1.0 - resist) * dt).min(Self::MAX_RADS);
 
+        if self.god {
+            // Cold, radiation and wounds can't touch you.
+            self.rads = 0.0;
+            self.frostbite = false;
+            self.health = self.max_health();
+            return None;
+        }
         self.frostbite = self.body_heat <= 0.0;
         if self.frostbite {
             self.health -= Self::FROSTBITE_DAMAGE_PER_SEC * dt;
@@ -158,6 +168,9 @@ impl Survival {
     /// Take damage; if it kills, `cause` is what's blamed (unless you were
     /// already frostbitten, which gets the credit).
     pub fn damage_by(&mut self, amount: f32, cause: DeathCause) -> Option<DeathCause> {
+        if self.god {
+            return None;
+        }
         self.health -= amount;
         if self.health <= 0.0 {
             self.health = 0.0;
@@ -529,6 +542,23 @@ mod tests {
         assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::InsulatedAction), Err("Already fitted."));
         assert_eq!(inv.craft_upgrade(&mut rifle, Upgrade::Choke), Err("That upgrade doesn't fit this weapon."));
         assert_eq!(inv.scrap, 14, "failed crafts cost nothing");
+    }
+
+    #[test]
+    fn god_mode_takes_no_damage_from_anything() {
+        let mut s = Survival { god: true, rads: 900.0, body_heat: 0.0, health: 20.0, ..Survival::new() };
+        assert_eq!(s.damage(500.0), None);
+        assert_eq!(s.damage_by(500.0, DeathCause::Shot), None);
+        let freezing = Exposure { air_temp_f: -60.0, rads_per_sec: 500.0, ..Default::default() };
+        for _ in 0..600 {
+            assert_eq!(s.tick(&freezing, 1.0), None);
+        }
+        assert_eq!(s.health, s.max_health());
+        assert_eq!(s.rads, 0.0);
+        assert!(!s.frostbite);
+        // Turn it off and you're mortal again.
+        s.god = false;
+        assert!(s.damage(500.0).is_some());
     }
 
     fn hurt(health: f32) -> Survival {

@@ -49,6 +49,7 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
 | Esc | Pause menu: Resume, Save, Load, Settings (shadows, view distance, UI size, volume), Quit. Esc also closes the Pip-Boy |
 | E | Use a door, bunk, stove or terminal (a prompt shows what's in reach). Looking at a container opens its loot list: Up/Down or the wheel to choose, E takes the highlighted entry, T takes all |
+| F3 | God mode on / off (a cheat: nothing hurts you; set `FMN_GOD=1` to start with it on) |
 | G | Geiger counter on / off |
 | F9 | Mute / unmute all sound |
 | F10 / F11 | Master volume down / up |

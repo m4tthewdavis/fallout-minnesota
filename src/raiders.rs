@@ -325,7 +325,7 @@ fn raider_ai(
             sfx.push(SfxReq::new(Sound::Jam).at(muzzle).carrying(14.0));
         }
         gunshots.send(Gunshot { pos: muzzle, by_player: false });
-        if v.hits > 0 && game.death.is_none() {
+        if v.hits > 0 && game.death.is_none() && !game.survival.god {
             game.hurt_flash = 1.0;
             msgs.show(format!("A Frozen Raider's {} hits you for {:.0}!", v.gun.name(), v.damage), 1.8);
             if let Some(cause) = game.survival.damage_by(v.damage, DeathCause::Shot) {

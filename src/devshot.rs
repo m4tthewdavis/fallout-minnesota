@@ -78,6 +78,7 @@ fn parse_key(name: &str) -> Option<KeyCode> {
         "KeyF" => KeyCode::KeyF,
         "KeyH" => KeyCode::KeyH,
         "KeyX" => KeyCode::KeyX,
+        "F3" => KeyCode::F3,
         "F4" => KeyCode::F4,
         "F5" => KeyCode::F5,
         "F6" => KeyCode::F6,

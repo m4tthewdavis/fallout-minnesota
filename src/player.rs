@@ -68,6 +68,7 @@ impl Plugin for PlayerPlugin {
             (
                 toggle_cursor,
                 (look, move_player, survival_tick, use_items).chain().run_if(alive),
+                god_mode,
                 respawn,
             ),
         );
@@ -254,6 +255,21 @@ fn move_player(
         p.grounded = true;
     } else if tf.translation.y - floor > 0.3 {
         p.grounded = false;
+    }
+}
+
+/// F3 toggles god mode (nothing hurts). `FMN_GOD=1` starts with it on.
+fn god_mode(keys: Res<ButtonInput<KeyCode>>, mut game: ResMut<Game>, mut msgs: ResMut<Messages>, mut started: Local<bool>) {
+    if !std::mem::replace(&mut *started, true) && std::env::var("FMN_GOD").is_ok() {
+        game.survival.god = true;
+    }
+    if keys.just_pressed(KeyCode::F3) {
+        game.survival.god = !game.survival.god;
+        msgs.show(if game.survival.god { "God mode ON: nothing can hurt you (F3 to turn off)" } else { "God mode off" }, 2.5);
+    }
+    // No red flash, and no death screen carrying over, while it's on.
+    if game.survival.god {
+        game.hurt_flash = 0.0;
     }
 }
 

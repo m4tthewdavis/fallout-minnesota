@@ -469,7 +469,7 @@ impl SaveGame {
     #[allow(clippy::too_many_arguments)]
     pub fn apply(&self, survival: &mut Survival, inv: &mut Inventory, arsenal: &mut Arsenal, kills: &mut u32, clock: &mut Clock, weather: &mut Weather, fog: &mut Fog) {
         let s = &self.survival;
-        *survival = Survival { health: s.health, body_heat: s.body_heat, rads: s.rads, frostbite: s.frostbite };
+        *survival = Survival { health: s.health, body_heat: s.body_heat, rads: s.rads, frostbite: s.frostbite, god: survival.god };
         let i = &self.inventory;
         *inv = Inventory {
             stimpaks: i.stimpaks,
