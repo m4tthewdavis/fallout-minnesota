@@ -20,6 +20,7 @@ pub mod moose;
 pub mod pipnav;
 pub mod progress;
 pub mod rng;
+pub mod save;
 pub mod settings;
 pub mod sfx;
 pub mod survival;

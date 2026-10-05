@@ -24,6 +24,13 @@ pub struct Container {
     ring: Entity,
 }
 
+impl Container {
+    /// The green ring that marks it while it's unopened.
+    pub fn ring(&self) -> Entity {
+        self.ring
+    }
+}
+
 #[derive(Component)]
 pub struct Workbench;
 
@@ -131,7 +138,7 @@ fn interact(
             let gained = loot::grant(&c.loot, inv, arsenal);
             msgs.show(format!("{}: {}", c.name, gained.join(", ")), 5.0);
             sfx.play_at(Sound::ContainerOpen, tf.translation + Vec3::Y * 0.5);
-            commands.entity(c.ring).despawn();
+            commands.entity(c.ring).insert(Visibility::Hidden);
         }
     }
 

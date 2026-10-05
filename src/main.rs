@@ -29,6 +29,7 @@ mod particles;
 mod pipboy;
 mod player;
 mod props;
+mod saves;
 mod sim;
 mod sky;
 mod snow;
@@ -89,6 +90,6 @@ fn main() {
             hud::HudPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, devshot::DevShotPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, devshot::DevShotPlugin))
         .run();
 }

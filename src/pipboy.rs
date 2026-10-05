@@ -29,6 +29,8 @@ use crate::audio::{AudioSettings, GeigerOn};
 use crate::player::{set_grab, use_aid, Player};
 use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::sim::mapdata::{self, Fog, Kind};
+use crate::menu::{SaveRequest, SlotSummaries};
+use crate::sim::menu::{slot_name, AUTOSAVE, QUICKSAVE, SLOTS};
 use crate::sim::pipnav::{Layout, Main, Nav, Page};
 use crate::sim::progress;
 use crate::sim::survival::{Aid, Exposure, Inventory, Survival};
@@ -65,17 +67,17 @@ const RAISE_SECS: f32 = 0.38;
 const LOWER_SECS: f32 = 0.26;
 
 #[derive(Resource)]
-struct PipState {
+pub(crate) struct PipState {
     /// Which page you're on and what's selected (rules in `sim::pipnav`).
     nav: Nav,
     /// Map zoom (1 = whole map fits the view) and the world point at its centre.
     zoom: f32,
     center: Vec2,
-    fog: Fog,
+    pub(crate) fog: Fog,
     base: Option<Handle<Image>>,
     fog_image: Handle<Image>,
     /// The fog picture needs re-uploading.
-    dirty: bool,
+    pub(crate) dirty: bool,
     /// 0 = lowered out of sight, 1 = raised; and where it's heading.
     raise: f32,
     raising: bool,
@@ -171,6 +173,7 @@ impl Plugin for PipboyPlugin {
                     update_fog,
                     toggle_pipboy,
                     animate_device.after(toggle_pipboy),
+                    close_on_load,
                     hide_weapon,
                     (pipboy_input, buttons, update_header, update_status, update_list, update_notes, update_map, show_layout).chain().run_if(is_open),
                 ),
@@ -193,6 +196,7 @@ fn auto_open(real: Res<Time<Real>>, mut stage: Local<u8>, mut keys: ResMut<Butto
             "apparel" => Page::Apparel,
             "aid" => Page::Aid,
             "notes" => Page::Notes,
+            "saves" => Page::Saves,
             _ => Page::Map,
         };
         st.nav.go_to(page);
@@ -587,7 +591,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>, server: Res<AssetSe
         commands.spawn((abs(x + 50.0, 556.0, 33.0, 5.0), BackgroundColor(AMBER), MainLamp(main), ChildOf(device)));
     }
     commands.spawn((
-        Text::new("TAB close   1 2 3 / buttons: STATS ITEMS DATA   Q E pages   W S select   ENTER use"),
+        Text::new("TAB close   1 2 3 tabs   Q E pages   W S select   ENTER use / save   L load"),
         font(13.0),
         TextColor(Color::srgba(1.0, 0.9, 0.7, 0.75)),
         Node { position_type: PositionType::Absolute, left: Val::Px(160.0), top: Val::Px(DEVICE_H - 34.0), ..default() },
@@ -611,6 +615,25 @@ fn update_fog(mut st: ResMut<PipState>, mut images: ResMut<Assets<Image>>, mut m
         if marks[i].kind != Kind::Vault {
             msgs.show(format!("Discovered: {}", marks[i].name), 3.5);
             sfx.play_gain(Sound::Craft, 0.7);
+        }
+    }
+}
+
+/// Loading a save from the Pip-Boy puts it away and returns you to the game.
+fn close_on_load(
+    mut requests: EventReader<SaveRequest>,
+    mut open: ResMut<PipOpen>,
+    mut st: ResMut<PipState>,
+    mut vtime: ResMut<Time<Virtual>>,
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+) {
+    let loading = requests.read().any(|r| matches!(r, SaveRequest::Load(_)));
+    if loading && open.0 {
+        open.0 = false;
+        st.raising = false;
+        vtime.unpause();
+        if let Ok(mut w) = windows.single_mut() {
+            set_grab(&mut w, true);
         }
     }
 }
@@ -810,6 +833,8 @@ fn pipboy_input(
     mut sfx: ResMut<SfxQueue>,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
+    slots: Res<SlotSummaries>,
+    mut saves: EventWriter<SaveRequest>,
     player: Query<&Transform, With<Player>>,
 ) {
     for (key, main) in [(KeyCode::Digit1, Main::Stats), (KeyCode::Digit2, Main::Items), (KeyCode::Digit3, Main::Data)] {
@@ -825,7 +850,7 @@ fn pipboy_input(
     }
 
     if st.nav.page.layout() == Layout::List {
-        let count = list_items(st.nav.page, &game).len();
+        let count = list_items(st.nav.page, &game, &slots).len();
         let up = keys.just_pressed(KeyCode::KeyW) || keys.just_pressed(KeyCode::ArrowUp);
         let down = keys.just_pressed(KeyCode::KeyS) || keys.just_pressed(KeyCode::ArrowDown);
         if (up && st.nav.move_selection(count, -1)) || (down && st.nav.move_selection(count, 1)) {
@@ -838,6 +863,24 @@ fn pipboy_input(
                 sfx.play(Sound::PickupMed);
             } else {
                 sfx.play(Sound::DryClick);
+            }
+        }
+        if st.nav.page == Page::Saves {
+            let slot = st.nav.selected_row().min(SLOTS - 1);
+            if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space) {
+                if slot == AUTOSAVE {
+                    sfx.play(Sound::DryClick);
+                } else {
+                    saves.write(SaveRequest::Save(slot));
+                    sfx.play(Sound::Craft);
+                }
+            }
+            if keys.just_pressed(KeyCode::KeyL) {
+                if slots.0[slot].is_some() {
+                    saves.write(SaveRequest::Load(slot));
+                } else {
+                    sfx.play(Sound::DryClick);
+                }
             }
         }
     }
@@ -890,6 +933,7 @@ fn buttons(
     mut st: ResMut<PipState>,
     mut sfx: ResMut<SfxQueue>,
     game: Res<Game>,
+    slots: Res<SlotSummaries>,
     mains: Query<(&Interaction, &MainButton), Changed<Interaction>>,
     subs: Query<(&Interaction, &SubTab), (Changed<Interaction>, Without<MainButton>)>,
     rows: Query<(&Interaction, &ListRow), (Changed<Interaction>, Without<SubTab>, Without<MainButton>)>,
@@ -906,7 +950,7 @@ fn buttons(
     }
     for (interaction, row) in &rows {
         if matches!(interaction, Interaction::Hovered | Interaction::Pressed) && st.nav.page.layout() == Layout::List {
-            let count = list_items(st.nav.page, &game).len();
+            let count = list_items(st.nav.page, &game, &slots).len();
             if st.nav.select_row(row.0, count) {
                 sfx.play(Sound::PipScroll);
             }
@@ -1090,7 +1134,7 @@ fn update_status(
 }
 
 /// The rows and details for a list page.
-fn list_items(page: Page, game: &Game) -> Vec<(String, String)> {
+fn list_items(page: Page, game: &Game, slots: &SlotSummaries) -> Vec<(String, String)> {
     let inv = &game.inv;
     match page {
         Page::Special => [
@@ -1157,6 +1201,18 @@ fn list_items(page: Page, game: &Game) -> Vec<(String, String)> {
             (format!("RadAway ({})", inv.radaway), "RADAWAY\n\n-150 rads\n\nENTER to use (or X any time).".to_string()),
             (format!("Vault 143 Hotdish ({})", inv.hotdish), "VAULT 143 HOTDISH\n\n+35 HEAT  +5 HP\n\nTater tots, cream of mushroom and\nsomething that glows. ENTER or F.".to_string()),
         ],
+        Page::Saves => (0..SLOTS)
+            .map(|slot| {
+                let name = slot_name(slot);
+                let summary = slots.0[slot].clone().unwrap_or_else(|| "- empty -".to_string());
+                let how = match slot {
+                    AUTOSAVE => "Written for you when you sleep or take\nshelter. L loads it.".to_string(),
+                    QUICKSAVE => "F4 saves here from anywhere in the game.\nENTER saves now, L loads it.".to_string(),
+                    _ => "ENTER saves here, L loads it.".to_string(),
+                };
+                (format!("{name:<10}"), format!("{}\n\n{}\n\n{}", name.to_uppercase(), summary, how))
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -1164,6 +1220,7 @@ fn list_items(page: Page, game: &Game) -> Vec<(String, String)> {
 fn update_list(
     st: Res<PipState>,
     game: Res<Game>,
+    slots: Res<SlotSummaries>,
     art: Res<MascotArt>,
     mut rows: Query<(&ListRow, &mut Node, &mut BorderColor, &mut BackgroundColor, &Children)>,
     mut texts: Query<&mut Text, Without<DetailText>>,
@@ -1173,7 +1230,7 @@ fn update_list(
     if st.nav.page.layout() != Layout::List {
         return;
     }
-    let items = list_items(st.nav.page, &game);
+    let items = list_items(st.nav.page, &game, &slots);
     let sel = st.nav.selected[st.nav.page.index()].min(items.len().saturating_sub(1));
     for (row, mut node, mut border, mut bg, children) in &mut rows {
         let Some((label, _)) = items.get(row.0) else {

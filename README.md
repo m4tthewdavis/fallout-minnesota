@@ -44,6 +44,7 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | In the Pip-Boy: Q / E | Previous / next page along the bottom (or click them) |
 | In the Pip-Boy: W S / arrows | Move through a list; on the map, pan (also drag; wheel zooms, C centres) |
 | In the Pip-Boy: Enter | Use the selected aid item |
+| F4 | Quicksave (also: pause menu, or the Pip-Boy's SAVES page: ENTER saves, L loads) |
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
 | Esc | Pause menu: Resume, Save, Load, Settings (shadows, view distance, UI size, volume), Quit. Esc also closes the Pip-Boy |
@@ -52,6 +53,10 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | F10 / F11 | Master volume down / up |
 | F5 / F6 | Effects volume down / up |
 | F7 / F8 | Music volume down / up |
+
+## Saving
+
+Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.json` in `%APPDATA%\FalloutMinnesota` on Windows (`~/.local/share/fallout-minnesota` elsewhere; set `FMN_DATA_DIR` to change it). A save remembers where you are, your health, heat, rads, inventory, weapons and upgrades, the map you've seen, the crates you've opened and items you've taken, the time and weather, and your quest progress. Wolves and moose aren't saved: they repopulate when you load. The world itself is the same every game. Saves carry a format version; a file from a newer version of the game is refused with a message instead of being misread.
 
 ## What's in Milestone 1
 

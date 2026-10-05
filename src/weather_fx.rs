@@ -47,7 +47,7 @@ impl Plugin for WeatherPlugin {
             light: calm.light,
             sick: 0.0,
         })
-        .add_systems(Startup, spawn_flakes)
+        .add_systems(Startup, spawn_flakes.after(crate::state::WorldGen))
         .init_resource::<FlakeMaterial>()
         .add_systems(
             Update,

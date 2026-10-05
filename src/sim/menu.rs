@@ -4,10 +4,13 @@
 
 use super::settings::{Settings, ShadowQuality, ViewDistance, UI_SCALE_MAX, UI_SCALE_MIN};
 
-/// Autosave plus three manual slots.
-pub const SLOTS: usize = 4;
-/// Slot 0 is the autosave; the manual slots are 1..=3.
+/// Autosave, quicksave and three manual slots.
+pub const SLOTS: usize = 5;
+/// Slot 0 is the autosave (when you sleep or take shelter), slot 1 the
+/// quicksave (F4); the manual slots are 2..=4.
 pub const AUTOSAVE: usize = 0;
+pub const QUICKSAVE: usize = 1;
+pub const FIRST_MANUAL: usize = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Screen {
@@ -90,11 +93,11 @@ fn volume(label: &str, v: f32) -> Row {
     slider(label, v, format!("{:>3.0}%", v * 100.0))
 }
 
-fn slot_name(slot: usize) -> String {
-    if slot == AUTOSAVE {
-        "Autosave".to_string()
-    } else {
-        format!("Slot {slot}")
+pub fn slot_name(slot: usize) -> String {
+    match slot {
+        AUTOSAVE => "Autosave".to_string(),
+        QUICKSAVE => "Quicksave".to_string(),
+        n => format!("Slot {}", n - FIRST_MANUAL + 1),
     }
 }
 
@@ -137,7 +140,7 @@ impl Menu {
                 button("Back", true),
             ],
             Screen::Save => {
-                let mut rows: Vec<Row> = (1..SLOTS)
+                let mut rows: Vec<Row> = (FIRST_MANUAL..SLOTS)
                     .map(|i| Row {
                         label: slot_name(i),
                         value: ctx.slots[i].clone().unwrap_or_else(|| "- empty -".to_string()),
@@ -264,7 +267,7 @@ impl Menu {
                 if self.selected == last {
                     self.back();
                 } else {
-                    return (Action::Save(self.selected + 1), false);
+                    return (Action::Save(self.selected + FIRST_MANUAL), false);
                 }
             }
             Screen::Load => {
@@ -331,11 +334,11 @@ mod tests {
     use super::*;
 
     fn ctx() -> Context {
-        Context { alive: true, slots: [None, None, None, None] }
+        Context { alive: true, slots: [None, None, None, None, None] }
     }
 
     fn with_saves() -> Context {
-        Context { alive: true, slots: [Some("Autosave, day 2".into()), None, Some("Slot two".into()), None] }
+        Context { alive: true, slots: [Some("Autosave, day 2".into()), Some("Quick".into()), None, Some("Slot two".into()), None] }
     }
 
     fn rows(m: &Menu, c: &Context) -> Vec<Row> {
@@ -425,9 +428,9 @@ mod tests {
         assert_eq!(r[0].value, "- empty -");
         assert_eq!(r[1].value, "Slot two");
         assert!(r.iter().all(|r| r.enabled), "empty slots can be saved into");
-        assert_eq!(m.activate(&mut s, &c).0, Action::Save(1));
+        assert_eq!(m.activate(&mut s, &c).0, Action::Save(FIRST_MANUAL), "the first row is the first manual slot, not the quicksave");
         m.selected = 2;
-        assert_eq!(m.activate(&mut s, &c).0, Action::Save(3));
+        assert_eq!(m.activate(&mut s, &c).0, Action::Save(SLOTS - 1));
         m.selected = 3;
         m.activate(&mut s, &c);
         assert_eq!(m.screen, Screen::Main, "Back");
@@ -437,25 +440,32 @@ mod tests {
     }
 
     #[test]
-    fn the_load_screen_includes_the_autosave_and_only_filled_slots_load() {
+    fn the_load_screen_includes_autosave_and_quicksave_and_only_filled_slots_load() {
         let mut s = Settings::default();
         let c = with_saves();
         let m = Menu { screen: Screen::Load, selected: 0 };
         let r = m.rows(&s, &c);
-        assert_eq!(r.len(), 5);
-        assert_eq!(r[0].label, "Autosave");
-        assert_eq!(r.iter().map(|r| r.enabled).collect::<Vec<_>>(), [true, false, true, false, true]);
+        assert_eq!(r.len(), SLOTS + 1, "every slot and Back");
+        assert_eq!((r[0].label.as_str(), r[1].label.as_str(), r[2].label.as_str()), ("Autosave", "Quicksave", "Slot 1"));
+        assert_eq!(r.iter().map(|r| r.enabled).collect::<Vec<_>>(), [true, true, false, true, false, true]);
+        let mut m = Menu { screen: Screen::Load, selected: 3 };
+        assert_eq!(m.activate(&mut s, &c).0, Action::Load(3));
         let mut m = Menu { screen: Screen::Load, selected: 2 };
-        assert_eq!(m.activate(&mut s, &c).0, Action::Load(2));
-        let mut m = Menu { screen: Screen::Load, selected: 1 };
         assert_eq!(m.activate(&mut s, &c), (Action::None, false), "an empty slot does nothing");
         assert_eq!(m.screen, Screen::Load);
     }
 
     #[test]
+    fn slots_are_named_for_what_they_are() {
+        assert_eq!(slot_name(AUTOSAVE), "Autosave");
+        assert_eq!(slot_name(QUICKSAVE), "Quicksave");
+        assert_eq!((slot_name(FIRST_MANUAL), slot_name(SLOTS - 1)), ("Slot 1".to_string(), "Slot 3".to_string()));
+    }
+
+    #[test]
     fn entering_load_selects_the_first_usable_slot() {
         let mut s = Settings::default();
-        let c = Context { alive: true, slots: [None, None, Some("x".into()), None] };
+        let c = Context { alive: true, slots: [None, None, Some("x".into()), None, None] };
         let mut m = Menu { screen: Screen::Main, selected: 2 };
         m.activate(&mut s, &c);
         assert_eq!((m.screen, m.selected), (Screen::Load, 2));
@@ -480,7 +490,6 @@ mod tests {
 
     #[test]
     fn left_and_right_change_the_matching_setting_and_nothing_else() {
-        let c = ctx();
         let base = Settings::default();
         let mut m = Menu { screen: Screen::Settings, selected: 0 };
         let mut s = base;

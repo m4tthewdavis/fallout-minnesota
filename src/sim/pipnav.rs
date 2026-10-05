@@ -24,7 +24,7 @@ impl Main {
         match self {
             Main::Stats => &[Page::Status, Page::Special],
             Main::Items => &[Page::Weapons, Page::Apparel, Page::Aid],
-            Main::Data => &[Page::Map, Page::Notes],
+            Main::Data => &[Page::Map, Page::Notes, Page::Saves],
         }
     }
 }
@@ -38,17 +38,18 @@ pub enum Page {
     Aid,
     Map,
     Notes,
+    Saves,
 }
 
 impl Page {
     #[cfg(test)]
-    pub const ALL: [Page; 7] = [Page::Status, Page::Special, Page::Weapons, Page::Apparel, Page::Aid, Page::Map, Page::Notes];
+    pub const ALL: [Page; 8] = [Page::Status, Page::Special, Page::Weapons, Page::Apparel, Page::Aid, Page::Map, Page::Notes, Page::Saves];
 
     pub fn main(self) -> Main {
         match self {
             Page::Status | Page::Special => Main::Stats,
             Page::Weapons | Page::Apparel | Page::Aid => Main::Items,
-            Page::Map | Page::Notes => Main::Data,
+            Page::Map | Page::Notes | Page::Saves => Main::Data,
         }
     }
 
@@ -61,6 +62,7 @@ impl Page {
             Page::Aid => "AID",
             Page::Map => "WORLD MAP",
             Page::Notes => "NOTES",
+            Page::Saves => "SAVES",
         }
     }
 
@@ -72,7 +74,7 @@ impl Page {
     pub fn layout(self) -> Layout {
         match self {
             Page::Status => Layout::Status,
-            Page::Special | Page::Weapons | Page::Apparel | Page::Aid => Layout::List,
+            Page::Special | Page::Weapons | Page::Apparel | Page::Aid | Page::Saves => Layout::List,
             Page::Map => Layout::Map,
             Page::Notes => Layout::Notes,
         }
@@ -94,12 +96,12 @@ pub struct Nav {
     /// The page each top tab last showed, so tabs reopen where you left them.
     pub last: [Page; 3],
     /// Selected row on each page (only list pages use theirs).
-    pub selected: [usize; 7],
+    pub selected: [usize; 8],
 }
 
 impl Default for Nav {
     fn default() -> Self {
-        Nav { page: Page::Status, last: [Page::Status, Page::Weapons, Page::Map], selected: [0; 7] }
+        Nav { page: Page::Status, last: [Page::Status, Page::Weapons, Page::Map], selected: [0; 8] }
     }
 }
 
@@ -217,7 +219,8 @@ mod tests {
         let mut nav = Nav::default();
         nav.switch_main(Main::Data);
         assert_eq!(nav.page_in_tab(1), Some(Page::Notes));
-        assert_eq!(nav.page_in_tab(2), None, "DATA has only two pages");
+        assert_eq!(nav.page_in_tab(2), Some(Page::Saves));
+        assert_eq!(nav.page_in_tab(3), None, "DATA has three pages");
         assert!(nav.go_to(Page::Notes));
         assert!(!nav.go_to(Page::Notes));
         assert_eq!(nav.last[Main::Data as usize], Page::Notes);
@@ -269,7 +272,7 @@ mod tests {
         assert_eq!(Main::Data.label(), "DATA");
         assert_eq!(Page::Status.layout(), Layout::Status);
         assert_eq!(Page::Map.layout(), Layout::Map);
-        for p in [Page::Special, Page::Weapons, Page::Apparel, Page::Aid] {
+        for p in [Page::Special, Page::Weapons, Page::Apparel, Page::Aid, Page::Saves] {
             assert_eq!(p.layout(), Layout::List, "{p:?}");
         }
     }

@@ -149,6 +149,53 @@ impl Fog {
         self.seen[j * FOG_CELLS + i]
     }
 
+    /// The seen cells as alternating run lengths (unseen, seen, unseen, ...),
+    /// starting with a possibly empty unseen run. Compact enough for a save file.
+    pub fn seen_runs(&self) -> Vec<u32> {
+        let mut runs = Vec::new();
+        let mut current = false;
+        let mut len = 0u32;
+        for &cell in &self.seen {
+            if cell == current {
+                len += 1;
+            } else {
+                runs.push(len);
+                current = cell;
+                len = 1;
+            }
+        }
+        runs.push(len);
+        runs
+    }
+
+    /// Restore what you'd seen from [`Fog::seen_runs`] and which landmarks you'd
+    /// found. Runs that don't add up to exactly the whole map are rejected (the
+    /// fog is left alone and this returns false); the landmark list may be
+    /// shorter or longer than today's (places added or removed since).
+    pub fn restore(&mut self, runs: &[u32], found: &[bool]) -> bool {
+        let total: u64 = runs.iter().map(|r| *r as u64).sum();
+        let ok = total == (FOG_CELLS * FOG_CELLS) as u64;
+        if ok {
+            let mut seen = Vec::with_capacity(FOG_CELLS * FOG_CELLS);
+            let mut value = false;
+            for &r in runs {
+                seen.extend(std::iter::repeat_n(value, r as usize));
+                value = !value;
+            }
+            self.seen = seen;
+        }
+        for (i, slot) in self.landmarks_found.iter_mut().enumerate() {
+            *slot = found.get(i).copied().unwrap_or(false);
+        }
+        ok
+    }
+
+    /// How many cells you've seen.
+    #[cfg(test)]
+    pub fn seen_count(&self) -> usize {
+        self.seen.iter().filter(|s| **s).count()
+    }
+
     /// Reveal everything within `r` metres of a point. Returns true if anything new was revealed.
     pub fn reveal(&mut self, x: f32, z: f32, r: f32) -> bool {
         let cell = WORLD / FOG_CELLS as f32;
@@ -510,5 +557,48 @@ mod tests {
         let row = |y: usize| (0..n).filter(|&x| alpha(x, y) > 0).count();
         assert!(row(22) > row(6));
         assert!(row(2) <= 2, "pointed tip");
+    }
+
+    #[test]
+    fn fog_survives_a_round_trip_through_runs() {
+        let mut fog = Fog::new();
+        fog.reveal(0.0, 150.0, 30.0);
+        fog.reveal(-100.0, -60.0, 45.0);
+        fog.landmarks_found[1] = true;
+        let runs = fog.seen_runs();
+        assert!(runs.len() < 400, "run-length coding stays small: {}", runs.len());
+        let mut back = Fog::new();
+        assert!(back.restore(&runs, &fog.landmarks_found));
+        assert_eq!(back.seen_count(), fog.seen_count());
+        assert_eq!(back.landmarks_found, fog.landmarks_found);
+        for (i, j) in [(50usize, 87usize), (10, 10), (0, 0), (99, 99)] {
+            assert_eq!(back.is_cell_seen(i, j), fog.is_cell_seen(i, j));
+        }
+    }
+
+    #[test]
+    fn empty_and_full_fog_code_correctly() {
+        let fog = Fog::new();
+        assert_eq!(fog.seen_runs(), vec![(FOG_CELLS * FOG_CELLS) as u32], "all unseen is one run");
+        let mut full = Fog::new();
+        assert!(full.restore(&[0, (FOG_CELLS * FOG_CELLS) as u32], &[]));
+        assert_eq!(full.seen_count(), FOG_CELLS * FOG_CELLS);
+        assert_eq!(full.seen_runs(), vec![0, (FOG_CELLS * FOG_CELLS) as u32], "starts with an empty unseen run");
+    }
+
+    #[test]
+    fn bad_fog_runs_are_rejected_and_landmark_lists_of_any_length_are_tolerated() {
+        let mut fog = Fog::new();
+        fog.reveal(0.0, 150.0, 30.0);
+        let before = fog.seen_count();
+        assert!(!fog.restore(&[5, 5], &[]), "too short");
+        assert!(!fog.restore(&[u32::MAX, u32::MAX], &[]), "far too long, and no overflow");
+        assert!(!fog.restore(&[], &[]));
+        assert_eq!(fog.seen_count(), before, "a rejected restore leaves the fog alone");
+        let n = fog.landmarks_found.len();
+        fog.restore(&[(FOG_CELLS * FOG_CELLS) as u32], &vec![true; n + 7]);
+        assert!(fog.landmarks_found.iter().all(|f| *f) && fog.landmarks_found.len() == n, "extra entries ignored");
+        fog.restore(&[(FOG_CELLS * FOG_CELLS) as u32], &[true]);
+        assert!(fog.landmarks_found[0] && !fog.landmarks_found[n - 1], "missing entries count as not found");
     }
 }

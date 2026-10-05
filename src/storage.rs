@@ -45,7 +45,7 @@ pub fn write(dir: &Path, name: &str, text: &str) -> std::io::Result<()> {
 }
 
 /// Delete a file from the data folder (missing is fine).
-#[allow(dead_code)] // used by the save system (next step)
+#[cfg(test)]
 pub fn remove(dir: &Path, name: &str) {
     let _ = std::fs::remove_file(dir.join(name));
 }

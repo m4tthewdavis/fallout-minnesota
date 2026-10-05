@@ -86,7 +86,7 @@ pub struct WolfPlugin;
 impl Plugin for WolfPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DistantHowl(20.0))
-            .add_systems(Startup, (setup_wolf_assets, spawn_initial_packs).chain())
+            .add_systems(Startup, (setup_wolf_assets, spawn_initial_packs).chain().after(crate::state::WorldGen))
             .add_systems(
                 Update,
                 (
@@ -261,7 +261,7 @@ fn spawn_pack(commands: &mut Commands, assets: &WolfAssets, center: Vec2, count:
     }
 }
 
-fn spawn_initial_packs(mut commands: Commands, assets: Res<WolfAssets>, mut rng: ResMut<RngRes>) {
+pub(crate) fn spawn_initial_packs(mut commands: Commands, assets: Res<WolfAssets>, mut rng: ResMut<RngRes>) {
     for center in [
         Vec2::new(-130.0, -20.0),
         Vec2::new(120.0, -90.0),

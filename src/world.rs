@@ -21,6 +21,11 @@ use crate::state::{alive, Colliders, Game, Messages, RngRes, SfxQueue};
 #[derive(Component)]
 pub struct Sun;
 
+/// A pickup the player has taken. It stays in the world, hidden, so that
+/// loading an earlier save can bring it back.
+#[derive(Component)]
+pub struct Collected;
+
 #[derive(Component)]
 pub struct Pickup {
     pub item: Item,
@@ -114,7 +119,8 @@ impl Plugin for WorldPlugin {
                 crate::nature::spawn_nature,
                 spawn_loot,
             )
-                .chain(),
+                .chain()
+                .in_set(crate::state::WorldGen),
         )
         .add_systems(
             Update,
@@ -571,9 +577,9 @@ fn spawn_loot(
     }
 }
 
-/// The ground marker under a pickup; despawned with it.
+/// The ground marker under a pickup; hidden with it.
 #[derive(Component)]
-struct LootRing(Entity);
+pub(crate) struct LootRing(pub Entity);
 
 fn animate_pickups(time: Res<Time>, mut q: Query<(&mut Transform, &Pickup)>) {
     let t = time.elapsed_secs();
@@ -589,7 +595,7 @@ fn collect_pickups(
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
     player: Query<&Transform, With<Player>>,
-    pickups: Query<(Entity, &Transform, &Pickup), Without<Player>>,
+    pickups: Query<(Entity, &Transform, &Pickup), (Without<Player>, Without<Collected>)>,
     rings: Query<(Entity, &LootRing)>,
 ) {
     let Ok(ptf) = player.single() else { return };
@@ -601,10 +607,10 @@ fn collect_pickups(
             let n = pickup.item.amount();
             let extra = if n > 1 { format!(" (+{n})") } else { String::new() };
             msgs.show(format!("Picked up: {}{}", pickup.item.name(), extra), 2.5);
-            commands.entity(entity).despawn();
+            commands.entity(entity).insert((Collected, Visibility::Hidden));
             for (ring, owner) in &rings {
                 if owner.0 == entity {
-                    commands.entity(ring).despawn();
+                    commands.entity(ring).insert(Visibility::Hidden);
                 }
             }
         }

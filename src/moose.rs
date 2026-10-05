@@ -75,7 +75,7 @@ pub struct MoosePlugin;
 
 impl Plugin for MoosePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_assets, spawn_initial).chain())
+        app.add_systems(Startup, (setup_assets, spawn_initial).chain().after(crate::state::WorldGen))
             .add_systems(Update, (moose_ai.run_if(alive), animate_moose));
     }
 }
@@ -183,7 +183,7 @@ pub(crate) fn spawn_moose(commands: &mut Commands, a: &MooseAssets, pos: Vec2, r
     id
 }
 
-fn spawn_initial(mut commands: Commands, assets: Res<MooseAssets>, mut rng: ResMut<RngRes>, colliders: Res<Colliders>) {
+pub(crate) fn spawn_initial(mut commands: Commands, assets: Res<MooseAssets>, mut rng: ResMut<RngRes>, colliders: Res<Colliders>) {
     let mut placed = 0;
     for _ in 0..400 {
         if placed >= MOOSE_COUNT {

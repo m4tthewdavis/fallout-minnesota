@@ -157,6 +157,24 @@ impl Messages {
 #[derive(Resource, Default)]
 pub struct PipOpen(pub bool);
 
+/// Systems that build the static world (terrain, landmarks, props, forest,
+/// loot). They draw from [`RngRes`] in a fixed order, so everything else that
+/// uses it at start-up is ordered after this set.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct WorldGen;
+
+/// The world is the same every game (so saves can refer to "that crate"):
+/// it's built from this seed, then the generator is reseeded from the clock.
+pub const WORLD_SEED: u64 = 1143;
+
+fn reseed_after_world(mut rng: ResMut<RngRes>) {
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(2077);
+    rng.0 = Rng::new(seed);
+}
+
 /// True while the pause menu is open (the game is paused).
 #[derive(Resource, Default)]
 pub struct Paused(pub bool);
@@ -179,11 +197,6 @@ pub struct StatePlugin;
 
 impl Plugin for StatePlugin {
     fn build(&self, app: &mut App) {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(2077);
-
         let mut messages = Messages::default();
         messages.show(
             "VAULT 143: The door has opened for the first time since 2077. Spring has... ended?",
@@ -195,7 +208,7 @@ impl Plugin for StatePlugin {
                 weather: Weather::new(),
                 just_changed: None,
             })
-            .insert_resource(RngRes(Rng::new(seed)))
+            .insert_resource(RngRes(Rng::new(WORLD_SEED)))
             .insert_resource(messages)
             .init_resource::<ClockRes>()
             .init_resource::<Colliders>()
@@ -205,6 +218,7 @@ impl Plugin for StatePlugin {
             .init_resource::<PipOpen>()
             .init_resource::<Paused>()
             .init_resource::<TreePositions>()
+            .add_systems(PostStartup, reseed_after_world)
             .add_systems(Update, (tick_messages, tick_lifetimes));
     }
 }

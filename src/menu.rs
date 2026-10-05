@@ -39,7 +39,6 @@ pub struct GameSettings(pub Settings);
 pub struct SlotSummaries(pub [Option<String>; SLOTS]);
 
 /// Something the menu asked for that the save system carries out.
-#[allow(dead_code)] // the slot numbers are read by the save system (next step)
 #[derive(Event, Clone, Copy, Debug)]
 pub enum SaveRequest {
     Save(usize),
@@ -99,7 +98,6 @@ impl Plugin for MenuPlugin {
                     apply_settings.run_if(resource_changed::<GameSettings>),
                     sync_audio_back,
                     persist_settings,
-                    unhandled_requests,
                 )
                     .chain(),
             );
@@ -321,12 +319,7 @@ fn menu_system(
     match action {
         Action::None => {}
         Action::Resume => {
-            info!("menu: closed");
-            paused.0 = false;
-            vtime.unpause();
-            if let Ok(mut w) = windows.single_mut() {
-                set_grab(&mut w, true);
-            }
+            close_menu(&mut paused, &mut vtime, &mut windows);
             // Leaving the menu: write any changed settings now.
             if state.persist_since.is_some() {
                 state.persist_since = Some(f32::NEG_INFINITY);
@@ -473,9 +466,12 @@ fn persist_settings(time: Res<Time<Real>>, settings: Res<GameSettings>, mut stat
     }
 }
 
-/// Until saving exists, say so rather than silently ignoring the choice.
-fn unhandled_requests(mut requests: EventReader<SaveRequest>, mut msgs: ResMut<Messages>) {
-    for _ in requests.read() {
-        msgs.show("Saving and loading arrive in the next update.", 3.0);
+/// Close the pause menu and give the game back to the player.
+pub fn close_menu(paused: &mut Paused, vtime: &mut Time<Virtual>, windows: &mut Query<&mut Window, With<PrimaryWindow>>) {
+    info!("menu: closed");
+    paused.0 = false;
+    vtime.unpause();
+    if let Ok(mut w) = windows.single_mut() {
+        set_grab(&mut w, true);
     }
 }
