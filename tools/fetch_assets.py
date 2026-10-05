@@ -58,6 +58,11 @@ TEXTURES = [
     ("rock_wall_02", ["Diffuse", "nor_gl", "arm"], "Vault 143 hillside"),
     ("metal_plate", ["Diffuse", "nor_gl", "arm"], "Vault 143 gear door"),
     ("asphalt_snow", ["Diffuse", "nor_gl", "arm"], "the old US-169 highway"),
+    ("blue_metal_plate", ["Diffuse", "nor_gl", "arm"], "gun steel (worn painted metal)"),
+    ("polar_fleece", ["Diffuse", "nor_gl", "arm"], "survivor and raider parkas"),
+    ("curly_teddy_natural", ["Diffuse", "nor_gl", "arm"], "fur trim on hoods and cuffs"),
+    ("wool_boucle", ["Diffuse", "nor_gl", "arm"], "knit beanies and scarves"),
+    ("brown_leather", ["Diffuse", "nor_gl", "arm"], "gun slings, belts, boots and mittens"),
 ]
 
 MAP_SUFFIX = {"Diffuse": "diff", "nor_gl": "nor", "arm": "arm"}

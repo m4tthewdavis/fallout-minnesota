@@ -144,7 +144,7 @@ impl Plugin for DevShotPlugin {
             wait: std::env::var("FMN_SHOT_WAIT").ok().and_then(|w| w.parse().ok()).unwrap_or(20.0),
             taken: None,
         })
-        .add_systems(Update, (dev_story, dev_slay, dev_bang, take_shot).chain())
+        .add_systems(Update, (dev_story, dev_slay, dev_bang, dev_fire, take_shot).chain())
         .add_systems(PreUpdate, inject_keys.run_if(resource_exists::<KeyScript>).after(bevy::input::InputSystem))
         .add_systems(PostStartup, spawn_extras)
         .add_systems(Startup, resize_window);
@@ -217,6 +217,24 @@ fn dev_bang(mut shots: EventWriter<crate::state::Gunshot>, time: Res<Time<Real>>
             shots.write(crate::state::Gunshot { pos: p.translation, by_player: true });
         }
     }
+}
+
+/// `FMN_FIRE=1`: keep firing the held weapon's muzzle effects (no ammo spent),
+/// so a screenshot catches the flash and smoke.
+fn dev_fire(mut fx: ResMut<crate::state::FxQueue>, mut tick: Local<u32>, game: Res<Game>, gun: Query<&GlobalTransform, With<crate::gun::GunModel>>, cam: Query<&GlobalTransform, With<Player>>) {
+    if std::env::var("FMN_FIRE").is_err() {
+        return;
+    }
+    *tick += 1;
+    if *tick % 3 != 0 {
+        return;
+    }
+    let (Ok(g), Ok(c)) = (gun.single(), cam.single()) else { return };
+    let kind = game.weapon().kind;
+    let muzzle = g.transform_point(crate::gun::muzzle_local(kind));
+    let dir = c.forward().as_vec3();
+    fx.spawn(crate::state::Fx::Muzzle(muzzle, dir, c.right().as_vec3(), false));
+    fx.spawn(crate::state::Fx::Blast(muzzle, dir, if kind == WeaponKind::ScrapShotgun { 1.6 } else { 1.0 }));
 }
 
 fn take_shot(

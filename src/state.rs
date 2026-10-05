@@ -116,6 +116,8 @@ pub enum Fx {
     /// Muzzle flash and smoke, plus an ejected casing if the last field is true:
     /// (muzzle, aim direction, gun right, ejects brass).
     Muzzle(Vec3, Vec3, Vec3, bool),
+    /// The blast out of a barrel: (muzzle, direction, power). A big shotgun is 1.6.
+    Blast(Vec3, Vec3, f32),
     /// Spent casings dumped during a reload: (breech position, how many).
     Brass(Vec3, u32),
     /// A bullet striking a Frostfang: (hit point, bullet direction).

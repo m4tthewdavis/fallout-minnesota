@@ -266,6 +266,12 @@ def gun_textures():
     metal = 1.0 - 0.9 * rust
     arm = np.stack([1 - 0.4 * seams * rust, np.clip(rough, 0, 1), np.clip(metal, 0, 1)], -1)
     save(Image.fromarray((arm * 255).astype(np.uint8)), GEN, "gun_steel_arm.png")
+    # Normal map for the steel: brushed grain, rust pitting, seams and scratches.
+    steel_h = brushed * 0.35 - rust * 0.6 - seams * 0.25 - scratches * 0.5
+    sy, sx = np.gradient(steel_h)
+    nx, ny, nz = -sx * 4.0, sy * 4.0, np.ones_like(steel_h)
+    ln = np.sqrt(nx * nx + ny * ny + nz * nz)
+    save(Image.fromarray((np.stack([nx / ln, ny / ln, nz / ln], -1) * 0.5 * 255 + 127.5).astype(np.uint8)), GEN, "gun_steel_nor.png")
 
     # --- wood ---
     warp = value_noise(n, 4, 3)
@@ -296,6 +302,22 @@ def gun_textures():
     length = np.sqrt(nx * nx + ny * ny + nz * nz)
     nor = np.stack([nx / length, ny / length, nz / length], -1) * 0.5 + 0.5
     save(Image.fromarray((nor * 255).astype(np.uint8)), GEN, "gun_wood_nor.png")
+
+
+def frost_rime():
+    """Tileable hoar frost: a white-blue crust of crystals that is thick in
+    patches and feathery at the edges. Alpha is the frost, so it can be laid
+    over metal, wood and cloth."""
+    n = 256
+    patches = value_noise(n, 4, 4)
+    crystals = np.clip(1 - voronoi_edges(n, 400) / 2.2, 0, 1)
+    fuzz = value_noise(n, 48, 2)
+    cover = np.clip((patches - 0.42) * 3.2, 0, 1)
+    alpha = np.clip(cover * (0.45 + 0.55 * np.maximum(crystals, fuzz)) , 0, 1)
+    alpha = np.clip(alpha * 1.15 - 0.05, 0, 1)
+    rgb = np.stack([0.80 + 0.2 * crystals, 0.90 + 0.1 * crystals, np.ones((n, n))], -1)
+    rgba = np.concatenate([rgb, alpha[..., None]], -1)
+    save(Image.fromarray((np.clip(rgba, 0, 1) * 255).astype(np.uint8), "RGBA"), GEN, "frost_rime.png")
 
 
 def normal_from_height(hgt, strength):
@@ -1042,6 +1064,7 @@ def main():
     vending_front()
     chainlink()
     gun_textures()
+    frost_rime()
     ui_icons()
     vehicle_textures()
     snow_textures()
@@ -1057,7 +1080,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art, "flame": flame_sheet}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime}
 
 if __name__ == "__main__":
     import sys

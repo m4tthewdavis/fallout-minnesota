@@ -269,6 +269,7 @@ fn fire(
         .unwrap_or(origin + right * 0.25 - up * 0.18 + dir * 0.8);
     fxq.spawn(Fx::Muzzle(muzzle, dir, right, kind == WeaponKind::PipeRifle));
     shots.write(Gunshot { pos: origin, by_player: true });
+    fxq.spawn(Fx::Blast(muzzle, dir, match kind { WeaponKind::ScrapShotgun => 1.6, WeaponKind::Revolver => 1.15, _ => 1.0 }));
 
     let mut strikes: Vec<Strike> = Vec::new();
     let mut ricochets = 0;

@@ -72,6 +72,13 @@ pub struct GameAssets {
     pub roof_metal: Handle<StandardMaterial>,
     pub pole_wood: Handle<StandardMaterial>,
     pub asphalt: Handle<StandardMaterial>,
+    /// Painted steel plate for weapons.
+    pub plate: Handle<StandardMaterial>,
+    /// Cloth and fur for the people's winter gear.
+    pub fleece: Handle<StandardMaterial>,
+    pub fur: Handle<StandardMaterial>,
+    pub wool: Handle<StandardMaterial>,
+    pub leather: Handle<StandardMaterial>,
     /// Rust textures on their own, for car bodies in different paint colours.
     pub rust_diff: Handle<Image>,
     pub rust_normal: Handle<Image>,
@@ -280,6 +287,8 @@ fn load_assets(
         ("steel_arm", "gun_steel_arm.png", false),
         ("wood_diff", "gun_wood_diff.png", true),
         ("wood_nor", "gun_wood_nor.png", false),
+        ("steel_nor", "gun_steel_nor.png", false),
+        ("rime", "frost_rime.png", true),
     ]
     .into_iter()
     .map(|(key, file, srgb)| (key, tiled(s, format!("textures/generated/{file}"), srgb)))
@@ -328,6 +337,11 @@ fn load_assets(
         roof_metal: pbr(s, m, "rusty_corrugated_iron", Color::srgb(0.45, 0.42, 0.4)),
         pole_wood: pbr(s, m, "weathered_plank_siding", Color::srgb(0.4, 0.3, 0.22)),
         asphalt: pbr(s, m, "asphalt_snow", Color::WHITE),
+        plate: pbr(s, m, "blue_metal_plate", Color::srgb(0.55, 0.57, 0.62)),
+        fleece: pbr(s, m, "polar_fleece", Color::WHITE),
+        fur: pbr(s, m, "curly_teddy_natural", Color::WHITE),
+        wool: pbr(s, m, "wool_boucle", Color::WHITE),
+        leather: pbr(s, m, "brown_leather", Color::srgb(0.8, 0.7, 0.62)),
         rust_diff: tiled(s, "textures/rusty_metal_02/diff.jpg".into(), true),
         rust_normal: tiled(s, "textures/rusty_metal_02/nor.jpg".into(), false),
 

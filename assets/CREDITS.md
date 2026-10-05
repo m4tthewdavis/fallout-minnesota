@@ -41,6 +41,11 @@ Fetched by `tools/fetch_assets.py`. License: <https://polyhaven.com/license>.
 | `textures/rock_wall_02/` | Rock Wall 02 | <https://polyhaven.com/a/rock_wall_02> | Rob Tuytel | Vault 143 hillside |
 | `textures/metal_plate/` | Metal Plate | <https://polyhaven.com/a/metal_plate> | Rob Tuytel | Vault 143 gear door |
 | `textures/asphalt_snow/` | Asphalt Snow | <https://polyhaven.com/a/asphalt_snow> | eye-candy.xyz | the old US-169 highway |
+| `textures/blue_metal_plate/` | Blue Metal Plate | <https://polyhaven.com/a/blue_metal_plate> | Rob Tuytel | gun steel (worn painted metal) |
+| `textures/polar_fleece/` | Polar Fleece | <https://polyhaven.com/a/polar_fleece> | colormass, Rico Cilliers | survivor and raider parkas |
+| `textures/curly_teddy_natural/` | Curly Teddy Natural | <https://polyhaven.com/a/curly_teddy_natural> | colormass, Rico Cilliers | fur trim on hoods and cuffs |
+| `textures/wool_boucle/` | Wool Boucle | <https://polyhaven.com/a/wool_boucle> | colormass, Rico Cilliers | knit beanies and scarves |
+| `textures/brown_leather/` | Brown Leather | <https://polyhaven.com/a/brown_leather> | Rob Tuytel | gun slings, belts, boots and mittens |
 <!-- generated-above -->
 ## Font
 

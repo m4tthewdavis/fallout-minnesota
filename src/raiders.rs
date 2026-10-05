@@ -13,11 +13,10 @@ use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
 use crate::assets::GameAssets;
+use crate::characters::PersonKit;
 use crate::enemy::{Body, Dying, Frozen, Species};
-use crate::meshes::to_mesh;
 use crate::player::Player;
 use crate::sim::collision::{self, segment_blocked};
-use crate::sim::meshgen;
 use crate::sim::raider::{Gun, Mode, Raider, Senses};
 use crate::sim::survival::DeathCause;
 use crate::sim::synth::Sound;
@@ -74,22 +73,8 @@ struct HeldGun {
 
 #[derive(Resource)]
 pub(crate) struct RaiderAssets {
-    leg: Handle<Mesh>,
     /// A 1 m cube, scaled for the gun parts.
     unit: Handle<Mesh>,
-    torso: Handle<Mesh>,
-    arm: Handle<Mesh>,
-    head: Handle<Mesh>,
-    hood: Handle<Mesh>,
-    scarf: Handle<Mesh>,
-    goggles: Handle<Mesh>,
-    frost: Handle<Mesh>,
-    parka: Handle<StandardMaterial>,
-    pants: Handle<StandardMaterial>,
-    skin: Handle<StandardMaterial>,
-    scarves: [Handle<StandardMaterial>; 3],
-    lens: Handle<StandardMaterial>,
-    rime: Handle<StandardMaterial>,
     metal: Handle<StandardMaterial>,
     wood: Handle<StandardMaterial>,
     tracer: Handle<Mesh>,
@@ -106,29 +91,9 @@ impl Plugin for RaiderPlugin {
 }
 
 fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, assets: Res<GameAssets>) {
-    let mat = |m: &mut Assets<StandardMaterial>, c: Color, rough: f32| m.add(StandardMaterial { base_color: c, perceptual_roughness: rough, ..default() });
     commands.insert_resource(RaiderAssets {
-        leg: meshes.add(Cuboid::new(0.15, 0.82, 0.19)),
         unit: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        torso: meshes.add(Capsule3d::new(0.23, 0.42)),
-        arm: meshes.add(Capsule3d::new(0.075, 0.42)),
-        head: meshes.add(Sphere::new(0.12)),
-        hood: meshes.add(to_mesh(&meshgen::blob(0.17, 0.9, 0.06, 7, 1.0))),
-        scarf: meshes.add(Cylinder::new(0.15, 0.1)),
-        goggles: meshes.add(Cuboid::new(0.2, 0.06, 0.04)),
-        frost: meshes.add(Sphere::new(0.06)),
-        // Parkas the colour of old snow, stiff with ice.
-        parka: mat(&mut materials, Color::srgb(0.6, 0.64, 0.68), 0.85),
-        pants: mat(&mut materials, Color::srgb(0.12, 0.12, 0.13), 0.9),
-        skin: mat(&mut materials, Color::srgb(0.7, 0.55, 0.47), 0.8),
-        scarves: [
-            mat(&mut materials, Color::srgb(0.55, 0.12, 0.1), 0.9),
-            mat(&mut materials, Color::srgb(0.12, 0.25, 0.45), 0.9),
-            mat(&mut materials, Color::srgb(0.7, 0.55, 0.12), 0.9),
-        ],
-        lens: materials.add(StandardMaterial { base_color: Color::srgb(0.9, 0.6, 0.15), emissive: LinearRgba::rgb(1.2, 0.5, 0.05), ..default() }),
-        rime: materials.add(StandardMaterial { base_color: Color::srgb(0.9, 0.96, 1.0), emissive: LinearRgba::rgb(0.15, 0.2, 0.25), perceptual_roughness: 0.4, ..default() }),
-        metal: assets.rust.clone(),
+        metal: assets.plate.clone(),
         wood: assets.pole_wood.clone(),
         tracer: meshes.add(Cuboid::new(0.025, 0.025, 1.0)),
         tracer_mat: materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.7, 0.3), emissive: LinearRgba::rgb(6.0, 3.0, 0.6), unlit: true, ..default() }),
@@ -142,7 +107,7 @@ fn fire_pit(camp: (f32, f32, f32)) -> Vec2 {
     Vec2::new(cx + yaw.cos() * dx + yaw.sin() * dz, cz - yaw.sin() * dx + yaw.cos() * dz)
 }
 
-pub(crate) fn spawn_initial(mut commands: Commands, assets: Res<RaiderAssets>, mut rng: ResMut<RngRes>) {
+pub(crate) fn spawn_initial(mut commands: Commands, assets: Res<RaiderAssets>, kit: Res<PersonKit>, mut rng: ResMut<RngRes>) {
     let convoy = Vec2::new(crate::quest::CONVOY_AT.0 + 1.0, crate::quest::CONVOY_AT.1 - 3.4);
     // (where the fire is, who stands round it)
     for (fire, guns) in [
@@ -153,12 +118,12 @@ pub(crate) fn spawn_initial(mut commands: Commands, assets: Res<RaiderAssets>, m
         for (i, gun) in guns.iter().enumerate() {
             let a = i as f32 / guns.len() as f32 * TAU + rng.0.range(0.0, 0.8);
             let at = fire + Vec2::new(a.cos(), a.sin()) * rng.0.range(1.8, 3.0);
-            spawn_raider(&mut commands, &assets, at, *gun, [fire.x, fire.y], i, 0.0, &mut rng);
+            spawn_raider(&mut commands, &assets, &kit, at, *gun, [fire.x, fire.y], i, 0.0, &mut rng);
         }
     }
 }
 
-fn spawn_raider(commands: &mut Commands, a: &RaiderAssets, at: Vec2, gun: Gun, home: [f32; 2], look: usize, aim: f32, rng: &mut RngRes) -> Entity {
+fn spawn_raider(commands: &mut Commands, a: &RaiderAssets, kit: &PersonKit, at: Vec2, gun: Gun, home: [f32; 2], look: usize, aim: f32, rng: &mut RngRes) -> Entity {
     let yaw = rng.0.range(0.0, TAU);
     let id = commands
         .spawn((
@@ -171,26 +136,19 @@ fn spawn_raider(commands: &mut Commands, a: &RaiderAssets, at: Vec2, gun: Gun, h
         .id();
     commands.entity(id).with_children(|r| {
         r.spawn((Transform::default(), Visibility::default(), Rig { owner: id })).with_children(|rig| {
+            let outfit = &kit.raiders[look % 3];
             // Legs and arms pivot at hip and shoulder.
             for (x, kind) in [(-0.1f32, LimbKind::LegL), (0.1, LimbKind::LegR)] {
-                rig.spawn((Transform::from_xyz(x, 0.82, 0.0), Visibility::default(), Limb { owner: id, kind })).with_children(|l| {
-                    l.spawn((Mesh3d(a.leg.clone()), MeshMaterial3d(a.pants.clone()), Transform::from_xyz(0.0, -0.41, 0.0)));
-                });
+                rig.spawn((Transform::from_xyz(x, 0.82, 0.0), Visibility::default(), Limb { owner: id, kind })).with_children(|l| kit.dress_leg(l));
             }
-            for (x, kind) in [(-0.3f32, LimbKind::ArmL), (0.3, LimbKind::ArmR)] {
+            for (x, kind) in [(-0.29f32, LimbKind::ArmL), (0.29, LimbKind::ArmR)] {
                 rig.spawn((Transform::from_xyz(x, 1.42, 0.0), Visibility::default(), Limb { owner: id, kind })).with_children(|l| {
-                    l.spawn((Mesh3d(a.arm.clone()), MeshMaterial3d(a.parka.clone()), Transform::from_xyz(0.0, -0.3, 0.0)));
+                    kit.dress_arm(l, outfit, x.signum());
+                    // Rime caked on the sleeve.
+                    kit.rime(l, Transform::from_xyz(x.signum() * 0.03, -0.12, -0.05).with_scale(Vec3::new(1.2, 0.8, 1.0)));
                 });
             }
-            rig.spawn((Mesh3d(a.torso.clone()), MeshMaterial3d(a.parka.clone()), Transform::from_xyz(0.0, 1.12, 0.0).with_scale(Vec3::new(1.0, 1.0, 0.8))));
-            // Head: face, goggles, hood, scarf, and rime on the shoulders.
-            rig.spawn((Mesh3d(a.head.clone()), MeshMaterial3d(a.skin.clone()), Transform::from_xyz(0.0, 1.68, 0.02)));
-            rig.spawn((Mesh3d(a.goggles.clone()), MeshMaterial3d(a.lens.clone()), Transform::from_xyz(0.0, 1.71, 0.12), NotShadowCaster));
-            rig.spawn((Mesh3d(a.hood.clone()), MeshMaterial3d(a.parka.clone()), Transform::from_xyz(0.0, 1.7, -0.05)));
-            rig.spawn((Mesh3d(a.scarf.clone()), MeshMaterial3d(a.scarves[look % 3].clone()), Transform::from_xyz(0.0, 1.5, 0.02)));
-            for (x, y, z, s) in [(-0.25f32, 1.5f32, 0.0f32, 1.0f32), (0.25, 1.5, 0.0, 1.0), (0.0, 1.82, -0.05, 0.9), (0.0, 1.35, -0.2, 1.3)] {
-                rig.spawn((Mesh3d(a.frost.clone()), MeshMaterial3d(a.rime.clone()), Transform::from_xyz(x, y, z).with_scale(Vec3::new(s, 0.5 * s, s)), NotShadowCaster));
-            }
+            kit.dress_torso(rig, outfit);
             // The gun.
             rig.spawn((Transform::default(), Visibility::default(), HeldGun { owner: id })).with_children(|g| {
                 // (position, size, wooden?) of each part, muzzle towards +z.
@@ -219,12 +177,12 @@ fn gun_sound(g: Gun) -> Sound {
 
 /// Screenshot helper: three raiders in a row, standing still, guns raised,
 /// facing the player's spawn.
-pub fn spawn_lineup(mut commands: Commands, assets: Res<RaiderAssets>, mut rng: ResMut<RngRes>) {
+pub fn spawn_lineup(mut commands: Commands, assets: Res<RaiderAssets>, kit: Res<PersonKit>, mut rng: ResMut<RngRes>) {
     let (sx, sz) = terrain::PLAYER_SPAWN;
     let z = sz - 7.0;
     for (i, gun) in [Gun::Rifle, Gun::Shotgun, Gun::Revolver].into_iter().enumerate() {
         let x = sx - 2.4 + i as f32 * 2.4;
-        let id = spawn_raider(&mut commands, &assets, Vec2::new(x, z), gun, [x, z], i, 1.0, &mut rng);
+        let id = spawn_raider(&mut commands, &assets, &kit, Vec2::new(x, z), gun, [x, z], i, 1.0, &mut rng);
         commands.entity(id).insert((Frozen, Transform::from_xyz(x, terrain::walk_height(x, z), z).with_rotation(Quat::from_rotation_y(PI + 0.1 - 0.1 * i as f32))));
     }
 }
@@ -311,6 +269,7 @@ fn raider_ai(
         let to_target = (target - muzzle).normalize_or_zero();
         let right = tf.rotation * Vec3::X;
         fxq.spawn(Fx::Muzzle(muzzle, to_target, right, false));
+        fxq.spawn(Fx::Blast(muzzle, to_target, if v.gun == Gun::Shotgun { 1.3 } else { 0.9 }));
         commands.spawn((
             PointLight { color: Color::srgb(1.0, 0.8, 0.4), intensity: 150_000.0, range: 12.0, ..default() },
             Transform::from_translation(muzzle),

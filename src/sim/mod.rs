@@ -20,6 +20,7 @@ pub mod mapdata;
 pub mod menu;
 pub mod meshgen;
 pub mod mipmaps;
+pub mod outfit;
 pub mod moose;
 pub mod pipnav;
 pub mod progress;

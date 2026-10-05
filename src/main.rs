@@ -13,6 +13,7 @@
 
 mod assets;
 mod audio;
+mod characters;
 mod combat;
 mod crows;
 mod devshot;
@@ -96,6 +97,6 @@ fn main() {
             interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
         .run();
 }

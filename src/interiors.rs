@@ -15,6 +15,7 @@ use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
 use crate::assets::GameAssets;
+use crate::characters::PersonKit;
 use crate::interact::{spawn_container, ContainerAssets, FixtureClaim};
 use crate::meshes::to_mesh_tangents;
 use crate::player::{Player, EYE_HEIGHT};
@@ -123,9 +124,6 @@ struct Kit {
     strip: Handle<StandardMaterial>,
     screen: Handle<StandardMaterial>,
     cold_light: Handle<StandardMaterial>,
-    skin: Handle<StandardMaterial>,
-    /// Parkas for the four survivors, by fish house.
-    parkas: [Handle<StandardMaterial>; 4],
 }
 
 fn make_kit(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> Kit {
@@ -146,13 +144,6 @@ fn make_kit(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> Ki
         strip: glow(materials, Color::srgb(0.9, 0.95, 1.0), LinearRgba::rgb(3.0, 3.4, 4.0)),
         screen: glow(materials, Color::srgb(1.0, 0.6, 0.2), LinearRgba::rgb(2.4, 1.2, 0.3)),
         cold_light: glow(materials, Color::srgb(0.7, 0.8, 0.95), LinearRgba::rgb(0.9, 1.2, 1.8)),
-        skin: mat(materials, Color::srgb(0.72, 0.55, 0.44)),
-        parkas: [
-            mat(materials, Color::srgb(0.75, 0.38, 0.1)),
-            mat(materials, Color::srgb(0.22, 0.34, 0.2)),
-            mat(materials, Color::srgb(0.18, 0.28, 0.5)),
-            mat(materials, Color::srgb(0.55, 0.45, 0.25)),
-        ],
     }
 }
 
@@ -220,6 +211,7 @@ pub fn spawn_interiors(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rng: ResMut<RngRes>,
     mut colliders: ResMut<Colliders>,
+    people: Res<PersonKit>,
 ) {
     let solid = &mut colliders.0;
     let kit = make_kit(&mut materials, &assets);
@@ -228,7 +220,7 @@ pub fn spawn_interiors(
         // Rooms are hidden until you're in one (see `show_current_room`).
         let root = commands.spawn((Transform::from_xyz(ox, 0.0, oz), Visibility::Hidden, InteriorRoot(room))).id();
         commands.entity(root).with_children(|r| match room {
-            Interior::FishHouse(i) => fish_house(r, &mut meshes, &kit, &assets, solid, i),
+            Interior::FishHouse(i) => fish_house(r, &mut meshes, &kit, &people, &assets, solid, i),
             Interior::VaultLobby => vault_lobby(r, &mut meshes, &mut materials, &kit, &assets, solid),
             Interior::Mart => mart(r, &mut meshes, &kit, &assets, solid),
         });
@@ -250,7 +242,7 @@ pub fn spawn_interiors(
 
 // ---- Fish houses ----
 
-fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets: &GameAssets, solid: &mut Vec<Shape>, i: u8) {
+fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, people: &PersonKit, assets: &GameAssets, solid: &mut Vec<Shape>, i: u8) {
     let room = Interior::FishHouse(i);
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
@@ -313,31 +305,25 @@ fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, 
     cylinder(r, meshes, &k.rust, [hw - 0.15, 0.55, 0.9], 0.04, 1.1);
     light(r, Color::srgb(1.0, 0.85, 0.6), 60_000.0, 6.0, [0.0, 2.2, 1.2]);
     // The survivor who lives here, by the table and facing the door.
-    survivor(r, meshes, k, i, [-0.95, 0.0, 0.3], PI + 0.5);
+    survivor(r, people, i, [-0.95, 0.0, 0.3], 0.5);
     solid.push(Shape::Circle { x: ox - 0.95, z: oz + 0.3, r: 0.4 });
     r.spawn((Transform::from_xyz(-0.95, 1.0, 0.3), Fixture { kind: FixtureKind::Talk(Npc::for_house(i)), space: Some(room) }));
 }
 
-/// A person in a parka and hood, standing at `at` (the floor), facing `yaw`
-/// (0 faces north, -z).
-fn survivor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, house: u8, at: [f32; 3], yaw: f32) {
-    let parka = &k.parkas[house as usize % 4];
+/// A person in winter gear, standing at `at` (the floor), turned `yaw` radians
+/// (0 faces +z, the south wall and its door).
+fn survivor(r: &mut ChildSpawnerCommands, kit: &PersonKit, house: u8, at: [f32; 3], yaw: f32) {
+    let look = &kit.survivors[house as usize % 4];
     r.spawn((Transform::from_xyz(at[0], at[1], at[2]).with_rotation(Quat::from_rotation_y(yaw)), Visibility::default())).with_children(|p| {
-        let mut part = |p: &mut ChildSpawnerCommands, mesh: Mesh, material: &Handle<StandardMaterial>, at: Vec3, rot: Quat| {
-            p.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(at).with_rotation(rot)));
-        };
         for x in [-0.1f32, 0.1] {
-            part(p, Cuboid::new(0.16, 0.8, 0.2).into(), &k.dark, Vec3::new(x, 0.4, 0.0), Quat::IDENTITY);
+            p.spawn((Transform::from_xyz(x, 0.82, 0.0), Visibility::default())).with_children(|l| kit.dress_leg(l));
         }
-        // Parka body and arms.
-        part(p, Capsule3d::new(0.24, 0.42).into(), parka, Vec3::new(0.0, 1.12, 0.0), Quat::IDENTITY);
-        for x in [-0.3f32, 0.3] {
-            part(p, Capsule3d::new(0.075, 0.45).into(), parka, Vec3::new(x, 1.1, -0.06), Quat::from_rotation_x(0.25));
+        for x in [-0.29f32, 0.29] {
+            // Arms hanging, one a little forward as if warming at the stove.
+            let swing = if x > 0.0 { 0.25 } else { -0.1 };
+            p.spawn((Transform::from_xyz(x, 1.42, 0.0).with_rotation(Quat::from_rotation_x(swing)), Visibility::default())).with_children(|l| kit.dress_arm(l, look, x.signum()));
         }
-        // Head with the hood pushed back, and a dark scarf.
-        part(p, Sphere::new(0.125).into(), &k.skin, Vec3::new(0.0, 1.66, -0.02), Quat::IDENTITY);
-        part(p, Sphere::new(0.17).into(), parka, Vec3::new(0.0, 1.68, 0.06), Quat::IDENTITY);
-        part(p, Cylinder::new(0.17, 0.08).into(), &k.dark, Vec3::new(0.0, 1.5, -0.01), Quat::IDENTITY);
+        kit.dress_torso(p, look);
     });
 }
 

@@ -18,7 +18,7 @@ use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 
 use crate::assets::GameAssets;
-use crate::meshes::{to_mesh, to_mesh_tangents};
+use crate::meshes::to_mesh_tangents;
 use crate::player::{cursor_locked, Player};
 use crate::sim::collision;
 use crate::sim::meshgen::{self, sec, MeshData};
@@ -136,7 +136,8 @@ impl Plugin for GunPlugin {
             .init_resource::<ForceAim>()
             .init_resource::<AimAmount>()
             .init_resource::<LastPose>()
-            .add_systems(Update, (aim_down_sights, pose_gun, pose_hands, show_current_weapon, show_upgrades).chain());
+            .add_systems(Update, (aim_down_sights, pose_gun, pose_hands, show_current_weapon, show_upgrades).chain())
+            .add_systems(Update, update_gun_frost);
     }
 }
 
@@ -168,6 +169,7 @@ pub fn spawn_view_model(
     ));
     let h = viewmodel::hip(WeaponKind::PipeRifle);
     let mats = make_mats(materials, assets);
+    cam.commands().insert_resource(GunFrost(mats.rime.clone()));
     spawn_arms(cam, meshes, materials, &mats, &layer);
     cam.spawn((
         Transform::from_xyz(h[0], h[1], h[2]).with_scale(Vec3::splat(SCALE)),
@@ -182,7 +184,8 @@ pub fn spawn_view_model(
                     WeaponKind::ScrapShotgun => build_shotgun(g, meshes, &mats, &layer),
                     WeaponKind::Revolver => build_revolver(g, meshes, &mats, &layer),
                     WeaponKind::IceAxe => build_axe(g, meshes, &mats, &layer),
-                });
+                })
+                .with_children(|g| frost_patches(g, meshes, &mats, &layer, kind));
         }
     });
 }
@@ -201,6 +204,8 @@ struct Mats {
     rubber: Handle<StandardMaterial>,
     fleece: Handle<StandardMaterial>,
     frost: Handle<StandardMaterial>,
+    /// Hoar frost that builds up on cold metal (see `update_gun_frost`).
+    rime: Handle<StandardMaterial>,
     red: Handle<StandardMaterial>,
 }
 
@@ -209,18 +214,24 @@ fn make_mats(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> M
     let steel = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: tex("steel_diff"),
+        normal_map_texture: tex("steel_nor"),
         metallic_roughness_texture: tex("steel_arm"),
         occlusion_texture: tex("steel_arm"),
         metallic: 1.0,
         perceptual_roughness: 1.0,
         ..default()
     });
-    let pipe = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.85, 0.85, 0.9),
-        base_color_texture: tex("steel_diff"),
-        metallic_roughness_texture: tex("steel_arm"),
-        metallic: 1.0,
-        perceptual_roughness: 1.0,
+    // Pipes and tubing are painted steel plate (a real scanned metal: scuffed, chipped).
+    let pipe = match materials.get(&assets.plate).cloned() {
+        Some(plate) => materials.add(StandardMaterial { base_color: Color::srgb(0.62, 0.64, 0.7), ..plate }),
+        None => assets.plate.clone(),
+    };
+    let rime = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.9, 0.96, 1.0, 0.0),
+        base_color_texture: tex("rime"),
+        alpha_mode: AlphaMode::Blend,
+        perceptual_roughness: 0.5,
+        emissive: LinearRgba::rgb(0.1, 0.14, 0.18),
         ..default()
     });
     let wood = materials.add(StandardMaterial {
@@ -251,6 +262,7 @@ fn make_mats(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> M
         rubber: flat(Color::srgb(0.05, 0.05, 0.05), 0.0, 0.95),
         fleece: flat(Color::srgb(0.55, 0.58, 0.62), 0.0, 0.97),
         frost: flat(Color::srgb(0.88, 0.93, 1.0), 0.0, 0.8),
+        rime,
         red: flat(Color::srgb(0.7, 0.1, 0.08), 0.0, 0.5),
     }
 }
@@ -315,7 +327,7 @@ fn spawn_arms(cam: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materia
             for g in shapes {
                 let mesh = meshgen::glove(g);
                 let mesh = if side == Side::Left { mirrored(mesh) } else { mesh };
-                h.spawn((Mesh3d(meshes.add(to_mesh(&mesh))), MeshMaterial3d(glove.clone()), Transform::default(), Visibility::Hidden, HandShape(g), NotShadowCaster, layer.clone()));
+                h.spawn((Mesh3d(meshes.add(to_mesh_tangents(&mesh))), MeshMaterial3d(glove.clone()), Transform::default(), Visibility::Hidden, HandShape(g), NotShadowCaster, layer.clone()));
             }
             if side == Side::Left {
                 // Two shotgun shells, and three revolver rounds, held in the fingers.
@@ -333,7 +345,7 @@ fn spawn_arms(cam: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materia
                 });
             }
         });
-        cam.spawn((Mesh3d(meshes.add(to_mesh(&meshgen::sleeve()))), MeshMaterial3d(cloth.clone()), Transform::default(), Visibility::default(), Sleeve(side), ArmsRig, NotShadowCaster, layer.clone()));
+        cam.spawn((Mesh3d(meshes.add(to_mesh_tangents(&meshgen::sleeve()))), MeshMaterial3d(cloth.clone()), Transform::default(), Visibility::default(), Sleeve(side), ArmsRig, NotShadowCaster, layer.clone()));
     }
 }
 
@@ -444,7 +456,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         let a = i as f32 / 14.0 * TAU;
         beads.append(&meshgen::blob(0.006, 1.0, 0.35, 100 + i, 0.05).translated([a.cos() * 0.034, BORE_Y + a.sin() * 0.034, -0.168]));
     }
-    part(gun, meshes, to_mesh(&beads), weld, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&beads), weld, t0, layer);
     // Brass screws holding the side plates and the stock.
     let mut screws = MeshData::default();
     for (y, z) in [(0.025, -0.13), (0.025, 0.08), (-0.028, 0.08), (-0.028, -0.13), (0.0, 0.12)] {
@@ -455,14 +467,14 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             screws.append(&head);
         }
     }
-    part(gun, meshes, to_mesh(&screws), brass, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&screws), brass, t0, layer);
 
     // ---- Barrel: plumbing pipe with hex couplings and a muzzle cap ----
     let barrel_at = |m: MeshData, z: f32| m.translated([0.0, BORE_Y, z]);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.034, 0.0), (0.034, 0.05)], 6), -0.165)), steel, t0, layer);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.022, 0.0), (0.022, 0.585)], 16), -0.2)), pipe, t0, layer);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.03, 0.0), (0.031, 0.04)], 6), -0.47)), steel, t0, layer);
-    part(gun, meshes, to_mesh(&barrel_at(along_z(&[(0.029, 0.0), (0.029, 0.035), (0.017, 0.042)], 12), -0.765)), steel, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&barrel_at(along_z(&[(0.034, 0.0), (0.034, 0.05)], 6), -0.165)), steel, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&barrel_at(along_z(&[(0.022, 0.0), (0.022, 0.585)], 16), -0.2)), pipe, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&barrel_at(along_z(&[(0.03, 0.0), (0.031, 0.04)], 6), -0.47)), steel, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&barrel_at(along_z(&[(0.029, 0.0), (0.029, 0.035), (0.017, 0.042)], 12), -0.765)), steel, t0, layer);
     part(gun, meshes, Circle::new(0.012).into(), black, Transform::from_xyz(0.0, BORE_Y, -0.8075).with_rotation(Quat::from_rotation_y(PI)), layer);
 
     // ---- Wooden handguard, lashed on with wire and hose clamps ----
@@ -478,7 +490,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
     );
     part(gun, meshes, to_mesh_tangents(&handguard), wood, t0, layer);
     for z in [-0.29f32, -0.6] {
-        part(gun, meshes, to_mesh(&band(-0.009, 0.033, 0.05, 0.012).translated([0.0, 0.0, z])), steel, t0, layer);
+        part(gun, meshes, to_mesh_tangents(&band(-0.009, 0.033, 0.05, 0.012).translated([0.0, 0.0, z])), steel, t0, layer);
         part(gun, meshes, Cuboid::new(0.012, 0.016, 0.016).into(), steel, Transform::from_xyz(0.035, -0.009, z), layer);
         part(gun, meshes, Cylinder::new(0.004, 0.012).into(), brass, Transform::from_xyz(0.035, 0.002, z).with_rotation(Quat::from_rotation_x(0.0)), layer);
     }
@@ -490,7 +502,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             [a.cos() * 0.032, -0.009 + a.sin() * 0.049, -0.4 - t * 0.04]
         })
         .collect();
-    part(gun, meshes, to_mesh(&meshgen::tube(&helix, 0.0022, 5)), copper, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&meshgen::tube(&helix, 0.0022, 5)), copper, t0, layer);
 
     // ---- Sights: rear peep on the cover, front post with guard wings ----
     part(gun, meshes, Cuboid::new(0.024, 0.006, 0.02).into(), steel, Transform::from_xyz(0.0, 0.0625, 0.09), layer);
@@ -590,7 +602,7 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             let t = (z - 0.2) / 0.1;
             (-0.025 - 0.025 * t, 0.028 + 0.003 * t, 0.04 + 0.02 * t)
         };
-        part(gun, meshes, to_mesh(&band(y, rx + 0.002, ry + 0.002, 0.018).translated([0.0, 0.0, z])), tape, t0, layer);
+        part(gun, meshes, to_mesh_tangents(&band(y, rx + 0.002, ry + 0.002, 0.018).translated([0.0, 0.0, z])), tape, t0, layer);
     }
     part(gun, meshes, Cuboid::new(0.07, 0.16, 0.018).into(), rubber, Transform::from_xyz(0.0, -0.066, 0.44), layer);
 
@@ -608,12 +620,12 @@ fn build_rifle(gun: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         );
     }
     let strap = meshgen::catenary((rear - Vec3::Y * 0.01).to_array(), (front - Vec3::Y * 0.01).to_array(), 0.05, 24);
-    part(gun, meshes, to_mesh(&meshgen::tube(&strap, 0.005, 6).scaled([2.4, 1.0, 1.0])), leather, t0, layer);
+    part(gun, meshes, to_mesh_tangents(&meshgen::tube(&strap, 0.005, 6).scaled([2.4, 1.0, 1.0])), leather, t0, layer);
 
     // ---- Upgrade visuals ----
     // Insulated action: a quilted fleece wrap taped round the receiver.
     let k = WeaponKind::PipeRifle;
-    upgrade_part(gun, meshes, to_mesh(&meshgen::cuboid([0.082, 0.104, 0.11], 0.1)), fleece, Transform::from_xyz(0.0, 0.0, 0.04), layer, k, Upgrade::InsulatedAction);
+    upgrade_part(gun, meshes, to_mesh_tangents(&meshgen::cuboid([0.082, 0.104, 0.11], 0.1)), fleece, Transform::from_xyz(0.0, 0.0, 0.04), layer, k, Upgrade::InsulatedAction);
     for z in [-0.005f32, 0.085] {
         upgrade_part(gun, meshes, Cuboid::new(0.086, 0.108, 0.012).into(), tape, Transform::from_xyz(0.0, 0.0, z), layer, k, Upgrade::InsulatedAction);
     }
@@ -642,7 +654,7 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
             screws.append(&meshgen::lathe(&[(0.006, 0.0), (0.006, 0.002), (0.004, 0.004), (0.0, 0.0045)], 8, 0.05, false, false).rotated_z(-x * FRAC_PI_2).translated([x * 0.039, y, z]));
         }
     }
-    part(w, meshes, to_mesh(&screws), brass, t0, layer);
+    part(w, meshes, to_mesh_tangents(&screws), brass, t0, layer);
     let mut beads = MeshData::default();
     let mut z = -0.02;
     let mut n = 0;
@@ -653,7 +665,7 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         }
         z += 0.016;
     }
-    part(w, meshes, to_mesh(&beads), weld, t0, layer);
+    part(w, meshes, to_mesh_tangents(&beads), weld, t0, layer);
 
     // ---- Hammers and triggers ----
     for x in [-0.02f32, 0.02] {
@@ -687,11 +699,11 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
     let hinge = Vec3::new(0.0, 0.0, -0.025);
     w.spawn((Transform::from_translation(hinge), Visibility::default(), BreakGroup(hinge))).with_children(|b| {
         for x in [-0.0235f32, 0.0235] {
-            part(b, meshes, to_mesh(&along_z(&[(0.021, 0.0), (0.021, 0.765)], 16)), pipe, Transform::from_xyz(x, BORE_Y, 0.0), layer);
+            part(b, meshes, to_mesh_tangents(&along_z(&[(0.021, 0.0), (0.021, 0.765)], 16)), pipe, Transform::from_xyz(x, BORE_Y, 0.0), layer);
             // Welded muzzle ring.
-            part(b, meshes, to_mesh(&along_z(&[(0.0235, 0.0), (0.0235, 0.012)], 16)), steel, Transform::from_xyz(x, BORE_Y, -0.754), layer);
+            part(b, meshes, to_mesh_tangents(&along_z(&[(0.0235, 0.0), (0.0235, 0.012)], 16)), steel, Transform::from_xyz(x, BORE_Y, -0.754), layer);
             // Choke: a threaded tube screwed into each muzzle.
-            upgrade_part(b, meshes, to_mesh(&along_z(&[(0.0245, 0.0), (0.0245, 0.05), (0.018, 0.056)], 16)), steel, Transform::from_xyz(x, BORE_Y, -0.76), layer, k, Upgrade::Choke);
+            upgrade_part(b, meshes, to_mesh_tangents(&along_z(&[(0.0245, 0.0), (0.0245, 0.05), (0.018, 0.056)], 16)), steel, Transform::from_xyz(x, BORE_Y, -0.76), layer, k, Upgrade::Choke);
         }
         // Breech block, rib and bead.
         part(b, meshes, to_mesh_tangents(&meshgen::cuboid([0.096, 0.052, 0.04], 0.12)), steel, Transform::from_xyz(0.0, 0.01, -0.02), layer);
@@ -700,7 +712,7 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         part(b, meshes, Sphere::new(0.0045).into(), brass, Transform::from_xyz(0.0, 0.0575, -0.745), layer);
         // Hose clamps and copper binding wire hold the pipes together.
         for z in [-0.16f32, -0.4, -0.62] {
-            part(b, meshes, to_mesh(&band(BORE_Y, 0.0505, 0.0285, 0.014).translated([0.0, 0.0, z])), steel, t0, layer);
+            part(b, meshes, to_mesh_tangents(&band(BORE_Y, 0.0505, 0.0285, 0.014).translated([0.0, 0.0, z])), steel, t0, layer);
             part(b, meshes, Cuboid::new(0.014, 0.014, 0.016).into(), steel, Transform::from_xyz(0.0, BORE_Y - 0.0285, z), layer);
             part(b, meshes, Cylinder::new(0.004, 0.012).into(), brass, Transform::from_xyz(0.0, BORE_Y - 0.0345, z), layer);
         }
@@ -711,7 +723,7 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
                 [a.cos() * 0.0505, BORE_Y + a.sin() * 0.0285, -0.52 - t * 0.05]
             })
             .collect();
-        part(b, meshes, to_mesh(&meshgen::tube(&helix, 0.0022, 5)), copper, t0, layer);
+        part(b, meshes, to_mesh_tangents(&meshgen::tube(&helix, 0.0022, 5)), copper, t0, layer);
         // Wooden forend lashed under the barrels.
         let forend = meshgen::loft_z(&[sec(-0.5, -0.012, 0.024, 0.02, 3.0), sec(-0.49, -0.012, 0.032, 0.026, 3.0), sec(-0.15, -0.012, 0.034, 0.028, 3.0), sec(-0.14, -0.01, 0.03, 0.025, 3.0)], 14, 0.12);
         part(b, meshes, to_mesh_tangents(&forend), wood, t0, layer);
@@ -725,7 +737,7 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
     );
     part(w, meshes, to_mesh_tangents(&stock), wood, t0, layer);
     for z in [0.14f32, 0.16, 0.18] {
-        part(w, meshes, to_mesh(&band(-0.014, 0.034, 0.05, 0.016).translated([0.0, 0.0, z])), &m.tape, t0, layer);
+        part(w, meshes, to_mesh_tangents(&band(-0.014, 0.034, 0.05, 0.016).translated([0.0, 0.0, z])), &m.tape, t0, layer);
     }
     part(w, meshes, Cuboid::new(0.076, 0.18, 0.016).into(), rubber, Transform::from_xyz(0.0, -0.077, 0.478), layer);
     // Sling.
@@ -734,10 +746,10 @@ fn build_shotgun(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Ma
         part(w, meshes, Torus::new(0.006, 0.01).into(), steel, Transform::from_translation(p).with_rotation(Quat::from_rotation_z(FRAC_PI_2)), layer);
     }
     let strap = meshgen::catenary((rear - Vec3::Y * 0.01).to_array(), (front - Vec3::Y * 0.01).to_array(), 0.06, 24);
-    part(w, meshes, to_mesh(&meshgen::tube(&strap, 0.005, 6).scaled([2.4, 1.0, 1.0])), leather, t0, layer);
+    part(w, meshes, to_mesh_tangents(&meshgen::tube(&strap, 0.005, 6).scaled([2.4, 1.0, 1.0])), leather, t0, layer);
 
     // ---- Upgrade visuals ----
-    upgrade_part(w, meshes, to_mesh(&meshgen::cuboid([0.088, 0.103, 0.09], 0.1)), fleece, Transform::from_xyz(0.0, 0.0, 0.045), layer, k, Upgrade::InsulatedAction);
+    upgrade_part(w, meshes, to_mesh_tangents(&meshgen::cuboid([0.088, 0.103, 0.09], 0.1)), fleece, Transform::from_xyz(0.0, 0.0, 0.045), layer, k, Upgrade::InsulatedAction);
     bandolier(w, meshes, m, layer, k, Vec3::new(0.04, -0.03, 0.22), Vec3::new(0.0, 0.0, 0.034));
 }
 
@@ -757,17 +769,17 @@ fn build_revolver(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &M
     // Front blade on the barrel.
     part(w, meshes, Cuboid::new(0.004, 0.026, 0.012).into(), steel, Transform::from_xyz(0.0, 0.053, -0.275), layer);
     // ---- Barrel, ejector rod ----
-    part(w, meshes, to_mesh(&along_z(&[(0.0165, 0.0), (0.0165, 0.2), (0.0145, 0.206)], 8)), pipe, Transform::from_xyz(0.0, BORE_Y, -0.085), layer);
-    part(w, meshes, to_mesh(&along_z(&[(0.0075, 0.0), (0.0075, 0.14)], 8)), steel, Transform::from_xyz(0.0, -0.016, -0.085), layer);
+    part(w, meshes, to_mesh_tangents(&along_z(&[(0.0165, 0.0), (0.0165, 0.2), (0.0145, 0.206)], 8)), pipe, Transform::from_xyz(0.0, BORE_Y, -0.085), layer);
+    part(w, meshes, to_mesh_tangents(&along_z(&[(0.0075, 0.0), (0.0075, 0.14)], 8)), steel, Transform::from_xyz(0.0, -0.016, -0.085), layer);
     part(w, meshes, Sphere::new(0.0085).into(), steel, Transform::from_xyz(0.0, -0.016, -0.228), layer);
-    part(w, meshes, to_mesh(&along_z(&[(0.019, 0.0), (0.019, 0.02)], 8)), steel, Transform::from_xyz(0.0, BORE_Y, -0.1), layer);
+    part(w, meshes, to_mesh_tangents(&along_z(&[(0.019, 0.0), (0.019, 0.02)], 8)), steel, Transform::from_xyz(0.0, BORE_Y, -0.1), layer);
     // Weld beads where the barrel meets the frame.
     let mut beads = MeshData::default();
     for i in 0..10 {
         let a = i as f32 / 10.0 * TAU;
         beads.append(&meshgen::blob(0.0045, 1.0, 0.35, 400 + i, 0.05).translated([a.cos() * 0.0185, BORE_Y + a.sin() * 0.0185, -0.088]));
     }
-    part(w, meshes, to_mesh(&beads), weld, t0, layer);
+    part(w, meshes, to_mesh_tangents(&beads), weld, t0, layer);
     // Screws.
     let mut screws = MeshData::default();
     for (y, z) in [(0.015, 0.045), (-0.02, 0.03)] {
@@ -775,12 +787,12 @@ fn build_revolver(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &M
             screws.append(&meshgen::lathe(&[(0.0055, 0.0), (0.0055, 0.002), (0.0035, 0.004), (0.0, 0.0045)], 8, 0.05, false, false).rotated_z(-x * FRAC_PI_2).translated([x * 0.0185, y, z]));
         }
     }
-    part(w, meshes, to_mesh(&screws), brass, t0, layer);
+    part(w, meshes, to_mesh_tangents(&screws), brass, t0, layer);
 
     // ---- The cylinder (swings out to the left to load) ----
     let rest = Vec3::new(0.0, 0.004, -0.05);
     w.spawn((Transform::from_translation(rest), Visibility::default(), CylinderGroup(rest))).with_children(|c| {
-        part(c, meshes, to_mesh(&along_z(&[(0.0295, -0.035), (0.0295, 0.035), (0.026, 0.037)], 24)), steel, t0, layer);
+        part(c, meshes, to_mesh_tangents(&along_z(&[(0.0295, -0.035), (0.0295, 0.035), (0.026, 0.037)], 24)), steel, t0, layer);
         // Flutes between the chambers.
         for i in 0..6 {
             let a = (i as f32 + 0.5) / 6.0 * TAU;
@@ -816,10 +828,10 @@ fn build_revolver(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &M
     part(w, meshes, Torus::new(0.004, 0.009).into(), steel, Transform::from_xyz(0.0, -0.132, 0.1), layer);
     // Lanyard.
     let lanyard = meshgen::catenary([0.0, -0.138, 0.1], [0.0, -0.22, 0.14], 0.03, 10);
-    part(w, meshes, to_mesh(&meshgen::tube(&lanyard, 0.003, 5)), leather, t0, layer);
+    part(w, meshes, to_mesh_tangents(&meshgen::tube(&lanyard, 0.003, 5)), leather, t0, layer);
 
     // ---- Upgrade visuals ----
-    upgrade_part(w, meshes, to_mesh(&meshgen::cuboid([0.042, 0.076, 0.07], 0.1)), fleece, Transform::from_xyz(0.0, 0.0, 0.035), layer, k, Upgrade::InsulatedAction);
+    upgrade_part(w, meshes, to_mesh_tangents(&meshgen::cuboid([0.042, 0.076, 0.07], 0.1)), fleece, Transform::from_xyz(0.0, 0.0, 0.035), layer, k, Upgrade::InsulatedAction);
     bandolier(w, meshes, m, layer, k, Vec3::new(0.0185, -0.09, 0.07), Vec3::new(0.0, -0.0, 0.0));
 }
 
@@ -835,10 +847,10 @@ fn build_axe(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Mats, 
             let haft = meshgen::lathe(&[(0.0, -0.14), (0.03, -0.14), (0.027, -0.08), (0.022, 0.1), (0.026, 0.3), (0.0, 0.31)], 12, 0.12, false, false);
             part(a, meshes, to_mesh_tangents(&haft), wood, t0, layer);
             // Steel butt cap and leather grip wraps.
-            part(a, meshes, to_mesh(&meshgen::lathe(&[(0.0325, -0.155), (0.0325, -0.135), (0.0, -0.135)], 12, 0.1, true, false)), steel, t0, layer);
+            part(a, meshes, to_mesh_tangents(&meshgen::lathe(&[(0.0325, -0.155), (0.0325, -0.135), (0.0, -0.135)], 12, 0.1, true, false)), steel, t0, layer);
             for k in 0..7 {
                 let y = -0.12 + k as f32 * 0.024;
-                part(a, meshes, to_mesh(&meshgen::lathe(&[(0.0325, y), (0.0325, y + 0.016)], 12, 0.05, true, true)), leather, t0, layer);
+                part(a, meshes, to_mesh_tangents(&meshgen::lathe(&[(0.0325, y), (0.0325, y + 0.016)], 12, 0.05, true, true)), leather, t0, layer);
             }
             // Wrist loop.
             part(a, meshes, Torus::new(0.0045, 0.045).into(), leather, Transform::from_xyz(0.0, -0.09, 0.0).with_rotation(Quat::from_rotation_x(FRAC_PI_2 - 0.3)), layer);
@@ -854,9 +866,82 @@ fn build_axe(w: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Mats, 
             part(a, meshes, to_mesh_tangents(&adze), steel, t0, layer);
             // Rime frozen onto the head and haft.
             for (i, (pos, r)) in [([0.0, 0.365, 0.0], 0.04f32), ([0.0, 0.32, -0.16], 0.026), ([0.0, 0.31, 0.12], 0.03), ([0.03, 0.22, 0.0], 0.02)].into_iter().enumerate() {
-                part(a, meshes, to_mesh(&meshgen::blob(r, 0.7, 0.3, 500 + i as u64, 0.05).translated(pos)), frost, t0, layer);
+                part(a, meshes, to_mesh_tangents(&meshgen::blob(r, 0.7, 0.3, 500 + i as u64, 0.05).translated(pos)), frost, t0, layer);
             }
         });
+}
+
+/// Where hoar frost gathers on each weapon: (position, size) in gun space,
+/// along the barrel, on the receiver and on the cold grips.
+fn frost_spots(kind: WeaponKind) -> &'static [([f32; 3], [f32; 3])] {
+    match kind {
+        WeaponKind::PipeRifle => &[
+            ([0.0, 0.034, -0.45], [0.026, 0.006, 0.17]),
+            ([0.0, 0.034, -0.72], [0.022, 0.005, 0.08]),
+            ([0.0, 0.062, -0.03], [0.03, 0.007, 0.12]),
+            ([0.0, 0.035, 0.2], [0.03, 0.007, 0.1]),
+        ],
+        WeaponKind::ScrapShotgun => &[
+            ([0.0, 0.034, -0.5], [0.03, 0.006, 0.2]),
+            ([0.0, 0.05, -0.12], [0.034, 0.007, 0.1]),
+            ([0.0, 0.03, 0.22], [0.03, 0.007, 0.11]),
+        ],
+        WeaponKind::Revolver => &[([0.0, 0.042, -0.17], [0.02, 0.005, 0.09]), ([0.0, 0.066, 0.0], [0.024, 0.006, 0.05])],
+        WeaponKind::IceAxe => &[],
+    }
+}
+
+/// Soft, flat blobs of rime laid on the metal. They're invisible until the
+/// cold gets at them.
+fn frost_patches(g: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, m: &Mats, layer: &RenderLayers, kind: WeaponKind) {
+    let patch = meshes.add(to_mesh_tangents(&meshgen::blob(1.0, 0.45, 0.3, 700 + kind.slot() as u64, 2.0)));
+    for (pos, size) in frost_spots(kind) {
+        g.spawn((
+            Mesh3d(patch.clone()),
+            MeshMaterial3d(m.rime.clone()),
+            Transform::from_translation(Vec3::from_array(*pos) + Vec3::Y * 0.004).with_scale(Vec3::from_array(*size) * Vec3::new(1.7, 2.2, 1.5)),
+            NotShadowCaster,
+            layer.clone(),
+        ));
+    }
+}
+
+/// The weapons' frost material; its opacity is how frosted over they are.
+#[derive(Resource)]
+struct GunFrost(Handle<StandardMaterial>);
+
+/// Cold metal grows hoar frost outdoors (faster the colder it is) and loses
+/// it in a warm room; firing warms the barrel and knocks some off.
+fn update_gun_frost(
+    time: Res<Time>,
+    weather: Res<crate::state::WeatherRes>,
+    clock: Res<crate::state::ClockRes>,
+    interior: Res<crate::state::CurrentInterior>,
+    game: Res<Game>,
+    frost: Option<Res<GunFrost>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut amount: Local<f32>,
+    mut seeded: Local<bool>,
+) {
+    let Some(frost) = frost else { return };
+    if !std::mem::replace(&mut *seeded, true) {
+        // Screenshots can start with the guns already frosted: FMN_GUNFROST=0..1.
+        *amount = std::env::var("FMN_GUNFROST").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    }
+    let temp = weather.weather.conditions().air_temp_f + clock.0.temp_offset_f();
+    let target = if interior.0.is_some() { 0.0 } else { ((12.0 - temp) / 45.0).clamp(0.0, 1.0) };
+    let dt = time.delta_secs();
+    let rate = if target > *amount { 0.02 } else { 0.12 };
+    *amount += (target - *amount).clamp(-rate * dt, rate * dt);
+    if game.recoil > 0.9 {
+        *amount = (*amount - 0.02).max(0.0);
+    }
+    if let Some(m) = materials.get_mut(&frost.0) {
+        let a = (*amount).clamp(0.0, 1.0);
+        if (m.base_color.alpha() - a).abs() > 0.004 {
+            m.base_color = Color::srgba(0.9, 0.96, 1.0, a);
+        }
+    }
 }
 
 /// Show only the weapon in hand.

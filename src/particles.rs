@@ -401,6 +401,29 @@ fn spawn_requested_fx(
 
                 }
             }
+            Fx::Blast(p, dir, power) => {
+                // A tongue of fire: overlapping flash sprites stretched down the barrel.
+                for k in 0..3 {
+                    let f = k as f32;
+                    let reach = 0.1 * f * power;
+                    emit(&mut commands, &pa, Spec::new(Look::Flash, p + dir * reach, dir * 1.5, 0.05 + 0.02 * f, (0.3 * power * (1.0 - 0.22 * f), 0.5 * power)));
+                }
+                // Burning powder: a spray of bright sparks that arc down.
+                for _ in 0..(7.0 * power) as usize {
+                    let v = dir * rng.0.range(5.0, 13.0) + rand_dir(&mut rng) * 2.2;
+                    emit(&mut commands, &pa, Spec::new(Look::Spark, p, v, rng.0.range(0.25, 0.55), (0.028, 0.008)).gravity(9.0).drag(0.8));
+                }
+                // Powder smoke: a dense grey puff that hangs and shreds in the wind...
+                for k in 0..(6.0 * power) as usize {
+                    let v = dir * (0.5 + k as f32 * 0.3) + Vec3::Y * 0.35 + rand_dir(&mut rng) * 0.3;
+                    emit(&mut commands, &pa, Spec::new(Look::Smoke, p + dir * 0.04 * k as f32, v, rng.0.range(1.6, 2.8), (0.1 * power, 1.1 * power)).drag(2.0).windy());
+                }
+                // ...and, in this cold, the pale vapour of the hot gas condensing.
+                for _ in 0..(3.0 * power) as usize {
+                    let v = dir * rng.0.range(0.8, 2.0) + Vec3::Y * 0.5 + rand_dir(&mut rng) * 0.25;
+                    emit(&mut commands, &pa, Spec::new(Look::Breath, p, v, rng.0.range(1.2, 2.0), (0.15, 0.9 * power)).drag(1.6).windy());
+                }
+            }
             Fx::Brass(p, count) => {
                 for _ in 0..count {
                     commands.spawn((
