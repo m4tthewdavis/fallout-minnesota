@@ -174,27 +174,32 @@ fn at(p: &mut ChildSpawnerCommands, mesh: &Handle<Mesh>, material: &Handle<Stand
     p.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), t));
 }
 
+/// Fine detail (fur tufts, frost, eyes, buckles): not drawn far away.
+fn detail(p: &mut ChildSpawnerCommands, mesh: &Handle<Mesh>, material: &Handle<StandardMaterial>, t: Transform) {
+    p.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), t, crate::perf::Lod::PersonDetail, NotShadowCaster));
+}
+
 impl PersonKit {
     /// Body, head, hat, trim, pack and frost: everything above the hips that
     /// doesn't move on its own.
     pub fn dress_torso(&self, rig: &mut ChildSpawnerCommands, look: &Look) {
         piece(rig, &self.parka, &look.parka);
-        piece(rig, &self.quilting, &look.parka);
+        detail(rig, &self.quilting, &look.parka, Transform::IDENTITY);
         piece(rig, &self.belt, &self.leather);
-        piece(rig, &self.hem_fur, &look.fur);
+        detail(rig, &self.hem_fur, &look.fur, Transform::IDENTITY);
         // The head, with its fur-trimmed hood or hat.
         at(rig, &self.head, &self.skin, Transform::from_xyz(0.0, 1.68, 0.03));
         // A face: eyes and a nose (a balaclava's goggles cover the eyes).
         if look.hat != Hat::Balaclava {
             for x in [-0.047f32, 0.047] {
-                at(rig, &self.eye, &self.pants, Transform::from_xyz(x, 1.7, 0.139));
+                detail(rig, &self.eye, &self.pants, Transform::from_xyz(x, 1.7, 0.139));
             }
         }
-        at(rig, &self.nose, &self.skin, Transform::from_xyz(0.0, 1.67, 0.15).with_scale(Vec3::new(0.8, 1.0, 1.1)));
+        detail(rig, &self.nose, &self.skin, Transform::from_xyz(0.0, 1.67, 0.15).with_scale(Vec3::new(0.8, 1.0, 1.1)));
         match look.hat {
             Hat::Hood => {
                 piece(rig, &self.hood, &look.parka);
-                piece(rig, &self.hood_fur, &look.fur);
+                detail(rig, &self.hood_fur, &look.fur, Transform::IDENTITY);
             }
             Hat::Beanie => {
                 piece(rig, &self.beanie, &look.knit);
@@ -202,13 +207,13 @@ impl PersonKit {
             }
             Hat::EarFlap => {
                 piece(rig, &self.earflap, &look.knit);
-                piece(rig, &self.hood_fur, &look.fur);
+                detail(rig, &self.hood_fur, &look.fur, Transform::IDENTITY);
             }
             Hat::Balaclava => {
                 piece(rig, &self.balaclava, &look.knit);
                 at(rig, &self.goggles, &self.lens, Transform::from_xyz(0.0, 1.71, 0.115));
                 piece(rig, &self.hood, &look.parka);
-                piece(rig, &self.hood_fur, &look.fur);
+                detail(rig, &self.hood_fur, &look.fur, Transform::IDENTITY);
             }
         }
         piece(rig, &self.scarf, &look.knit);
@@ -228,7 +233,7 @@ impl PersonKit {
             (-0.1, 1.35, -0.2, 1.0),
         ];
         for (x, y, z, s) in spots.into_iter().take(look.frost) {
-            at(rig, &self.frost, &self.rime, Transform::from_xyz(x, y, z).with_scale(Vec3::splat(s)));
+            detail(rig, &self.frost, &self.rime, Transform::from_xyz(x, y, z).with_scale(Vec3::splat(s)));
         }
     }
 
@@ -241,12 +246,12 @@ impl PersonKit {
     /// An arm from the shoulder pivot: sleeve, fur cuff, mitten.
     pub fn dress_arm(&self, arm: &mut ChildSpawnerCommands, look: &Look, side: f32) {
         at(arm, &self.sleeve, &look.parka, Transform::from_xyz(0.0, -0.28, 0.0));
-        at(arm, &self.cuff_fur, &look.fur, Transform::from_xyz(0.0, -0.5, 0.0));
+        detail(arm, &self.cuff_fur, &look.fur, Transform::from_xyz(0.0, -0.5, 0.0));
         at(arm, &self.mitten, &self.leather, Transform::from_xyz(0.0, -0.58, 0.02).with_scale(Vec3::new(side, 1.0, 1.0)));
     }
 
     /// A frost patch for an arm or leg (used by raiders).
     pub fn rime(&self, p: &mut ChildSpawnerCommands, t: Transform) {
-        p.spawn((Mesh3d(self.frost.clone()), MeshMaterial3d(self.rime.clone()), t, NotShadowCaster));
+        p.spawn((Mesh3d(self.frost.clone()), MeshMaterial3d(self.rime.clone()), t, NotShadowCaster, crate::perf::Lod::PersonDetail));
     }
 }

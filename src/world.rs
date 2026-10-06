@@ -227,6 +227,8 @@ pub fn prop(commands: &mut Commands, scene: &Handle<Scene>, pos: Vec3, yaw: f32,
             Transform::from_translation(pos)
                 .with_rotation(Quat::from_rotation_y(yaw))
                 .with_scale(Vec3::splat(scale)),
+            // Not drawn beyond the view distance's prop range.
+            crate::perf::Lod::Prop,
         ))
         .id()
 }

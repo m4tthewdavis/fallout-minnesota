@@ -10,6 +10,8 @@
 // Bevy systems take many resources and queries by design, and their query
 // filters are long tuples: these two lints fire on nearly every system.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
+// A release build on Windows opens no console window behind the game.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod assets;
 mod audio;
@@ -31,6 +33,7 @@ mod meshes;
 mod moose;
 mod nature;
 mod particles;
+mod perf;
 mod pipboy;
 mod player;
 mod props;
@@ -47,6 +50,7 @@ mod tracks;
 mod vehicles;
 mod weather_fx;
 mod wolves;
+mod window_icon;
 mod world;
 
 use bevy::prelude::*;
@@ -63,7 +67,7 @@ fn main() {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "Fallout: Minnesota - Prototype".into(),
+                        title: format!("Fallout: Minnesota (prototype {})", env!("CARGO_PKG_VERSION")),
                         resolution: (1280.0_f32, 720.0_f32).into(),
                         ..default()
                     }),
@@ -99,6 +103,6 @@ fn main() {
             interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, perf::PerfPlugin, window_icon::WindowIconPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
         .run();
 }

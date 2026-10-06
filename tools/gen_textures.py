@@ -320,6 +320,39 @@ def frost_rime():
     save(Image.fromarray((np.clip(rgba, 0, 1) * 255).astype(np.uint8), "RGBA"), GEN, "frost_rime.png")
 
 
+def game_icon():
+    """The window and taskbar icon: a vault-door cog in ice blue on deep navy,
+    with a six-armed snowflake at its hub."""
+    n = 256
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c = n / 2
+    navy, ice, cyan, frost = (10, 25, 47, 255), (100, 181, 246, 255), (0, 229, 255, 255), (224, 247, 250, 255)
+    d.ellipse([4, 4, n - 4, n - 4], fill=navy, outline=ice, width=6)
+    # The cog: twelve teeth round a ring.
+    teeth = 12
+    for k in range(teeth):
+        a0 = k / teeth * 2 * math.pi
+        pts = []
+        for frac, r in [(-0.13, 82), (-0.08, 104), (0.08, 104), (0.13, 82)]:
+            a = a0 + frac * 2 * math.pi / teeth * 2.2
+            pts.append((c + math.cos(a) * r, c + math.sin(a) * r))
+        d.polygon(pts, fill=ice)
+    d.ellipse([c - 86, c - 86, c + 86, c + 86], fill=ice)
+    d.ellipse([c - 66, c - 66, c + 66, c + 66], fill=navy)
+    # The snowflake.
+    for k in range(6):
+        a = k / 6 * 2 * math.pi
+        x1, y1 = c + math.cos(a) * 52, c + math.sin(a) * 52
+        d.line([c, c, x1, y1], fill=frost, width=7)
+        for side in (-1, 1):
+            b = a + side * 0.7
+            mx, my = c + math.cos(a) * 32, c + math.sin(a) * 32
+            d.line([mx, my, mx + math.cos(b) * 15, my + math.sin(b) * 15], fill=cyan, width=5)
+    d.ellipse([c - 10, c - 10, c + 10, c + 10], fill=frost)
+    save(img, UI, "icon.png")
+
+
 def normal_from_height(hgt, strength):
     """Tangent-space normal map (OpenGL convention) from a tileable height field."""
     gx = (np.roll(hgt, -1, 1) - np.roll(hgt, 1, 1)) * 0.5
@@ -1065,6 +1098,7 @@ def main():
     chainlink()
     gun_textures()
     frost_rime()
+    game_icon()
     ui_icons()
     vehicle_textures()
     snow_textures()
@@ -1080,7 +1114,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon}
 
 if __name__ == "__main__":
     import sys

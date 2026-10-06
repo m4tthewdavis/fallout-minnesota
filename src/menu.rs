@@ -478,7 +478,7 @@ fn open_title(
     mut vtime: ResMut<Time<Virtual>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    if std::env::var("FMN_SHOT").is_ok() && std::env::var("FMN_TITLE").is_err() {
+    if (std::env::var("FMN_SHOT").is_ok() && std::env::var("FMN_TITLE").is_err()) || crate::perf::Benchmark::requested().is_some() {
         return;
     }
     title.0 = true;

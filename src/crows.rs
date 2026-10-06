@@ -104,6 +104,7 @@ fn spawn_crow(commands: &mut Commands, a: &CrowAssets, pos: Vec3, home: [f32; 2]
             Transform::from_translation(pos),
             Visibility::default(),
             Hostile,
+            crate::perf::Lod::Crow,
             Body::new(Species::Crow, 8.0, 0.0, 0.42),
             CrowAi { brain: Crow::new(home, &mut rng.0), vel: Vec3::ZERO, flap: rng.0.range(0.0, TAU), caw_cd: rng.0.range(2.0, 12.0) },
         ))

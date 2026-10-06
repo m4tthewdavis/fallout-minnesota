@@ -1,6 +1,6 @@
 [package]
 name = "fallout_minnesota"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Fallout: Minnesota - first-person cold-survival prototype"
 
@@ -14,6 +14,8 @@ blake3 = { version = "1", features = ["pure"] }
 # Settings and save files are JSON.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Only to hand the window its icon (the same winit Bevy already uses).
+winit = { version = "0.30", default-features = false }
 
 # Keep debug builds playable: optimize our code a little, dependencies a lot.
 # Debug info is turned off because it is most of the build folder's size
@@ -25,3 +27,11 @@ debug = false
 [profile.dev.package."*"]
 opt-level = 3
 debug = false
+
+# The release build that gets packaged: fully optimised, link-time optimised
+# across crates, and stripped of symbols (a much smaller .exe).
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

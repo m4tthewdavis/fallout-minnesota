@@ -26,6 +26,14 @@ The game looks for `assets` next to the `.exe`, one or two folders above it (so 
 
 If the build reports an error, copy the error text back to Claude and it will fix it.
 
+### Performance on your machine
+
+- **Settings > Graphics** has the costly switches: volumetric fog and ambient occlusion cost the most, then shadow quality and view distance. **Show Frame Rate** puts the frame rate, frame time and its 95th/99th percentiles in the top right.
+- **Benchmark**: run `Benchmark.bat` (or `FalloutMinnesota.exe --benchmark`). The camera flies the same 60-second loop over the map with your current settings, then the game quits and writes `benchmark.txt` (GPU, settings, average fps, 1% lows, frame-time percentiles) to `%APPDATA%\FalloutMinnesota`. Run it again after changing a setting to compare.
+- **Profile while playing**: `PlayWithProfile.bat` (or `--profile`) writes a line every five seconds to `profile.csv` in the same folder.
+- Small props, and the fine detail on people (fur, frost, faces), stop being drawn at a distance (props follow the view distance setting).
+- The release build is link-time optimised and stripped, and on Windows it opens without a console window.
+
 ## Controls
 
 The game opens on a title screen (Continue picks up your most recent save; New Game starts at the vault door). Settings has three pages: **Graphics** (shadows, view distance, volumetric fog, ambient occlusion, frame-rate display, UI size), **Sound** (four volume sliders) and **Controls** (mouse sensitivity, invert mouse, field of view, and **key bindings**: choose an action, press Enter, then press the new key; a key that's already in use swaps over). The keys below are the defaults.
