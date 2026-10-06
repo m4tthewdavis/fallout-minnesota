@@ -18,6 +18,8 @@
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
+
+use crate::sim::keys::Bind;
 use crate::theme::{self, ACCENT, ACCENT_DIM, ACCENT_FAINT, BEAM, HINT, LAMP_OFF, SCREEN_BG, SCREEN_WELL, SELECTED, SELECTED_FILL, STATIC_TINT};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -652,6 +654,7 @@ fn page_changed(st: &mut PipState, sfx: &mut SfxQueue) {
 }
 
 fn toggle_pipboy(
+    controls: crate::keybind::Controls,
     keys: Res<ButtonInput<KeyCode>>,
     mut open: ResMut<PipOpen>,
     paused: Res<crate::state::Paused>,
@@ -669,7 +672,7 @@ fn toggle_pipboy(
     if paused.0 || talking.0 {
         return;
     }
-    let want_toggle = keys.just_pressed(KeyCode::Tab) || keys.just_pressed(KeyCode::KeyM);
+    let want_toggle = controls.just_pressed(Bind::PipBoy) || keys.just_pressed(KeyCode::KeyM);
     let want_close = open.0 && keys.just_pressed(KeyCode::Escape);
     if !(want_toggle || want_close) {
         return;
@@ -720,8 +723,9 @@ fn toggle_pipboy(
 
 /// Your weapon goes down while your wrist is up. (Hide the model, not its
 /// camera: the UI is drawn by that camera.)
-fn hide_weapon(st: Res<PipState>, mut gun: Query<&mut Visibility, Or<(With<crate::gun::GunModel>, With<crate::gun::ArmsRig>)>>) {
-    let want = if st.raise < 0.5 { Visibility::Inherited } else { Visibility::Hidden };
+fn hide_weapon(st: Res<PipState>, title: Res<crate::state::TitleScreen>, mut gun: Query<&mut Visibility, Or<(With<crate::gun::GunModel>, With<crate::gun::ArmsRig>)>>) {
+    // (And there are no hands in the title screen's view.)
+    let want = if st.raise < 0.5 && !title.0 { Visibility::Inherited } else { Visibility::Hidden };
     for mut v in &mut gun {
         if *v != want {
             *v = want;

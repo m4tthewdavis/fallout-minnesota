@@ -14,6 +14,8 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
+use crate::sim::keys::Bind;
+
 use crate::assets::GameAssets;
 use crate::characters::PersonKit;
 use crate::interact::{spawn_container, ContainerAssets, FixtureClaim};
@@ -545,7 +547,7 @@ fn mart_extras(commands: &mut Commands, assets: &GameAssets, containers: &Contai
 /// Show what the nearest bunk, stove, terminal or door offers, and use it on E.
 #[allow(clippy::too_many_arguments)]
 fn use_fixtures(
-    keys: Res<ButtonInput<KeyCode>>,
+    controls: crate::keybind::Controls,
     current: Res<CurrentInterior>,
     mut moving: ResMut<Moving>,
     mut transition: ResMut<Transition>,
@@ -591,7 +593,7 @@ fn use_fixtures(
         FixtureKind::Spot(spot) => spot.prompt(&flags.0, game.inv.scrap),
     };
     prompt.0.push(line);
-    if !keys.just_pressed(KeyCode::KeyE) {
+    if !controls.just_pressed(Bind::Interact) {
         return;
     }
     match fixture.kind {

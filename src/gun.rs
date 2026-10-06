@@ -978,7 +978,8 @@ fn aim_down_sights(
     force: Res<ForceAim>,
     mut aim: ResMut<AimAmount>,
     player: Query<(&Transform, &Player)>,
-    mut projections: Query<&mut Projection, Or<(With<Player>, With<ViewModelCamera>)>>,
+    mut projections: Query<(&mut Projection, Has<Player>), Or<(With<Player>, With<ViewModelCamera>)>>,
+    settings: Res<crate::menu::GameSettings>,
 ) {
     let dt = time.delta_secs().max(1e-4);
     let Ok((tf, p)) = player.single() else { return };
@@ -1020,8 +1021,11 @@ fn aim_down_sights(
     }
     state.last_pos = Some(tf.translation);
 
-    let fov = (HIP_FOV + (ADS_FOV - HIP_FOV) * state.ads).to_radians();
-    for mut proj in &mut projections {
+    // The world uses the player's field of view; the weapon keeps its own so it
+    // looks the same at any setting. Aiming narrows both by the same ratio.
+    let zoom = 1.0 + (ADS_FOV / HIP_FOV - 1.0) * state.ads;
+    for (mut proj, world) in &mut projections {
+        let fov = (if world { settings.0.fov } else { HIP_FOV } * zoom).to_radians();
         if let Projection::Perspective(pp) = proj.as_mut() {
             if (pp.fov - fov).abs() > 1e-4 {
                 pp.fov = fov;

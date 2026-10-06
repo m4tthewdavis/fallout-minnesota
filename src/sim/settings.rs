@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::keys::Bindings;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ShadowQuality {
     Off,
@@ -139,7 +141,22 @@ pub struct Settings {
     pub volumetrics: bool,
     /// Screen-space ambient occlusion (darkens creases, snow drifts and tree bases).
     pub ambient_occlusion: bool,
+    /// Mouse look speed, as a multiple of the normal speed.
+    pub mouse_sensitivity: f32,
+    /// Push the mouse forward to look down.
+    pub invert_y: bool,
+    /// Horizontal field of view in degrees (aiming narrows it).
+    pub fov: f32,
+    /// Frame rate and frame time in a corner of the screen.
+    pub show_fps: bool,
+    /// Which key does what.
+    pub keys: Bindings,
 }
+
+pub const SENSITIVITY_MIN: f32 = 0.2;
+pub const SENSITIVITY_MAX: f32 = 3.0;
+pub const FOV_MIN: f32 = 60.0;
+pub const FOV_MAX: f32 = 100.0;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -153,6 +170,11 @@ impl Default for Settings {
             ambience: 0.8,
             volumetrics: true,
             ambient_occlusion: true,
+            mouse_sensitivity: 1.0,
+            invert_y: false,
+            fov: 75.0,
+            show_fps: false,
+            keys: Bindings::default(),
         }
     }
 }
@@ -173,7 +195,20 @@ impl Settings {
         self.sfx = snap(fix(self.sfx, 0.0, 1.0, d.sfx));
         self.music = snap(fix(self.music, 0.0, 1.0, d.music));
         self.ambience = snap(fix(self.ambience, 0.0, 1.0, d.ambience));
+        self.mouse_sensitivity = snap(fix(self.mouse_sensitivity, SENSITIVITY_MIN, SENSITIVITY_MAX, d.mouse_sensitivity));
+        // Field of view in whole steps of five degrees.
+        self.fov = (fix(self.fov, FOV_MIN, FOV_MAX, d.fov) / 5.0).round() * 5.0;
         self
+    }
+
+    /// Nudge the mouse sensitivity by `dir` tenths, within its range.
+    pub fn nudge_sensitivity(&mut self, dir: i32) {
+        self.mouse_sensitivity = snap((self.mouse_sensitivity + dir as f32 * 0.1).clamp(SENSITIVITY_MIN, SENSITIVITY_MAX));
+    }
+
+    /// Widen or narrow the field of view by five degrees.
+    pub fn nudge_fov(&mut self, dir: i32) {
+        self.fov = (self.fov + dir as f32 * 5.0).clamp(FOV_MIN, FOV_MAX);
     }
 
     /// Nudge the UI scale by `dir` tenths, within its range.
@@ -253,7 +288,7 @@ mod tests {
 
     #[test]
     fn settings_survive_a_round_trip() {
-        let s = Settings { shadows: ShadowQuality::Low, view: ViewDistance::Medium, ui_scale: 1.2, master: 0.5, sfx: 0.3, music: 0.0, ambience: 1.0, volumetrics: false, ambient_occlusion: false };
+        let s = Settings { shadows: ShadowQuality::Low, view: ViewDistance::Medium, ui_scale: 1.2, master: 0.5, sfx: 0.3, music: 0.0, ambience: 1.0, volumetrics: false, ambient_occlusion: false, mouse_sensitivity: 1.7, invert_y: true, fov: 90.0, show_fps: true, keys: Bindings::default() };
         assert_eq!(Settings::from_json(&s.to_json()), Some(s));
     }
 
@@ -263,6 +298,26 @@ mod tests {
         assert!(d.volumetrics && d.ambient_occlusion);
         let s = Settings::from_json(r#"{ "volumetrics": false }"#).unwrap();
         assert!(!s.volumetrics && s.ambient_occlusion);
+    }
+
+    #[test]
+    fn controls_stay_in_range_and_keys_are_saved_with_the_rest() {
+        let s = Settings::from_json(r#"{ "mouse_sensitivity": 99.0, "fov": 83.0, "invert_y": true }"#).unwrap();
+        assert_eq!(s.mouse_sensitivity, SENSITIVITY_MAX);
+        assert_eq!(s.fov, 85.0, "rounded to a 5 degree step");
+        assert!(s.invert_y);
+        let s = Settings::from_json(r#"{ "mouse_sensitivity": -3.0, "fov": 10 }"#).unwrap();
+        assert_eq!((s.mouse_sensitivity, s.fov), (SENSITIVITY_MIN, FOV_MIN));
+        let mut k = Settings::default();
+        k.keys.assign(crate::sim::keys::Bind::Jump, "KeyV");
+        let back = Settings::from_json(&k.to_json()).unwrap();
+        assert_eq!(back.keys.key(crate::sim::keys::Bind::Jump), "KeyV");
+        let mut n = Settings::default();
+        for _ in 0..50 {
+            n.nudge_sensitivity(1);
+            n.nudge_fov(1);
+        }
+        assert_eq!((n.mouse_sensitivity, n.fov), (SENSITIVITY_MAX, FOV_MAX));
     }
 
     #[test]

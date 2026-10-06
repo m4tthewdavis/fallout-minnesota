@@ -14,6 +14,7 @@ pub mod daynight;
 pub mod dialogue;
 pub mod flora;
 pub mod interiors;
+pub mod keys;
 pub mod loot;
 pub mod lootmenu;
 pub mod mathx;

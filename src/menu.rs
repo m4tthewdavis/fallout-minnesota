@@ -15,14 +15,16 @@ use bevy::window::PrimaryWindow;
 use crate::assets::GameAssets;
 use crate::audio::AudioSettings;
 use crate::player::{set_grab, Player};
-use crate::sim::menu::{Action, Context, Menu, RowKind, SLOTS};
+use crate::keybind;
+use crate::sim::keys::{self, Bind};
+use crate::sim::menu::{Action, Context, Menu, RowKind, Screen, SLOTS, VISIBLE_ROWS};
 use crate::sim::settings::Settings;
-use crate::state::{Game, Messages, Paused, PipOpen};
+use crate::state::{Game, Messages, Paused, PipOpen, StartNewGame, TitleScreen};
 use crate::storage;
 use crate::world::{PointShadows, Sun};
 
 /// Most rows any screen has (the settings screen).
-const MAX_ROWS: usize = 10;
+const MAX_ROWS: usize = VISIBLE_ROWS;
 
 const SETTINGS_FILE: &str = "settings.json";
 
@@ -33,7 +35,14 @@ pub struct GameSettings(pub Settings);
 /// One line describing each save slot, or `None` if it's empty. The save
 /// system keeps this up to date.
 #[derive(Resource, Default)]
-pub struct SlotSummaries(pub [Option<String>; SLOTS]);
+pub struct SlotSummaries(pub [Option<String>; SLOTS], pub [u64; SLOTS]);
+
+impl SlotSummaries {
+    /// The slot written most recently (for Continue).
+    pub fn latest(&self) -> Option<usize> {
+        (0..SLOTS).filter(|i| self.0[*i].is_some()).max_by_key(|i| (self.1[*i], *i))
+    }
+}
 
 /// Something the menu asked for that the save system carries out.
 #[derive(Event, Clone, Copy, Debug)]
@@ -47,10 +56,15 @@ struct MenuState {
     menu: Menu,
     /// Settings changed and should be written to disk soon.
     persist_since: Option<f32>,
+    /// Waiting for a key to put this action on.
+    waiting: Option<Bind>,
 }
 
 #[derive(Component)]
 struct MenuRoot;
+/// The game's name over the title screen.
+#[derive(Component)]
+struct MenuLogo;
 #[derive(Component)]
 struct MenuTitle;
 #[derive(Component)]
@@ -89,12 +103,13 @@ impl Plugin for MenuPlugin {
             .init_resource::<MenuState>()
             .init_resource::<SlotSummaries>()
             .add_event::<SaveRequest>()
-            .add_systems(Startup, build_menu)
+            .add_systems(Startup, (build_menu, open_title).chain())
             .add_systems(
                 Update,
                 (
                     auto_open,
                     menu_system,
+                    title_camera,
                     render_menu,
                     apply_settings.run_if(resource_changed::<GameSettings>),
                     sync_audio_back,
@@ -113,8 +128,10 @@ fn build_menu(mut commands: Commands, assets: Res<GameAssets>) {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                row_gap: Val::Px(18.0),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.62)),
@@ -123,6 +140,12 @@ fn build_menu(mut commands: Commands, assets: Res<GameAssets>) {
             MenuRoot,
         ))
         .with_children(|root| {
+            // The title screen's logo.
+            root.spawn((Node { flex_direction: FlexDirection::Column, align_items: AlignItems::Center, display: Display::None, ..default() }, MenuLogo)).with_children(|l| {
+                l.spawn((Text::new("FALLOUT"), font(84.0), TextColor(crate::theme::FROST)));
+                l.spawn((Text::new("M I N N E S O T A"), font(30.0), TextColor(SELECTED)));
+                l.spawn((Text::new(format!("prototype {}", env!("CARGO_PKG_VERSION"))), font(13.0), TextColor(ACCENT_DIM)));
+            });
             root.spawn((
                 Node {
                     width: Val::Px(640.0),
@@ -189,7 +212,7 @@ fn build_menu(mut commands: Commands, assets: Res<GameAssets>) {
 }
 
 fn context(game: &Game, slots: &SlotSummaries) -> Context {
-    Context { alive: game.death.is_none(), slots: slots.0.clone() }
+    Context { alive: game.death.is_none(), slots: slots.0.clone(), latest: slots.latest() }
 }
 
 /// Screenshot mode: FMN_MENU=main|settings|save|load|quit opens the menu on
@@ -202,9 +225,12 @@ fn auto_open(real: Res<Time<Real>>, mut stage: Local<u8>, mut keys: ResMut<Butto
         keys.press(KeyCode::Escape);
     } else if *stage == 1 && t > 1.6 {
         *stage = 2;
-        use crate::sim::menu::Screen;
         let screen = match which.as_str() {
             "settings" => Screen::Settings,
+            "graphics" => Screen::Graphics,
+            "sound" => Screen::Sound,
+            "controls" => Screen::Controls,
+            "keys" => Screen::Keys,
             "save" => Screen::Save,
             "load" => Screen::Load,
             "quit" => Screen::ConfirmQuit,
@@ -233,15 +259,15 @@ fn menu_system(
     mut requests: EventWriter<SaveRequest>,
     mut exit: EventWriter<AppExit>,
     rows: Query<(&MenuRow, &Interaction, &RelativeCursorPosition), Changed<Interaction>>,
-    mut pip_was_open: Local<bool>,
-    mut talk_was_open: Local<bool>,
+    // (Whether the Pip-Boy, and a conversation, were open last frame.)
+    mut was_open: Local<(bool, bool)>,
+    (mut title, mut new_game): (ResMut<TitleScreen>, EventWriter<StartNewGame>),
 ) {
     let esc = keys.just_pressed(KeyCode::Escape);
     // Esc that just closed the Pip-Boy must not also open the menu.
     // The same goes for Esc that just left a conversation.
-    let pip_busy = pip.0 || *pip_was_open || talking.0 || *talk_was_open;
-    *pip_was_open = pip.0;
-    *talk_was_open = talking.0;
+    let pip_busy = pip.0 || was_open.0 || talking.0 || was_open.1;
+    *was_open = (pip.0, talking.0);
     if !paused.0 {
         if esc && !pip_busy {
             info!("menu: opened");
@@ -255,11 +281,30 @@ fn menu_system(
         return;
     }
 
+    // Rebinding: the next key pressed goes on the action (Esc cancels).
+    if let Some(bind) = state.waiting {
+        if esc {
+            state.waiting = None;
+        } else if let Some(name) = keys.get_just_pressed().find_map(|k| keybind::name_of(*k)) {
+            state.waiting = None;
+            let menu = &mut state.menu;
+            if menu.rebind(bind, name, &mut settings.bypass_change_detection().0) {
+                settings.set_changed();
+                state.persist_since = Some(time.elapsed_secs());
+            }
+            info!("menu: {} -> {}", bind.label(), keys::display(name));
+        }
+        return;
+    }
+
     let ctx = context(&game, &slots);
     let mut action = Action::None;
     let mut changed = false;
     let current = state.menu.rows(&settings.0, &ctx);
+    state.menu.ensure_enabled(&current);
     let before = state.menu.clone();
+    // The pooled rows show a window of a long screen.
+    let (first, _) = state.menu.window(current.len());
 
     if esc {
         action = state.menu.back();
@@ -275,10 +320,10 @@ fn menu_system(
     let left = keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::KeyA);
     let right = keys.just_pressed(KeyCode::ArrowRight) || keys.just_pressed(KeyCode::KeyD);
     if left {
-        changed |= state.menu.adjust(-1, &mut settings.bypass_change_detection().0);
+        changed |= state.menu.adjust(-1, &mut settings.bypass_change_detection().0, &ctx);
     }
     if right {
-        changed |= state.menu.adjust(1, &mut settings.bypass_change_detection().0);
+        changed |= state.menu.adjust(1, &mut settings.bypass_change_detection().0, &ctx);
     }
     if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter) || keys.just_pressed(KeyCode::Space) {
         let (a, c) = state.menu.activate(&mut settings.bypass_change_detection().0, &ctx);
@@ -290,11 +335,11 @@ fn menu_system(
     for (row, interaction, cursor) in &rows {
         match interaction {
             Interaction::Hovered => {
-                state.menu.select_row(row.0, &current);
+                state.menu.select_row(first + row.0, &current);
             }
             Interaction::Pressed => {
-                state.menu.select_row(row.0, &current);
-                let Some(r) = current.get(row.0) else { continue };
+                state.menu.select_row(first + row.0, &current);
+                let Some(r) = current.get(first + row.0) else { continue };
                 if !r.enabled {
                     continue;
                 }
@@ -306,7 +351,7 @@ fn menu_system(
                     }
                     RowKind::Choice | RowKind::Slider => {
                         let dir = if cursor.normalized.is_some_and(|n| n.x < 0.5) { -1 } else { 1 };
-                        changed |= state.menu.adjust(dir, &mut settings.bypass_change_detection().0);
+                        changed |= state.menu.adjust(dir, &mut settings.bypass_change_detection().0, &ctx);
                     }
                 }
             }
@@ -334,7 +379,21 @@ fn menu_system(
             requests.write(SaveRequest::Save(slot));
         }
         Action::Load(slot) => {
+            // (Loading from the title screen starts the game where the save left off.)
+            title.0 = false;
             requests.write(SaveRequest::Load(slot));
+        }
+        Action::NewGame => {
+            title.0 = false;
+            new_game.write(StartNewGame);
+            close_menu(&mut paused, &mut vtime, &mut windows);
+            if state.persist_since.is_some() {
+                state.persist_since = Some(f32::NEG_INFINITY);
+            }
+            info!("menu: new game");
+        }
+        Action::Rebind(bind) => {
+            state.waiting = Some(bind);
         }
         Action::Quit => {
             state.persist_since = Some(f32::NEG_INFINITY);
@@ -351,47 +410,105 @@ fn render_menu(
     settings: Res<GameSettings>,
     slots: Res<SlotSummaries>,
     game: Res<Game>,
-    mut root: Query<&mut Visibility, With<MenuRoot>>,
+    title_screen: Res<TitleScreen>,
+    mut root: Query<(&mut Visibility, &mut BackgroundColor), (With<MenuRoot>, Without<MenuRow>)>,
+    mut logo: Query<&mut Node, (With<MenuLogo>, Without<MenuRow>)>,
     mut title: Query<&mut Text, (With<MenuTitle>, Without<MenuNote>, Without<RowLabel>, Without<RowValue>)>,
     mut note: Query<&mut Text, (With<MenuNote>, Without<MenuTitle>, Without<RowLabel>, Without<RowValue>)>,
-    mut rows: Query<(&MenuRow, &mut Node, &mut BorderColor, &mut BackgroundColor)>,
+    mut rows: Query<(&MenuRow, &mut Node, &mut BorderColor, &mut BackgroundColor), (Without<MenuRoot>, Without<MenuLogo>)>,
     mut labels: Query<(&RowLabel, &mut Text, &mut TextColor), (Without<MenuTitle>, Without<MenuNote>, Without<RowValue>)>,
     mut values: Query<(&RowValue, &mut Text, &mut TextColor), (Without<MenuTitle>, Without<MenuNote>, Without<RowLabel>)>,
 ) {
-    let Ok(mut vis) = root.single_mut() else { return };
+    let Ok((mut vis, mut dim)) = root.single_mut() else { return };
     let want = if paused.0 { Visibility::Visible } else { Visibility::Hidden };
     vis.set_if_neq(want);
     if !paused.0 {
         return;
     }
+    // The title screen lets the snowy world show through more.
+    dim.set_if_neq(BackgroundColor(Color::srgba(0.0, 0.0, 0.0, if title_screen.0 { 0.28 } else { 0.62 })));
+    if let Ok(mut n) = logo.single_mut() {
+        let d = if state.menu.screen == Screen::Title { Display::Flex } else { Display::None };
+        if n.display != d {
+            n.display = d;
+        }
+    }
     let ctx = context(&game, &slots);
     let menu = &state.menu;
     let list = menu.rows(&settings.0, &ctx);
+    let (first, last) = menu.window(list.len());
     if let Ok(mut t) = title.single_mut() {
         t.set_if_neq(Text::new(menu.title()));
     }
     if let Ok(mut t) = note.single_mut() {
-        t.set_if_neq(Text::new(menu.note()));
+        let more = if list.len() > VISIBLE_ROWS { format!("  ({}-{} of {})", first + 1, last, list.len()) } else { String::new() };
+        t.set_if_neq(Text::new(format!("{}{more}", menu.note())));
     }
     for (row, mut node, mut border, mut bg) in &mut rows {
-        let display = if row.0 < list.len() { Display::Flex } else { Display::None };
+        let i = first + row.0;
+        let display = if i < last { Display::Flex } else { Display::None };
         if node.display != display {
             node.display = display;
         }
-        let active = row.0 == menu.selected;
+        let active = i == menu.selected;
         border.set_if_neq(BorderColor(if active { SELECTED } else { Color::NONE }));
         bg.set_if_neq(BackgroundColor(if active { SELECTED_FILL } else { Color::NONE }));
     }
     for (l, mut text, mut color) in &mut labels {
-        let Some(r) = list.get(l.0) else { continue };
+        let Some(r) = list.get(first + l.0) else { continue };
         text.set_if_neq(Text::new(r.label.clone()));
         color.set_if_neq(TextColor(if r.enabled { ACCENT } else { ACCENT_OFF }));
     }
     for (v, mut text, mut color) in &mut values {
-        let Some(r) = list.get(v.0) else { continue };
-        text.set_if_neq(Text::new(r.value.clone()));
-        color.set_if_neq(TextColor(if r.enabled { ACCENT } else { ACCENT_OFF }));
+        let i = first + v.0;
+        let Some(r) = list.get(i) else { continue };
+        // The row waiting for a key says so.
+        let waiting = state.waiting.is_some() && i == menu.selected;
+        text.set_if_neq(Text::new(if waiting { "press a key...".to_string() } else { r.value.clone() }));
+        color.set_if_neq(TextColor(if waiting { SELECTED } else if r.enabled { ACCENT } else { ACCENT_OFF }));
     }
+}
+
+/// When the game starts (outside screenshot mode, or with FMN_TITLE=1) it
+/// opens on the title screen, paused, with the mouse free.
+fn open_title(
+    mut paused: ResMut<Paused>,
+    mut state: ResMut<MenuState>,
+    mut title: ResMut<TitleScreen>,
+    mut vtime: ResMut<Time<Virtual>>,
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+) {
+    if std::env::var("FMN_SHOT").is_ok() && std::env::var("FMN_TITLE").is_err() {
+        return;
+    }
+    title.0 = true;
+    paused.0 = true;
+    state.menu = Menu::title_screen();
+    vtime.pause();
+    if let Ok(mut w) = windows.single_mut() {
+        set_grab(&mut w, false);
+    }
+}
+
+/// Behind the title screen the camera drifts slowly round the vault's
+/// doorway and the frozen lake.
+fn title_camera(real: Res<Time<Real>>, title: Res<TitleScreen>, mut cam: Query<(&mut Transform, &mut Player)>) {
+    if !title.0 {
+        return;
+    }
+    let Ok((mut tf, mut p)) = cam.single_mut() else { return };
+    let t = real.elapsed_secs() * 0.035;
+    let (vx, vz) = crate::sim::terrain::VAULT_POS;
+    let centre = Vec3::new(vx, 0.0, vz - 8.0);
+    let a = -0.9 + 0.7 * t.sin();
+    let at = centre + Vec3::new(a.sin() * 34.0, 0.0, -a.cos() * 34.0);
+    let ground = crate::sim::terrain::walk_height(at.x, at.z);
+    tf.translation = Vec3::new(at.x, ground + 6.5, at.z);
+    let look = centre + Vec3::Y * (crate::sim::terrain::walk_height(centre.x, centre.z) + 4.0);
+    tf.look_at(look, Vec3::Y);
+    let (yaw, pitch, _) = tf.rotation.to_euler(EulerRot::YXZ);
+    p.yaw = yaw;
+    p.pitch = pitch;
 }
 
 /// Make the running game match the settings.

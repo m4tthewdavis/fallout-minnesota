@@ -19,6 +19,8 @@ use std::sync::{mpsc, Mutex};
 use bevy::audio::{AudioSinkPlayback, SpatialAudioSink, SpatialScale, Volume};
 use bevy::prelude::*;
 
+use crate::sim::keys::Bind;
+
 use crate::player::Player;
 use crate::sim::collision::segment_cover;
 use crate::sim::interiors::{self, Interior};
@@ -223,6 +225,7 @@ fn receive_sounds(loader: Res<BankLoader>, mut bank: ResMut<SoundBank>, mut sour
 
 /// F5/F6 effects, F7/F8 music, F10/F11 master volume, F9 mute, G Geiger.
 fn audio_controls(
+    controls: crate::keybind::Controls,
     keys: Res<ButtonInput<KeyCode>>,
     mut settings: ResMut<AudioSettings>,
     mut geiger: ResMut<GeigerOn>,
@@ -248,7 +251,7 @@ fn audio_controls(
         m.muted = !m.muted;
         say = Some(if m.muted { "Sound muted (F9 to unmute)".into() } else { "Sound on".into() });
     }
-    if keys.just_pressed(KeyCode::KeyG) {
+    if controls.just_pressed(Bind::Geiger) {
         geiger.0 = !geiger.0;
         say = Some(format!("Geiger counter {}", if geiger.0 { "ON" } else { "OFF" }));
     }

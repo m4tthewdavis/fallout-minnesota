@@ -7,6 +7,8 @@
 
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
+
+use crate::sim::keys::Bind;
 use crate::theme::{ACCENT, ACCENT_DIM, MENU_PANEL, SELECTED_FILL};
 
 use crate::assets::GameAssets;
@@ -349,6 +351,7 @@ const NUMBER_KEYS: [KeyCode; ROWS] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode:
 /// Up/down and Enter drive the panel; Esc leaves.
 #[allow(clippy::too_many_arguments)]
 fn drive_talk(
+    controls: crate::keybind::Controls,
     keys: Res<ButtonInput<KeyCode>>,
     mut talk: ResMut<Talk>,
     mut talking: ResMut<Talking>,
@@ -362,7 +365,7 @@ fn drive_talk(
 ) {
     let up = keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyW);
     let down = keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyS);
-    let confirm = keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::KeyE);
+    let confirm = keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space) || controls.just_pressed(Bind::Interact);
     let quick = NUMBER_KEYS.iter().position(|k| keys.just_pressed(*k));
     let leave = keys.just_pressed(KeyCode::Escape);
     let Some(conv) = talk.0.as_mut() else { return };

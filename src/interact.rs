@@ -7,6 +7,8 @@ use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
+use crate::sim::keys::Bind;
+
 use crate::player::Player;
 use crate::sim::collision::Shape;
 use crate::sim::loot::{self, Loot};
@@ -163,8 +165,8 @@ pub(crate) fn reset_prompt(mut prompt: ResMut<Prompt>) {
 }
 
 pub(crate) fn interact(
+    controls: crate::keybind::Controls,
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
@@ -203,14 +205,14 @@ pub(crate) fn interact(
     }
     if let Some((_, tf, mut c)) = target.and_then(|e| containers.get_mut(e).ok()) {
         let left = c.remaining();
-        let step = (keys.just_pressed(KeyCode::ArrowDown) as i32 - keys.just_pressed(KeyCode::ArrowUp) as i32) - scroll.delta.y.signum() as i32 * (scroll.delta.y != 0.0) as i32;
+        let step = (controls.raw().just_pressed(KeyCode::ArrowDown) as i32 - controls.raw().just_pressed(KeyCode::ArrowUp) as i32) - scroll.delta.y.signum() as i32 * (scroll.delta.y != 0.0) as i32;
         if step != 0 {
             menu.selected = lootmenu::step(menu.selected, step, left.len());
             sfx.play(Sound::UiTab);
         }
         menu.selected = menu.selected.min(left.len().saturating_sub(1));
-        let take_all = keys.just_pressed(KeyCode::KeyT);
-        if keys.just_pressed(KeyCode::KeyE) || take_all {
+        let take_all = controls.just_pressed(Bind::TakeAll);
+        if controls.just_pressed(Bind::Interact) || take_all {
             let picks: Vec<usize> = if take_all { left.clone() } else { left.get(menu.selected).copied().into_iter().collect() };
             let first_take = c.taken.iter().all(|t| !*t);
             for i in picks {
@@ -253,7 +255,7 @@ pub(crate) fn interact(
                     up.scrap_cost(),
                     inv.scrap
                 ));
-                if keys.just_pressed(KeyCode::KeyB) {
+                if controls.just_pressed(Bind::Workbench) {
                     match inv.craft_upgrade(weapon, up) {
                         Ok(()) => {
                             sfx.play(Sound::Craft);

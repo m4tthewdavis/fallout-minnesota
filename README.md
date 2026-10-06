@@ -28,6 +28,8 @@ If the build reports an error, copy the error text back to Claude and it will fi
 
 ## Controls
 
+The game opens on a title screen (Continue picks up your most recent save; New Game starts at the vault door). Settings has three pages: **Graphics** (shadows, view distance, volumetric fog, ambient occlusion, frame-rate display, UI size), **Sound** (four volume sliders) and **Controls** (mouse sensitivity, invert mouse, field of view, and **key bindings**: choose an action, press Enter, then press the new key; a key that's already in use swaps over). The keys below are the defaults.
+
 | Key | Action |
 | --- | --- |
 | WASD / Mouse | Move / look |
@@ -47,7 +49,7 @@ If the build reports an error, copy the error text back to Claude and it will fi
 | F4 | Quicksave (also: pause menu, or the Pip-Boy's SAVES page: ENTER saves, L loads) |
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
 | C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
-| Esc | Pause menu: Resume, Save, Load, Settings (shadows, view distance, UI size, volume), Quit. Esc also closes the Pip-Boy |
+| Esc | Pause menu: Resume, Save, Load, Settings, Quit. Esc also closes the Pip-Boy |
 | E | Use a door, bunk, stove or terminal (a prompt shows what's in reach). Looking at a container opens its loot list: Up/Down or the wheel to choose, E takes the highlighted entry, T takes all |
 | F3 | God mode on / off (a cheat: nothing hurts you; set `FMN_GOD=1` to start with it on) |
 | G | Geiger counter on / off |

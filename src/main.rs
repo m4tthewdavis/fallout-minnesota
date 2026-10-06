@@ -24,6 +24,7 @@ mod gun;
 mod hud;
 mod interact;
 mod interiors;
+mod keybind;
 mod landmarks;
 mod menu;
 mod meshes;

@@ -239,6 +239,14 @@ pub struct Gunshot {
 #[derive(Resource, Default)]
 pub struct Talking(pub bool);
 
+/// True while the title screen is up (the game hasn't started yet).
+#[derive(Resource, Default)]
+pub struct TitleScreen(pub bool);
+
+/// New Game was chosen on the title screen.
+#[derive(Event)]
+pub struct StartNewGame;
+
 /// True while the pause menu is open (the game is paused).
 #[derive(Resource, Default)]
 pub struct Paused(pub bool);
@@ -282,6 +290,8 @@ impl Plugin for StatePlugin {
             .init_resource::<PipOpen>()
             .init_resource::<Paused>()
             .init_resource::<Talking>()
+            .init_resource::<TitleScreen>()
+            .add_event::<StartNewGame>()
             .add_event::<Gunshot>()
             .init_resource::<CurrentInterior>()
             .init_resource::<Transition>()

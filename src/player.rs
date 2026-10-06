@@ -5,6 +5,8 @@ use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
+
+use crate::sim::keys::Bind;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 
 use crate::sim::collision;
@@ -69,6 +71,7 @@ impl Plugin for PlayerPlugin {
                 toggle_cursor,
                 (look, move_player, survival_tick, use_items).chain().run_if(alive),
                 god_mode,
+                start_new_game,
                 respawn,
             ),
         );
@@ -165,19 +168,22 @@ fn look(
     motion: Res<AccumulatedMouseMotion>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut q: Query<(&mut Transform, &mut Player)>,
+    settings: Res<crate::menu::GameSettings>,
 ) {
     if !cursor_locked(&windows) {
         return;
     }
     let Ok((mut tf, mut p)) = q.single_mut() else { return };
-    p.yaw -= motion.delta.x * MOUSE_SENSITIVITY;
-    p.pitch = (p.pitch - motion.delta.y * MOUSE_SENSITIVITY).clamp(-1.5, 1.5);
+    let speed = MOUSE_SENSITIVITY * settings.0.mouse_sensitivity;
+    let invert = if settings.0.invert_y { -1.0 } else { 1.0 };
+    p.yaw -= motion.delta.x * speed;
+    p.pitch = (p.pitch - motion.delta.y * speed * invert).clamp(-1.5, 1.5);
     tf.rotation = Quat::from_euler(EulerRot::YXZ, p.yaw, p.pitch, 0.0);
 }
 
 fn move_player(
+    controls: crate::keybind::Controls,
     time: Res<Time>,
-    keys: Res<ButtonInput<KeyCode>>,
     colliders: Res<Colliders>,
     mut sfx: ResMut<SfxQueue>,
     mut fx: ResMut<FxQueue>,
@@ -192,21 +198,21 @@ fn move_player(
     let forward = Vec3::new(-p.yaw.sin(), 0.0, -p.yaw.cos());
     let right = Vec3::new(p.yaw.cos(), 0.0, -p.yaw.sin());
     let mut wish = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) {
+    if controls.pressed(Bind::Forward) {
         wish += forward;
     }
-    if keys.pressed(KeyCode::KeyS) {
+    if controls.pressed(Bind::Back) {
         wish -= forward;
     }
-    if keys.pressed(KeyCode::KeyD) {
+    if controls.pressed(Bind::Right) {
         wish += right;
     }
-    if keys.pressed(KeyCode::KeyA) {
+    if controls.pressed(Bind::Left) {
         wish -= right;
     }
     let moving = wish.length_squared() > 0.0;
     p.moving = moving;
-    p.sprinting = moving && keys.pressed(KeyCode::ShiftLeft);
+    p.sprinting = moving && controls.pressed(Bind::Sprint);
     let speed = if p.sprinting { SPRINT_SPEED } else { WALK_SPEED };
     if moving {
         tf.translation += wish.normalize() * speed * dt;
@@ -243,7 +249,7 @@ fn move_player(
 
     // Gravity and jumping over the height field.
     let floor = terrain::walk_height(tf.translation.x, tf.translation.z) + EYE_HEIGHT;
-    if p.grounded && keys.just_pressed(KeyCode::Space) {
+    if p.grounded && controls.just_pressed(Bind::Jump) {
         p.vel_y = JUMP_SPEED;
         p.grounded = false;
     }
@@ -255,6 +261,18 @@ fn move_player(
         p.grounded = true;
     } else if tf.translation.y - floor > 0.3 {
         p.grounded = false;
+    }
+}
+
+/// New Game from the title screen: back to the vault door, facing out.
+fn start_new_game(mut events: EventReader<crate::state::StartNewGame>, mut q: Query<(&mut Transform, &mut Player)>) {
+    if events.read().count() == 0 {
+        return;
+    }
+    if let Ok((mut tf, mut p)) = q.single_mut() {
+        *p = Player::new();
+        tf.translation = spawn_point();
+        tf.rotation = Quat::from_euler(EulerRot::YXZ, p.yaw, p.pitch, 0.0);
     }
 }
 
@@ -358,20 +376,20 @@ pub fn use_aid(aid: Aid, game: &mut Game, msgs: &mut Messages, heal_mult: f32) -
 }
 
 fn use_items(
-    keys: Res<ButtonInput<KeyCode>>,
+    controls: crate::keybind::Controls,
     mut game: ResMut<Game>,
     mut msgs: ResMut<Messages>,
     mut sfx: ResMut<SfxQueue>,
     perks: Res<crate::quest::Perks>,
     q: Query<&Transform, With<Player>>,
 ) {
-    for (key, aid) in [(KeyCode::KeyH, Aid::Stimpak), (KeyCode::KeyX, Aid::RadAway), (KeyCode::KeyF, Aid::Hotdish)] {
-        if keys.just_pressed(key) {
+    for (key, aid) in [(Bind::Stimpak, Aid::Stimpak), (Bind::RadAway, Aid::RadAway), (Bind::Hotdish, Aid::Hotdish)] {
+        if controls.just_pressed(key) {
             use_aid(aid, &mut game, &mut msgs, perks.0.aid_heal);
         }
     }
     let Game { inv, .. } = &mut *game;
-    if keys.just_pressed(KeyCode::KeyC) {
+    if controls.just_pressed(Bind::Craft) {
         let at_shelter = q
             .single()
             .map(|t| terrain::cover_at(t.translation.x, t.translation.z).warm())

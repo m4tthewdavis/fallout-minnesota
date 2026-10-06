@@ -79,17 +79,18 @@ pub fn slot_file(slot: usize) -> String {
 }
 
 /// One line per slot for the menus: what's in it, or `None` if it's empty.
-fn read_slot(slot: usize) -> Option<String> {
-    let text = storage::read(&storage::data_dir(), &slot_file(slot))?;
-    Some(match SaveGame::parse(&text) {
-        Ok(save) => save.describe(),
-        Err(_) => "damaged save".to_string(),
-    })
+/// A slot's one-line summary and when it was written (0 if unknown).
+fn read_slot(slot: usize) -> (Option<String>, u64) {
+    let Some(text) = storage::read(&storage::data_dir(), &slot_file(slot)) else { return (None, 0) };
+    match SaveGame::parse(&text) {
+        Ok(save) => (Some(save.describe()), save.saved_at),
+        Err(_) => (Some("damaged save".to_string()), 0),
+    }
 }
 
 fn refresh_slots(mut slots: ResMut<SlotSummaries>) {
     for slot in 0..SLOTS {
-        slots.0[slot] = read_slot(slot);
+        (slots.0[slot], slots.1[slot]) = read_slot(slot);
     }
 }
 
@@ -196,6 +197,7 @@ fn handle_requests(
                     Ok(()) => {
                         info!("saved {} at ({:.1}, {:.1}): {}", slot_name(slot), save.player.x, save.player.z, save.describe());
                         slots.0[slot] = Some(save.describe());
+                        slots.1[slot] = save.saved_at;
                         msgs.show(if quiet { "Autosaved.".to_string() } else { format!("Saved: {}", slot_name(slot)) }, 2.5);
                         if paused.0 {
                             close_menu(&mut paused, &mut vtime, &mut windows);

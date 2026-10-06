@@ -72,7 +72,7 @@ pub struct HudPlugin;
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_hud)
-            .add_systems(Update, (update_hud.run_if(|pip: Res<crate::state::PipOpen>| !pip.0), missing_banner, fade_help, fade_crosshair, scale_ui, show_prompt, hide_with_pip));
+            .add_systems(Update, (update_hud.run_if(|pip: Res<crate::state::PipOpen>| !pip.0), missing_banner, refresh_help, fade_help, fade_crosshair, scale_ui, show_prompt, hide_with_pip));
     }
 }
 
@@ -406,11 +406,11 @@ fn scale_ui(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, settings
     }
 }
 
-fn hide_with_pip(pip: Res<crate::state::PipOpen>, mut q: Query<&mut Visibility, With<HideWithPip>>) {
-    if !pip.is_changed() {
+fn hide_with_pip(pip: Res<crate::state::PipOpen>, title: Res<crate::state::TitleScreen>, mut q: Query<&mut Visibility, With<HideWithPip>>) {
+    if !pip.is_changed() && !title.is_changed() {
         return;
     }
-    let v = if pip.0 { Visibility::Hidden } else { Visibility::Inherited };
+    let v = if pip.0 || title.0 { Visibility::Hidden } else { Visibility::Inherited };
     for mut vis in &mut q {
         *vis = v;
     }
@@ -425,6 +425,38 @@ fn show_prompt(prompt: Res<crate::state::Prompt>, mut q: Query<&mut Text, With<P
 }
 
 /// The iron sights replace the crosshair while aiming.
+/// The controls reminder, written with the player's own key bindings.
+fn help_text(keys: &crate::sim::keys::Bindings) -> String {
+    use crate::sim::keys::{display, Bind};
+    let k = |b: Bind| display(keys.key(b)).to_uppercase();
+    format!(
+        "{}{}{}{} move  {} sprint  {} jump\nLMB fire  RMB aim  {} reload/unjam\n{} stimpak  {} RadAway  {} hotdish\n{} craft coat (at shelter)  {} Pip-Boy  ESC menu\n{} Geiger on/off  F3 god mode  F4 quicksave",
+        k(Bind::Forward),
+        k(Bind::Left),
+        k(Bind::Back),
+        k(Bind::Right),
+        k(Bind::Sprint),
+        k(Bind::Jump),
+        k(Bind::Reload),
+        k(Bind::Stimpak),
+        k(Bind::RadAway),
+        k(Bind::Hotdish),
+        k(Bind::Craft),
+        k(Bind::PipBoy),
+        k(Bind::Geiger),
+    )
+}
+
+/// Rewrite the reminder whenever the key bindings change.
+fn refresh_help(settings: Res<crate::menu::GameSettings>, mut help: Query<&mut Text, With<HelpText>>) {
+    if !settings.is_changed() {
+        return;
+    }
+    for mut t in &mut help {
+        t.set_if_neq(Text::new(help_text(&settings.0.keys)));
+    }
+}
+
 /// The controls reminder fades out after the first minute.
 fn fade_help(time: Res<Time>, mut help: Query<(&mut TextColor, &mut BackgroundColor), With<HelpText>>) {
     let fade = (1.0 - (time.elapsed_secs() - 45.0) * 0.083).clamp(0.0, 1.0);

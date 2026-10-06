@@ -7,6 +7,8 @@
 use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
+
+use crate::sim::keys::Bind;
 use bevy::window::PrimaryWindow;
 
 use crate::enemy::{Body, Dying, Species};
@@ -91,8 +93,8 @@ fn switch_weapons(
     }
 }
 
-fn reload(keys: Res<ButtonInput<KeyCode>>, mut game: ResMut<Game>, mut msgs: ResMut<Messages>) {
-    if !keys.just_pressed(KeyCode::KeyR) {
+fn reload(controls: crate::keybind::Controls, mut game: ResMut<Game>, mut msgs: ResMut<Messages>) {
+    if !controls.just_pressed(Bind::Reload) {
         return;
     }
     let Game { arsenal, inv, .. } = &mut *game;
