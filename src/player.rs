@@ -415,6 +415,7 @@ fn respawn(
     mut weather: ResMut<WeatherRes>,
     mut clock: ResMut<ClockRes>,
     mut msgs: ResMut<Messages>,
+    mut interior: ResMut<crate::state::CurrentInterior>,
     mut player: Query<(&mut Transform, &mut Player)>,
     wolves: Query<(Entity, &Transform), (With<Wolf>, Without<Player>)>,
 ) {
@@ -422,6 +423,8 @@ fn respawn(
         return;
     }
     let spawn = spawn_point();
+    // Back outdoors, whichever room you died in.
+    interior.0 = None;
     if let Ok((mut tf, mut p)) = player.single_mut() {
         *p = Player::new();
         tf.translation = spawn;

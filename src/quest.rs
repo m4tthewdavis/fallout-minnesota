@@ -1,7 +1,8 @@
-//! The first quest line, "Why Did the Overseer Open the Door?", on screen:
-//! the conversation panel (Pip-Boy ice blue, replies you pick with the keyboard),
-//! the places the quest sends you (the wrecked convoy, the Mills' breaker
-//! panel), the Glowmoose that has to die, and the level-up perk screen.
+//! The quests ("Why Did the Overseer Open the Door?" and "The Last Pump") on
+//! screen: the conversation panel (Pip-Boy ice blue, replies you pick with the
+//! keyboard), the places they send you (the wrecked convoy, the Mills' breaker
+//! panel and transformer, the stockroom crate, the reactor's bench and pump
+//! bay), the Glowmoose that has to die, and the level-up perk screen.
 //! What gets said, and the rules for stages, XP and perks, are in
 //! `sim::dialogue` and `sim::quest`.
 
@@ -102,6 +103,7 @@ impl Plugin for QuestPlugin {
                     offer_perks.run_if(alive),
                     sync_perks,
                     apply_power,
+                    apply_pump,
                     render_talk,
                 )
                     .chain(),
@@ -163,6 +165,11 @@ fn spawn_quest_world(
     commands.spawn((Mesh3d(meshes.add(Sphere::new(0.06))), MeshMaterial3d(green), Transform::from_xyz(px, py + 1.65, pz + 0.17), PowerOn, Visibility::Hidden, NotShadowCaster));
     solid.push(Shape::rect_centered(px, pz, 1.1, 0.6));
     crate::interiors::spawn_spot(&mut commands, Vec3::new(px, py + 1.0, pz), Spot::Breaker);
+    // The Mills' transformer, with the coupling the vault's pump needs.
+    let (tx, tz) = (gx - 6.5, gzz + 5.0);
+    prop(&mut commands, &assets.utility_box, Vec3::new(tx, ground(tx, tz), tz), 0.4, 1.6);
+    solid.push(Shape::Circle { x: tx, z: tz, r: 1.0 });
+    crate::interiors::spawn_spot(&mut commands, Vec3::new(tx, ground(tx, tz) + 1.0, tz), Spot::Coupling);
     // The beacon on the tallest silo: dark until the power is back.
     let (bx, bz) = (gx + 5.0, gzz);
     let top = ground(bx, bz) - 0.3 + 22.0 + 2.9;
@@ -227,23 +234,24 @@ fn moose_deeds(
         return;
     }
     rules::set(&mut flags.0, Objective::Moose.flag());
-    announce(Objective::Moose, &flags.0, &mut msgs, &mut sfx, &mut autosave);
+    announce(Objective::Moose, "", &flags.0, &mut msgs, &mut sfx, &mut autosave);
 }
 
 /// Tell the player what a deed was worth and what's next, and save.
-fn announce(o: Objective, flags: &rules::Flags, msgs: &mut Messages, sfx: &mut SfxQueue, autosave: &mut EventWriter<AutosaveRequest>) {
+fn announce(o: Objective, flavour: &str, flags: &rules::Flags, msgs: &mut Messages, sfx: &mut SfxQueue, autosave: &mut EventWriter<AutosaveRequest>) {
     let started = rules::has(flags, rules::STARTED);
     let next = match rules::stage(flags) {
         Stage::ReadyToReport => "  All done: report to the Overseer.".to_string(),
         _ if !started => "  (The Overseer's terminal in Vault 143 would like to hear about it.)".to_string(),
         _ => String::new(),
     };
-    msgs.show(format!("Objective complete: {}  +{} XP{}", o.title(), o.xp(), next), 6.0);
+    let lead = if flavour.is_empty() { String::new() } else { format!("{flavour}\n") };
+    msgs.show(format!("{lead}Objective complete: {}  +{} XP{}", o.title(), o.xp(), next), 8.0);
     sfx.play(Sound::PickupMed);
     autosave.write(AutosaveRequest);
 }
 
-/// E at the convoy or the breaker panel.
+/// E at the convoy, the breaker panel, or any of the pump's parts.
 #[allow(clippy::too_many_arguments)]
 fn use_spots(
     mut events: EventReader<UseSpot>,
@@ -256,11 +264,17 @@ fn use_spots(
     mut autosave: EventWriter<AutosaveRequest>,
 ) {
     for UseSpot(spot) in events.read() {
-        let objective = spot.objective();
-        if rules::done(&flags.0, objective) {
+        if spot.done(&flags.0) {
             continue;
         }
-        match spot {
+        if let Err(why) = spot.usable(&flags.0, game.inv.pelts) {
+            msgs.show(why, 3.5);
+            sfx.play(Sound::DryClick);
+            continue;
+        }
+        // What happened, told along with the reward (one message: a later
+        // `show` would replace an earlier one).
+        let flavour: String = match spot {
             Spot::Convoy => {
                 let cache = loot::roll_cache(&mut rng.0);
                 let Game { inv, arsenal, .. } = &mut *game;
@@ -269,10 +283,7 @@ fn use_spots(
                 if inv.scrap > scrap_before {
                     inv.scrap += perks.0.extra_scrap;
                 }
-                msgs.show(
-                    format!("The convoy's manifest: one replacement coolant pump, 'VAULT 143, OVERSEER ONLY'. The cab doors are torn open from the outside. You find: {}.", gained.join(", ")),
-                    7.0,
-                );
+                format!("The convoy's manifest: one replacement coolant pump, 'VAULT 143, OVERSEER ONLY'. The cab doors are torn open from the outside. You find: {}.", gained.join(", "))
             }
             Spot::Breaker => {
                 if game.inv.scrap < rules::BREAKER_SCRAP {
@@ -282,10 +293,52 @@ fn use_spots(
                 }
                 game.inv.scrap -= rules::BREAKER_SCRAP;
                 sfx.play(Sound::Craft);
+                "The panel hums, and a green lamp comes on.".to_string()
+            }
+            Spot::Impeller => {
+                sfx.play(Sound::PickupScrap);
+                "Under the tarp, packed in straw and rimed with ice: a pump impeller, the right model, hardly scratched.".to_string()
+            }
+            Spot::Coupling => {
+                sfx.play(Sound::PickupScrap);
+                "With the power on, the transformer's housing opens. You work a heavy power coupling free of its bolts.".to_string()
+            }
+            Spot::Seals => {
+                game.inv.pelts -= rules::SEAL_PELTS;
+                sfx.play(Sound::Craft);
+                format!("You cut {} Frostfang pelts into ring seals and press them true. They'll hold in the cold.", rules::SEAL_PELTS)
+            }
+            Spot::Pump => {
+                sfx.play(Sound::Craft);
+                sfx.play(Sound::PipOn);
+                "The impeller seats, the seals bite, the coupling takes the current. Down the pipes the dead coolant starts to move. The gauge goes cyan.".to_string()
+            }
+        };
+        rules::set(&mut flags.0, spot.flag());
+        match spot.objective() {
+            Some(o) => announce(o, &flavour, &flags.0, &mut msgs, &mut sfx, &mut autosave),
+            None => {
+                let what = spot.part().map_or("The coolant pump is running", |p| p.title());
+                msgs.show(format!("{flavour}\n{what}  +{} XP", spot.xp()), 8.0);
+                sfx.play(Sound::PickupMed);
+                autosave.write(AutosaveRequest);
             }
         }
-        rules::set(&mut flags.0, objective.flag());
-        announce(objective, &flags.0, &mut msgs, &mut sfx, &mut autosave);
+    }
+}
+
+/// The reactor room's gauge, lamps and light show whether the pump runs.
+fn apply_pump(
+    flags: Res<StoryFlags>,
+    mut dead: Query<&mut Visibility, (With<crate::interiors::PumpDead>, Without<crate::interiors::PumpRunning>)>,
+    mut running: Query<&mut Visibility, (With<crate::interiors::PumpRunning>, Without<crate::interiors::PumpDead>)>,
+) {
+    let ok = rules::has(&flags.0, rules::PUMP_FIXED);
+    for mut v in &mut dead {
+        v.set_if_neq(if ok { Visibility::Hidden } else { Visibility::Inherited });
+    }
+    for mut v in &mut running {
+        v.set_if_neq(if ok { Visibility::Inherited } else { Visibility::Hidden });
     }
 }
 
@@ -379,6 +432,7 @@ fn drive_talk(
             let pick = quick.or(confirm.then_some(session.selected));
             if let Some(i) = pick {
                 let before = rules::stage(&flags.0);
+                let (started, reported) = (rules::has(&flags.0, rules::PUMP_STARTED), rules::has(&flags.0, rules::PUMP_REPORTED));
                 if let Some(step) = session.pick(i, &mut flags.0) {
                     sfx.play(Sound::UiTab);
                     if let Some(gift) = step.gift {
@@ -397,6 +451,15 @@ fn drive_talk(
                             Stage::Complete => msgs.show(format!("Quest complete: {}  +{} XP", rules::TITLE, rules::REPORT_XP), 6.0),
                             _ => {}
                         }
+                        autosave.write(AutosaveRequest);
+                    }
+                    // The second quest starts and ends in dialogue too.
+                    if !started && rules::has(&flags.0, rules::PUMP_STARTED) {
+                        msgs.show(format!("New quest: {}", rules::TITLE2), 5.0);
+                        autosave.write(AutosaveRequest);
+                    }
+                    if !reported && rules::has(&flags.0, rules::PUMP_REPORTED) {
+                        msgs.show(format!("Quest complete: {}  +{} XP", rules::TITLE2, rules::PUMP_REPORT_XP), 6.0);
                         autosave.write(AutosaveRequest);
                     }
                     close = step.ended;

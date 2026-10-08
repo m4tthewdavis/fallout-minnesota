@@ -1,7 +1,8 @@
 //! Enterable interiors: the four fish houses (a bunk to sleep in, a stove to
 //! heat a meal on, a stash), the Vault 143 lobby (blast door, the Overseer's
-//! terminal) and the Bullseye-Mart stockroom (shelving, caches, the shotgun
-//! footlocker).
+//! terminal), the Bullseye-Mart stockroom (shelving, caches, the shotgun
+//! footlocker) and the reactor level down a stair from the lobby (the core,
+//! the dead coolant pump, the bench).
 //!
 //! Each room is built once at start-up, far off the map, and shown only while
 //! you're in it. A door fades the screen to black, moves you across, swaps the
@@ -68,7 +69,12 @@ pub(crate) struct Fixture {
 
 /// Put something usable in the world (not in a room) at `pos`.
 pub(crate) fn spawn_spot(commands: &mut Commands, pos: Vec3, spot: Spot) {
-    commands.spawn((Transform::from_translation(pos), Fixture { kind: FixtureKind::Spot(spot), space: None }));
+    spawn_spot_in(commands, pos, spot, None);
+}
+
+/// The same, inside a room.
+pub(crate) fn spawn_spot_in(commands: &mut Commands, pos: Vec3, spot: Spot, space: Option<Interior>) {
+    commands.spawn((Transform::from_translation(pos), Fixture { kind: FixtureKind::Spot(spot), space }));
 }
 
 /// What a fade in progress is for.
@@ -126,6 +132,9 @@ struct Kit {
     strip: Handle<StandardMaterial>,
     screen: Handle<StandardMaterial>,
     cold_light: Handle<StandardMaterial>,
+    /// Glowing coolant, and the red of a warning lamp.
+    coolant: Handle<StandardMaterial>,
+    alarm: Handle<StandardMaterial>,
 }
 
 fn make_kit(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> Kit {
@@ -135,6 +144,8 @@ fn make_kit(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> Ki
         metal: assets.vault_metal.clone(),
         rust: assets.rust.clone(),
         pole: assets.pole_wood.clone(),
+        coolant: glow(materials, Color::srgb(0.4, 0.95, 1.0), LinearRgba::rgb(0.5, 3.2, 4.2)),
+        alarm: glow(materials, Color::srgb(1.0, 0.15, 0.1), LinearRgba::rgb(7.0, 0.4, 0.2)),
         dark: mat(materials, Color::srgb(0.07, 0.06, 0.05)),
         black: mat(materials, Color::srgb(0.02, 0.02, 0.025)),
         wool_green: mat(materials, Color::srgb(0.2, 0.28, 0.18)),
@@ -225,6 +236,7 @@ pub fn spawn_interiors(
             Interior::FishHouse(i) => fish_house(r, &mut meshes, &kit, &people, &assets, solid, i),
             Interior::VaultLobby => vault_lobby(r, &mut meshes, &mut materials, &kit, &assets, solid),
             Interior::Mart => mart(r, &mut meshes, &kit, &assets, solid),
+            Interior::Reactor => reactor(r, &mut meshes, &kit, &assets, solid),
         });
         // Things that live in the world rather than under the room (loot
         // containers and the stove fire) are spawned beside it.
@@ -232,13 +244,16 @@ pub fn spawn_interiors(
             Interior::FishHouse(i) => fish_house_extras(&mut commands, &assets, &containers, &mut meshes, &mut materials, &mut rng, solid, i),
             Interior::VaultLobby => vault_extras(&mut commands, &assets, &containers, &mut rng, solid),
             Interior::Mart => mart_extras(&mut commands, &assets, &containers, &mut rng, solid),
+            Interior::Reactor => reactor_extras(&mut commands, &assets, &containers, &mut rng, solid),
         }
         // The door out.
         let (dx, dz) = room.exit_door();
         commands.spawn((Transform::from_xyz(dx, 1.0, dz), Fixture { kind: FixtureKind::Door(Door::Leave(room)), space: Some(room) }));
         // The door in, out in the world.
+        // (A room down a stair has its door in the room above, not in the world.)
         let (wx, wz) = room.outdoor_door();
-        commands.spawn((Transform::from_xyz(wx, ground(wx, wz) + 1.0, wz), Fixture { kind: FixtureKind::Door(Door::Enter(room)), space: None }));
+        let floor = if room.parent().is_some() { interiors::FLOOR_Y } else { ground(wx, wz) };
+        commands.spawn((Transform::from_xyz(wx, floor + 1.0, wz), Fixture { kind: FixtureKind::Door(Door::Enter(room)), space: room.parent() }));
     }
 }
 
@@ -377,6 +392,20 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
     for (x, z) in [(-3.8f32, -2.4f32), (3.8, -2.4), (-3.8, 2.4), (3.8, 2.4)] {
         light(r, Color::srgb(0.9, 0.95, 1.0), 260_000.0, 12.0, [x, h - 0.5, z]);
     }
+    // The stair down to the reactor level: a heavy door in the north wall, framed
+    // in hazard yellow, with a stencilled arrow.
+    let (sx, sz) = (-5.2f32, -hd + 0.12);
+    block(r, meshes, &k.dark, [sx, 1.1, sz], [1.5, 2.2, 0.16]);
+    block(r, meshes, &k.rust, [sx, 1.1, sz + 0.1], [1.2, 2.0, 0.06]);
+    for dx in [-0.78f32, 0.78] {
+        glowing(r, meshes, &k.yellow, [sx + dx, 1.1, sz + 0.1], [0.08, 2.3, 0.1]);
+    }
+    glowing(r, meshes, &k.yellow, [sx, 2.28, sz + 0.1], [1.64, 0.08, 0.1]);
+    for n in 0..4 {
+        glowing(r, meshes, &k.yellow, [sx - 0.45 + n as f32 * 0.3, 0.12, sz + 0.2], [0.1, 0.012, 0.3]);
+    }
+    glowing(r, meshes, &k.alarm, [sx, 2.5, sz + 0.1], [0.22, 0.08, 0.05]);
+    light(r, Color::srgb(1.0, 0.45, 0.3), 70_000.0, 5.0, [sx, 2.0, sz + 1.0]);
     // Four concrete pillars.
     for (x, z) in [(-3.0f32, -2.2f32), (3.0, -2.2), (-3.0, 2.2), (3.0, 2.2)] {
         block(r, meshes, &k.concrete, [x, h / 2.0, z], [0.7, h, 0.7]);
@@ -533,11 +562,140 @@ fn mart_extras(commands: &mut Commands, assets: &GameAssets, containers: &Contai
         "military footlocker",
         loot::weapon_cache(WeaponKind::ScrapShotgun),
     );
+    // A crate under a tarp at the back, with a pump impeller in it.
+    let (ix, iz) = room.at(3.8, -hd + 0.9);
+    commands.spawn((SceneRoot(assets.crate_military.clone()), Transform::from_xyz(ix, interiors::FLOOR_Y, iz).with_rotation(Quat::from_rotation_y(-0.3)).with_scale(Vec3::splat(1.35))));
+    solid.push(Shape::Circle { x: ix, z: iz, r: 0.8 });
+    spawn_spot_in(commands, Vec3::new(ix, interiors::FLOOR_Y + 1.0, iz + 0.5), Spot::Impeller, Some(room));
     for (lx, lz, name) in [(-hw + 1.2, -hd + 1.0, "supply crate"), (-1.0, -hd + 1.0, "stock cage"), (hw - 1.5, hd - 3.0, "supply crate")] {
         let (x, z) = room.at(lx, lz);
         let cache = loot::roll_cache(&mut rng.0);
         spawn_container(commands, containers, solid, assets.crate_wood.clone(), Vec3::new(x, interiors::FLOOR_Y + 0.05, z), lx, 1.2, name, cache);
     }
+}
+
+// ---- The reactor level ----
+
+/// A pipe along x or z (`along_x`), `length` long, centred at `at`.
+fn pipe(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material: &Handle<StandardMaterial>, at: [f32; 3], radius: f32, length: f32, along_x: bool) {
+    let rot = if along_x { Quat::from_rotation_z(FRAC_PI_2) } else { Quat::from_rotation_x(FRAC_PI_2) };
+    r.spawn((Mesh3d(meshes.add(Cylinder::new(radius, length))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(rot)));
+}
+
+/// Where the dead coolant pump's housing stands, and the bench where seals
+/// are cut, in the reactor room's local space.
+pub(crate) const PUMP_BAY: (f32, f32) = (4.6, 0.8);
+pub(crate) const BENCH: (f32, f32) = (-4.2, 1.6);
+
+/// Marks the lamps and dials that show the pump's state.
+#[derive(Component)]
+pub(crate) struct PumpDead;
+#[derive(Component)]
+pub(crate) struct PumpRunning;
+
+fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets: &GameAssets, solid: &mut Vec<Shape>) {
+    let room = Interior::Reactor;
+    let (ox, oz) = room.origin();
+    let (hw, hd) = room.half();
+    let h = room.height();
+    shell(r, meshes, solid, room, &k.concrete, &k.metal, &k.concrete);
+    // Hazard-striped floor round the core, and yellow rails along the walls.
+    for (x, z, w, d) in [(0.0, -1.8 - 2.5, 5.2, 0.12), (0.0, -1.8 + 2.5, 5.2, 0.12), (-2.6, -1.8, 0.12, 5.0), (2.6, -1.8, 0.12, 5.0)] {
+        glowing(r, meshes, &k.yellow, [x, 0.006, z], [w, 0.012, d]);
+    }
+    for x in [-hw + 0.06, hw - 0.06] {
+        glowing(r, meshes, &k.yellow, [x, 1.0, 0.0], [0.02, 0.12, hd * 2.0]);
+    }
+
+    // ---- The reactor core: a plinth, a fat steel column and rings of cold light ----
+    let core = [0.0f32, -1.8];
+    cylinder(r, meshes, &k.dark, [core[0], 0.25, core[1]], 2.2, 0.5);
+    cylinder(r, meshes, &k.metal, [core[0], h / 2.0, core[1]], 1.45, h);
+    for y in [1.0f32, 2.1, 3.2, 4.3] {
+        cylinder(r, meshes, &k.coolant, [core[0], y, core[1]], 1.52, 0.12);
+    }
+    solid.push(Shape::Circle { x: ox + core[0], z: oz + core[1], r: 2.35 });
+    light(r, Color::srgb(0.5, 0.95, 1.0), 420_000.0, 13.0, [core[0], 2.2, core[1] + 2.4]);
+    flicker(r, Color::srgb(0.45, 0.9, 1.0), 160_000.0, 9.0, [core[0], 3.4, core[1] - 2.2], 3.1);
+
+    // ---- Coolant lines: from the core across the ceiling and down to the pump ----
+    pipe(r, meshes, &k.rust, [core[0] + 2.4, 3.9, core[1]], 0.3, 4.4, true);
+    pipe(r, meshes, &k.rust, [hw - 1.0, 3.9, 0.0], 0.3, 4.2, false);
+    cylinder(r, meshes, &k.rust, [hw - 1.0, 1.8, PUMP_BAY.1], 0.3, 3.5);
+    pipe(r, meshes, &k.rust, [core[0] - 2.4, 3.9, core[1]], 0.3, 4.4, true);
+    pipe(r, meshes, &k.rust, [-hw + 1.0, 3.9, 0.0], 0.3, 4.2, false);
+    for x in [-2.0f32, 2.0] {
+        // Frozen couplings: the coolant has been cold a long time.
+        glowing(r, meshes, &k.cold_light, [core[0] + x * 1.6, 4.22, core[1]], [0.5, 0.05, 0.62]);
+    }
+
+    // ---- The pump bay: a pedestal with the housing open and empty ----
+    let (px, pz) = PUMP_BAY;
+    block(r, meshes, &k.dark, [px, 0.25, pz], [1.9, 0.5, 2.4]);
+    cylinder(r, meshes, &k.metal, [px, 0.85, pz], 0.62, 0.7);
+    cylinder(r, meshes, &k.black, [px, 1.22, pz], 0.46, 0.05);
+    for (dx, dz) in [(-0.7f32, -0.9f32), (0.7, -0.9), (-0.7, 0.9), (0.7, 0.9)] {
+        cylinder(r, meshes, &k.rust, [px + dx, 0.62, pz + dz], 0.05, 0.25);
+    }
+    solid.push(Shape::rect_centered(ox + px, oz + pz, 2.1, 2.6));
+    // A gauge panel above it: dead (red) until the pump runs, then steady cyan.
+    block(r, meshes, &k.dark, [hw - 0.2, 1.7, pz], [0.14, 0.9, 1.3]);
+    r.spawn((Mesh3d(meshes.add(Cuboid::new(0.04, 0.5, 0.9))), MeshMaterial3d(k.alarm.clone()), Transform::from_xyz(hw - 0.3, 1.7, pz), NotShadowCaster, PumpDead));
+    r.spawn((Mesh3d(meshes.add(Cuboid::new(0.04, 0.5, 0.9))), MeshMaterial3d(k.coolant.clone()), Transform::from_xyz(hw - 0.3, 1.7, pz), NotShadowCaster, PumpRunning, Visibility::Hidden));
+    r.spawn((PointLight { color: Color::srgb(1.0, 0.2, 0.15), intensity: 90_000.0, range: 6.0, ..default() }, Transform::from_xyz(hw - 1.4, 2.4, pz), PumpDead));
+    r.spawn((PointLight { color: Color::srgb(0.4, 0.95, 1.0), intensity: 160_000.0, range: 7.0, ..default() }, Transform::from_xyz(hw - 1.4, 2.4, pz), PumpRunning, Visibility::Hidden));
+
+    // ---- The bench where seals are cut ----
+    let (bx, bz) = BENCH;
+    block(r, meshes, &k.pole, [bx, 0.9, bz], [2.6, 0.08, 1.1]);
+    for (dx, dz) in [(-1.2f32, -0.45f32), (1.2, -0.45), (-1.2, 0.45), (1.2, 0.45)] {
+        block(r, meshes, &k.pole, [bx + dx, 0.45, bz + dz], [0.08, 0.9, 0.08]);
+    }
+    block(r, meshes, &k.dark, [bx, 0.97, bz], [2.4, 0.04, 0.95]);
+    r.spawn((SceneRoot(assets.toolbox.clone()), Transform::from_xyz(bx - 0.8, 0.94, bz).with_scale(Vec3::splat(1.5))));
+    solid.push(Shape::rect_centered(ox + bx, oz + bz, 2.8, 1.3));
+    light(r, Color::srgb(1.0, 0.85, 0.6), 140_000.0, 6.0, [bx, 2.2, bz]);
+
+    // ---- A control desk along the north wall, its lamps blinking ----
+    block(r, meshes, &k.metal, [-hw + 2.4, 0.5, -hd + 0.6], [3.4, 1.0, 0.9]);
+    block(r, meshes, &k.black, [-hw + 2.4, 1.15, -hd + 0.45], [3.2, 0.4, 0.5]);
+    for n in 0..8 {
+        let lamp = if n % 3 == 0 { &k.alarm } else { &k.coolant };
+        r.spawn((
+            Mesh3d(meshes.add(Cuboid::new(0.07, 0.07, 0.03))),
+            MeshMaterial3d(lamp.clone()),
+            Transform::from_xyz(-hw + 1.1 + n as f32 * 0.36, 1.2, -hd + 0.72),
+            NotShadowCaster,
+            crate::world::Blinker { period: 0.9 + 0.17 * n as f32, offset: n as f32 * 0.3 },
+        ));
+    }
+    solid.push(Shape::rect_centered(ox - hw + 2.4, oz - hd + 0.6, 3.6, 1.1));
+    // Pillars, ceiling light strips.
+    for (x, z) in [(-4.2f32, -1.8f32), (4.2, -3.6)] {
+        block(r, meshes, &k.concrete, [x, h / 2.0, z], [0.6, h, 0.6]);
+        solid.push(Shape::rect_centered(ox + x, oz + z, 0.9, 0.9));
+    }
+    for z in [-3.5f32, 0.5, 3.5] {
+        glowing(r, meshes, &k.strip, [0.0, h - 0.05, z], [2.8, 0.05, 0.2]);
+    }
+    // The stair up, against the west wall.
+    for n in 0..5 {
+        block(r, meshes, &k.metal, [-hw + 0.55, 0.12 + n as f32 * 0.09, hd - 0.4 - n as f32 * 0.35], [0.9, 0.04, 0.34]);
+    }
+}
+
+fn reactor_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut Vec<Shape>) {
+    let room = Interior::Reactor;
+    let (hw, hd) = room.half();
+    // A maintenance locker by the stair.
+    let (x, z) = room.at(hw - 1.4, hd - 1.2);
+    let cache = loot::roll_cache(&mut rng.0);
+    spawn_container(commands, containers, solid, assets.crate_military.clone(), Vec3::new(x, interiors::FLOOR_Y + 0.05, z), PI * 0.5, 1.1, "maintenance locker", cache);
+    // The bench where hide is cut into seals, and the pump bay.
+    let (bx, bz) = room.at(BENCH.0, BENCH.1 + 0.95);
+    spawn_spot_in(commands, Vec3::new(bx, interiors::FLOOR_Y + 1.0, bz), Spot::Seals, Some(room));
+    let (px, pz) = room.at(PUMP_BAY.0 - 1.5, PUMP_BAY.1);
+    spawn_spot_in(commands, Vec3::new(px, interiors::FLOOR_Y + 1.0, pz), Spot::Pump, Some(room));
 }
 
 // ---------------------------------------------------------------------------
@@ -579,20 +737,28 @@ fn use_fixtures(
     claim.0 = true;
     let line = match fixture.kind {
         FixtureKind::Door(Door::Enter(room)) => room.enter_prompt(),
-        FixtureKind::Door(Door::Leave(room)) => format!("[E] Leave {}", room.name()),
+        FixtureKind::Door(Door::Leave(room)) => room.leave_prompt(),
         FixtureKind::Bunk => "[E] Sleep until morning (saves your game)".to_string(),
         FixtureKind::Stove => format!("[E] Heat a hotdish on the stove ({} left)", game.inv.hotdish),
         FixtureKind::Talk(Npc::Overseer) => match quest::stage(&flags.0) {
             Stage::Unstarted => "[E] Play the Overseer's recording",
             Stage::Active => "[E] Check the Overseer's log",
             Stage::ReadyToReport => "[E] Report to the Overseer",
-            Stage::Complete => "[E] Use the Overseer's terminal",
+            Stage::Complete => match quest::pump_stage(&flags.0) {
+                quest::PumpStage::Offered => "[E] Ask the Overseer if he needs anything else",
+                quest::PumpStage::Active | quest::PumpStage::ReadyToInstall => "[E] Check the Overseer's log",
+                quest::PumpStage::ReadyToReport => "[E] Tell the Overseer the pump runs",
+                _ => "[E] Use the Overseer's terminal",
+            },
         }
         .to_string(),
         FixtureKind::Talk(npc) => format!("[E] Talk to {}", npc.name()),
-        FixtureKind::Spot(spot) => spot.prompt(&flags.0, game.inv.scrap),
+        FixtureKind::Spot(spot) => spot.prompt(&flags.0, game.inv.scrap, game.inv.pelts),
     };
-    prompt.0.push(line);
+    // (A fixture with nothing to say still takes E, so what's beside it stays shut.)
+    if !line.is_empty() {
+        prompt.0.push(line);
+    }
     if !controls.just_pressed(Bind::Interact) {
         return;
     }
@@ -669,12 +835,12 @@ fn run_trips(
             }
             Trip::Leave(room) => {
                 let (x, z, yaw) = room.outside();
-                (x, z, yaw, true)
+                (x, z, yaw, room.parent().is_none())
             }
         };
         match trip {
             Trip::Enter(room) => current.0 = Some(room),
-            Trip::Leave(_) => current.0 = None,
+            Trip::Leave(room) => current.0 = room.parent(),
             Trip::Sleep(_) => {
                 let r = interiors::sleep(&mut clock.0, &mut game.survival, &mut weather.weather);
                 weather.just_changed = None;

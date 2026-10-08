@@ -1,6 +1,8 @@
-//! Interior spaces: the four fish houses, the Vault 143 lobby and the
-//! Bullseye-Mart stockroom. Each is a small room built far off the map (so it
-//! can't be seen or walked into from outside) and reached through a door. This
+//! Interior spaces: the four fish houses, the Vault 143 lobby, the
+//! Bullseye-Mart stockroom and the reactor level below the vault. Each is a
+//! small room built far off the map (so it can't be seen or walked into from
+//! outside) and reached through a door (from the world, or, for the reactor,
+//! from the lobby above it). This
 //! module is the pure part: where each room is, how big it is, where its doors
 //! open to, what the air feels like inside, plus sleeping, cooking and the
 //! timing of the fade that hides the move.
@@ -29,15 +31,18 @@ pub enum Interior {
     FishHouse(u8),
     VaultLobby,
     Mart,
+    /// The vault's reactor level, down a stair from the lobby.
+    Reactor,
 }
 
-pub const ALL: [Interior; 6] = [
+pub const ALL: [Interior; 7] = [
     Interior::FishHouse(0),
     Interior::FishHouse(1),
     Interior::FishHouse(2),
     Interior::FishHouse(3),
     Interior::VaultLobby,
     Interior::Mart,
+    Interior::Reactor,
 ];
 
 impl Interior {
@@ -47,6 +52,7 @@ impl Interior {
             Interior::FishHouse(i) => format!("fish_house_{i}"),
             Interior::VaultLobby => "vault_lobby".to_string(),
             Interior::Mart => "mart".to_string(),
+            Interior::Reactor => "reactor".to_string(),
         }
     }
 
@@ -54,6 +60,7 @@ impl Interior {
         match id {
             "vault_lobby" => Some(Interior::VaultLobby),
             "mart" => Some(Interior::Mart),
+            "reactor" => Some(Interior::Reactor),
             _ => {
                 let n: u8 = id.strip_prefix("fish_house_")?.parse().ok()?;
                 (n < 4).then_some(Interior::FishHouse(n))
@@ -66,6 +73,7 @@ impl Interior {
             Interior::FishHouse(i) => FISH_HOUSE_NAMES[i as usize % 4],
             Interior::VaultLobby => "Vault 143",
             Interior::Mart => "the Bullseye-Mart stockroom",
+            Interior::Reactor => "the Vault 143 reactor level",
         }
     }
 
@@ -84,6 +92,7 @@ impl Interior {
             Interior::FishHouse(_) => (2.6, 2.1),
             Interior::VaultLobby => (7.5, 5.8),
             Interior::Mart => (9.5, 7.5),
+            Interior::Reactor => (6.5, 5.5),
         }
     }
 
@@ -92,6 +101,7 @@ impl Interior {
             Interior::FishHouse(_) => 2.5,
             Interior::VaultLobby => 4.2,
             Interior::Mart => 4.4,
+            Interior::Reactor => 5.2,
         }
     }
 
@@ -114,6 +124,7 @@ impl Interior {
             Interior::FishHouse(_) => ([1.0, 0.8, 0.55], 190.0),
             Interior::VaultLobby => ([0.8, 0.9, 1.0], 260.0),
             Interior::Mart => ([0.6, 0.66, 0.72], 120.0),
+            Interior::Reactor => ([0.55, 0.78, 0.9], 210.0),
         }
     }
 
@@ -137,9 +148,24 @@ impl Interior {
         self.at(0.0, hd - 0.1)
     }
 
-    /// Where the door from the world is (the point you stand near to use it).
+    /// The room this one is reached from, if it's down a stair rather than
+    /// out in the world.
+    pub fn parent(self) -> Option<Interior> {
+        match self {
+            Interior::Reactor => Some(Interior::VaultLobby),
+            _ => None,
+        }
+    }
+
+    /// Where the door in is (the point you stand near to use it): in the
+    /// world, or inside the parent room. The reactor's stair door is in the
+    /// lobby's north wall, beyond the Overseer's desk.
     pub fn outdoor_door(self) -> (f32, f32) {
         match self {
+            Interior::Reactor => {
+                let (_, hd) = Interior::VaultLobby.half();
+                Interior::VaultLobby.at(-5.2, -hd + 0.3)
+            }
             Interior::FishHouse(i) => {
                 let (sx, sz) = SHELTERS[i as usize % 4];
                 (sx + 0.3, sz)
@@ -149,9 +175,14 @@ impl Interior {
         }
     }
 
-    /// Where you come out in the world and which way you face.
+    /// Where you come out (in the world, or in the parent room) and which way you face.
     pub fn outside(self) -> (f32, f32, f32) {
         match self {
+            Interior::Reactor => {
+                let (_, hd) = Interior::VaultLobby.half();
+                let (x, z) = Interior::VaultLobby.at(-5.2, -hd + 1.5);
+                (x, z, std::f32::consts::PI)
+            }
             // East of the door, past the stove barrel, looking out over the lake.
             Interior::FishHouse(i) => {
                 let (sx, sz) = SHELTERS[i as usize % 4];
@@ -163,9 +194,20 @@ impl Interior {
         }
     }
 
-    /// The prompt shown at the outdoor door.
+    /// The prompt shown at the door in.
     pub fn enter_prompt(self) -> String {
-        format!("[E] Enter {}", self.name())
+        match self {
+            Interior::Reactor => "[E] Go down the stair to the reactor level".to_string(),
+            _ => format!("[E] Enter {}", self.name()),
+        }
+    }
+
+    /// The prompt shown at the door out.
+    pub fn leave_prompt(self) -> String {
+        match self.parent() {
+            Some(up) => format!("[E] Go back up to {}", up.name()),
+            None => format!("[E] Leave {}", self.name()),
+        }
     }
 }
 
@@ -296,7 +338,8 @@ mod tests {
         for i in ALL {
             assert_eq!(Interior::parse(&i.id()), Some(i), "{i:?}");
             assert!(!i.name().is_empty());
-            assert!(i.enter_prompt().starts_with("[E] Enter "));
+            assert!(i.enter_prompt().starts_with("[E] "));
+            assert!(i.leave_prompt().starts_with("[E] "));
         }
         assert_eq!(Interior::parse("fish_house_4"), None, "only four fish houses");
         assert_eq!(Interior::parse("fish_house_x"), None);
@@ -351,7 +394,7 @@ mod tests {
 
     #[test]
     fn doors_from_the_world_are_outdoors_and_you_step_out_clear_of_them() {
-        for i in ALL {
+        for i in ALL.into_iter().filter(|i| i.parent().is_none()) {
             let (dx, dz) = i.outdoor_door();
             let (ox, oz, _) = i.outside();
             assert_eq!(zone_at(dx, dz), None, "{i:?}'s door is in the world");
@@ -360,6 +403,27 @@ mod tests {
             assert!((0.8..6.0).contains(&gap), "{i:?}: you come out {gap} m from the door, near enough to go back in");
             assert!(ox.abs() < 200.0 && oz.abs() < 200.0, "and on the map");
         }
+    }
+
+    #[test]
+    fn the_reactor_is_down_a_stair_from_the_lobby() {
+        let r = Interior::Reactor;
+        assert_eq!(r.parent(), Some(Interior::VaultLobby));
+        assert_eq!(ALL.iter().filter(|i| i.parent().is_some()).count(), 1);
+        let (dx, dz) = r.outdoor_door();
+        assert_eq!(zone_at(dx, dz), Some(Interior::VaultLobby), "the stair door is in the lobby");
+        let (ox, oz, yaw) = r.outside();
+        assert_eq!(zone_at(ox, oz), Some(Interior::VaultLobby), "you come back up into the lobby");
+        let gap = (dx - ox).hypot(dz - oz);
+        assert!((0.8..3.0).contains(&gap), "{gap} m from the door: close enough to go back down");
+        assert!((yaw - std::f32::consts::PI).abs() < 1e-5, "facing into the room, away from the north wall");
+        assert!(oz > dz, "south of the door");
+        // Clear of the desk, the pillars and the locker.
+        let (lx, lz) = (ox - Interior::VaultLobby.origin().0, oz - Interior::VaultLobby.origin().1);
+        assert!(lx < -4.0 && lz < 0.0, "in the north-west corner: ({lx}, {lz})");
+        assert_eq!(Interior::parse("reactor"), Some(r));
+        assert_eq!(r.name(), "the Vault 143 reactor level");
+        assert!(r.warm(), "the reactor level is heated by the reactor");
     }
 
     #[test]

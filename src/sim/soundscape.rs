@@ -173,6 +173,8 @@ pub fn wind_mix(w: f32, shelter: Shelter) -> WindMix {
         Shelter::Inside(Interior::FishHouse(_)) => [0.25, 0.55, 0.18, 0.05, 0.22],
         Shelter::Inside(Interior::Mart) => [0.2, 0.5, 0.3, 0.12, 0.45],
         Shelter::Inside(Interior::VaultLobby) => [0.0, 0.2, 0.05, 0.0, 0.05],
+        // Deep underground: only the reactor's own rumble.
+        Shelter::Inside(Interior::Reactor) => [0.0, 0.08, 0.0, 0.0, 0.0],
     };
     WindMix { breeze: open.breeze * k[0], low: open.low * k[1], mid: open.mid * k[2], high: open.high * k[3], howl: open.howl * k[4] }
 }
@@ -185,6 +187,7 @@ pub fn wind_mix(w: f32, shelter: Shelter) -> WindMix {
 pub fn room_hum_level(room: Option<Interior>) -> f32 {
     match room {
         Some(Interior::VaultLobby) => 0.55,
+        Some(Interior::Reactor) => 0.9,
         Some(Interior::Mart) => 0.12,
         Some(Interior::FishHouse(_)) => 0.0,
         None => 0.0,
@@ -197,7 +200,7 @@ pub fn room_noise(room: Option<Interior>) -> Option<(Sound, f32, f32)> {
     match room {
         Some(Interior::FishHouse(_)) => Some((Sound::Creak, 12.0, 34.0)),
         Some(Interior::Mart) => Some((Sound::Drip, 3.5, 10.0)),
-        Some(Interior::VaultLobby) | None => None,
+        Some(Interior::VaultLobby) | Some(Interior::Reactor) | None => None,
     }
 }
 
@@ -312,6 +315,9 @@ mod tests {
     #[test]
     fn each_room_has_its_own_murmur() {
         assert!(room_hum_level(Some(Interior::VaultLobby)) > room_hum_level(Some(Interior::Mart)));
+        assert!(room_hum_level(Some(Interior::Reactor)) > room_hum_level(Some(Interior::VaultLobby)), "the reactor is the loudest room");
+        let deep = wind_mix(0.9, Shelter::Inside(Interior::Reactor));
+        assert!(deep.mid == 0.0 && deep.howl == 0.0 && deep.low < wind_mix(0.9, Shelter::Inside(Interior::VaultLobby)).low);
         assert_eq!(room_hum_level(HOUSE), 0.0);
         assert_eq!(room_hum_level(None), 0.0);
         let (s, lo, hi) = room_noise(HOUSE).unwrap();

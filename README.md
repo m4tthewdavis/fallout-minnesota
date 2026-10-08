@@ -1,4 +1,4 @@
-# Fallout: Minnesota — Prototype (Milestone 5)
+# Fallout: Minnesota — Prototype (Milestone 9)
 
 A first-person cold-survival prototype made with **Rust + Bevy 0.16**. It is based on the *Fallout: Minnesota* design doc.
 
@@ -47,7 +47,6 @@ The game opens on a title screen (Continue picks up your most recent save; New G
 | Right mouse | Aim down the sights |
 | 1 2 3 4 / mouse wheel | Pipe rifle / scrap shotgun / revolver / ice axe (once found) |
 | R | Reload, or clear a cold-weather jam. When dead, respawn |
-| E | Open a container (crates, footlockers, tackle boxes) |
 | B | At a shelter workbench: fit the next upgrade to your weapon (costs scrap) |
 | Tab or M | Raise the Pip-Boy (pauses the game) |
 | In the Pip-Boy: 1 2 3 | STATS / ITEMS / DATA (or click the buttons under the screen) |
@@ -56,9 +55,9 @@ The game opens on a title screen (Continue picks up your most recent save; New G
 | In the Pip-Boy: Enter | Use the selected aid item |
 | F4 | Quicksave (also: pause menu, or the Pip-Boy's SAVES page: ENTER saves, L loads) |
 | H / X / F | Stimpak / RadAway / Vault 143 Hotdish |
-| C | Craft a Frostfang coat (3 pelts, at a fish-house shelter) |
+| C | Craft a Frostfang coat (3 pelts, at a fish-house shelter; pelts are also spent on the pump seals) |
 | Esc | Pause menu: Resume, Save, Load, Settings, Quit. Esc also closes the Pip-Boy |
-| E | Use a door, bunk, stove or terminal (a prompt shows what's in reach). Looking at a container opens its loot list: Up/Down or the wheel to choose, E takes the highlighted entry, T takes all |
+| E | Use a door, bunk, stove, terminal or quest object (a prompt shows what's in reach). Looking at a container opens its loot list: Up/Down or the wheel to choose, E takes the highlighted entry, T takes all |
 | F3 | God mode on / off (a cheat: nothing hurts you; set `FMN_GOD=1` to start with it on) |
 | G | Geiger counter on / off |
 | F9 | Mute / unmute all sound |
@@ -81,8 +80,9 @@ The game opens on a title screen (Continue picks up your most recent save; New G
 Walk up to a door and press E: the screen fades, you step inside, and the weather and daylight are swapped for the room's own light.
 
 - **Fish houses** (four): a bunk (sleep eight hours: full health, warmed through, the storm blows over, frostbite eases, and the game autosaves), a stove (heat a hotdish for +60 Heat and +10 HP) and a stash. Entering one autosaves too.
-- **Vault 143 lobby**: the heavy cog door, the Overseer's terminal desk and a locker.
-- **Bullseye-Mart stockroom**: reach it by the loading-dock door in the ruin's north wall. Shelving, caches, and the military footlocker with the scrap shotgun, which used to sit out in the open.
+- **Vault 143 lobby**: the heavy cog door, the Overseer's terminal desk and a locker. A hazard-striped stair door in the north-west corner leads down to the reactor level.
+- **Vault 143 reactor level**: a warm room lit by the glowing core, with a maintenance locker by the stair, a workbench where pump seals are cut and the coolant pump's housing. Its gauge, lamps and light change once the pump runs. It's deep underground: the wind is all but silent and the reactor's hum is the loudest of any room.
+- **Bullseye-Mart stockroom**: reach it by the loading-dock door in the ruin's north wall. Shelving, caches, a crate with a pump impeller in it (see the second quest), and the military footlocker with the scrap shotgun, which used to sit out in the open.
 
 Wolves and the moose stay out of the rooms and are frozen while you're inside. Saving inside a room puts you back inside when you load.
 
@@ -92,7 +92,9 @@ Wolves and the moose stay out of the rooms and are frozen while you're inside. S
 - **Frozen Raiders** hold the two old camps and the wrecked convoy, three or two to a fire, each with a hunting rifle, a revolver or a scrap shotgun. They shoot only what they can see: trees, walls and cars between you and them block their aim, a blizzard cuts their sight to 18 m (35 m at night), their guns jam in the cold like yours, they miss more at range and more when you run, and a badly hurt one falls back to the fire (and shoots from there). A shot from you within about 90 m brings them to look, and one raider spotting you alerts his friends. They take hits, flinch, die and leave boot prints like the other enemies, and their pockets have ammo for their gun and scrap.
 - Enemies aren't saved; they return when you load. Both are paused while you're indoors.
 
-## The quest: Why Did the Overseer Open the Door?
+## The quests
+
+### Why Did the Overseer Open the Door?
 
 Play the Overseer's recording on the terminal in the Vault 143 lobby (E). It sends you to do three things, in any order (and any you've already done count):
 
@@ -104,7 +106,17 @@ Then report back to the Overseer, and choose what to tell the vault: the truth, 
 
 Conversations are keyboard-driven: Up/Down (or W/S) to move, Enter or 1-4 to choose, Esc to leave. Survivors give a gift once.
 
-**XP and perks.** XP comes from kills, places found, weapon mods, the coat and the quest. Each level after the first earns a perk pick, offered when nothing dangerous is near (Esc puts it off for a minute): Frost Hardy (lose heat 20% slower), Rad Resistant (30% less radiation), Quick Hands (reload 25% faster), Scrounger (+1 scrap on every scrap find), Field Medic (Stimpaks, hotdish and the stove heal 50% more).
+**XP and perks.** XP comes from kills, places found, weapon mods, the coat and the quests. Each level after the first earns a perk pick, offered when nothing dangerous is near (Esc puts it off for a minute): Frost Hardy (lose heat 20% slower), Rad Resistant (30% less radiation), Quick Hands (reload 25% faster), Scrounger (+1 scrap on every scrap find), Field Medic (Stimpaks, hotdish and the stove heal 50% more).
+
+### The Last Pump
+
+Once you've reported the first quest, talk to the Overseer again and choose "Is there anything else?": the convoy's coolant pump is wrecked, so build a replacement for the reactor. Parts you gather before agreeing still count. Three parts, in any order:
+
+1. **Impeller**: in the crate at the back of the Bullseye-Mart stockroom (60 XP). Lundgren hints at it.
+2. **Power coupling**: pull it from the transformer at Golden Atomic Mills, but only once the breaker power is back on (80 XP). Olson explains.
+3. **Seals**: cut at the workbench on the reactor level from 3 Frostfang pelts, which are used up (60 XP). Sven explains.
+
+Then install the pump at the reactor housing (200 XP) and tell the Overseer (300 XP; his answer depends on whether you told the vault the truth or the cover story, and Ole has something to say afterwards). The quest is worth 700 XP; the NOTES page keeps the log and hints.
 
 ## Saving
 
@@ -171,6 +183,19 @@ python3 tools/gen_textures.py     # generated textures, signs and HUD images
 ```
 src/
   main.rs        App setup
+  theme.rs       The shared winter palette
+  menu.rs        Title and pause menus and the settings pages
+  keybind.rs     Key names to key codes; reading keys through the bindings
+  saves.rs       Save and load slots
+  storage.rs     The settings and save folder, safe file writes
+  perf.rs        Frame-rate display, --profile, --benchmark, level of detail
+  window_icon.rs The window and taskbar icon
+  characters.rs  Winter clothing for survivors and raiders
+  crows.rs       Rad-crow flocks
+  raiders.rs     Frozen Raiders
+  fo4ui.rs       Loot list, pickup feed, XP bar and level-up banner
+  interiors.rs   Enterable rooms (fish houses, vault lobby, stockroom, reactor level), doors, fades
+  quest.rs       Quest screens: dialogue panel, quest spots, perk choice
   sim/           Pure game rules, no Bevy (unit-tested)
     collision.rs Circles and rectangles that push movers out
     meshgen.rs   Procedural geometry (wolves, moose, gloves, drifts, sheds, gear door...)
@@ -188,12 +213,20 @@ src/
     survival.rs  Body Heat, rads, health, inventory, crafting
     weather.rs   Calm / siren / blizzard cycle and conditions
     terrain.rs   Height field, lakes, shelters, radiation zones, highway
-    interiors.rs Rooms: layout, sleeping, cooking, door fade timing
+    interiors.rs Rooms (incl. the reactor level down a stair): layout, sleeping, cooking, door fade timing
+    keys.rs      Key bindings data
+    settings.rs  Settings data and JSON
+    save.rs      Save format and validation
+    menu.rs      Menu rules
+    pipnav.rs    Pip-Boy navigation
+    lod.rs       Level-of-detail rules
+    perf.rs      Frame-time statistics
+    mathx.rs     Small maths helpers
     atmosphere.rs  Sky scattering, sunlight colour, fog density field
     soundscape.rs  Occlusion, echoes, footsteps, wind layers, room murmurs
     outfit.rs    Winter clothing meshes for people
     lootmenu.rs  Loot list entries, highlight and scrolling
-    quest.rs     The quest line: stages, flags, XP, perks
+    quest.rs     Two quests (Why Did the Overseer Open the Door?, The Last Pump): stages, flags, XP, perks
     dialogue.rs  Conversation graphs and the replies you can pick
     combat.rs    Pipe rifle, jams, ray-sphere hits
     wolf.rs      Frostfang behaviour decisions
@@ -231,7 +264,7 @@ tools/           Scripts that download and generate the assets
 
 ## Possible next milestones
 
-- More of the vault: the reactor level, and the replacement pump
+- More of the vault (the lower levels)
 - The first faction (the Skyfolk or the Lockkeepers' Compact)
 - False-thaw events
 - Raider camps to clear for loot, and follow-up quests from what the survivors said

@@ -3,8 +3,11 @@
 //! on offer). Picking a reply can set story flags, hand you something once,
 //! and lead to another node or end the talk. The words are all here, the
 //! screen that shows them is in `quest.rs`.
+//!
+//! After the first quest the Overseer offers a second ("The Last Pump"), and
+//! the survivors each have a word about it.
 
-use super::quest::{self, Flags, Objective, ENDING_COVER, ENDING_TRUTH, REPORTED, STARTED};
+use super::quest::{self, Flags, Objective, PumpStage, ENDING_COVER, ENDING_TRUTH, PUMP_REPORTED, PUMP_STARTED, REPORTED, STARTED};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Npc {
@@ -147,13 +150,84 @@ static NODES: &[Node] = &[
         id: "ov.after.truth",
         speaker: OVERSEER,
         text: "The vault is awake and arguing, which is more than it has done in two hundred years. We are building a new pump out of what you brought. Go on, there is more winter out there than there is in here.",
-        choices: &[say("Goodbye.", None)],
+        choices: &[Choice { needs: Needs::NoFlag(PUMP_STARTED), ..say("Is there anything else?", Some("ov.pump.offer")) }, say("Goodbye.", None)],
         with_log: false,
     },
     Node {
         id: "ov.after.cover",
         speaker: OVERSEER,
         text: "The vault is calm. I hear every one of its footsteps and wonder how long calm lasts. Go on, wanderer. There is more winter out there than there is in here.",
+        choices: &[Choice { needs: Needs::NoFlag(PUMP_STARTED), ..say("Is there anything else?", Some("ov.pump.offer")) }, say("Goodbye.", None)],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.offer",
+        speaker: OVERSEER,
+        text: "Since you ask. The pump in the convoy is wreckage, and the reactor's coolant lines won't hold another winter without one. Our engineers can build a pump if somebody brings them parts, and nobody in here has been outside in two hundred years.\n\nThree things: an impeller, a power coupling, and seals. The workbench in the reactor room will do the rest.",
+        choices: &[
+            Choice { set: &[PUMP_STARTED], ..say("I'll build you a pump.", None) },
+            say("Where do I find the parts?", Some("ov.pump.parts")),
+            say("Not right now.", None),
+        ],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.parts",
+        speaker: OVERSEER,
+        text: "The impeller should be in a crate in the stockroom at the Bullseye-Mart; ask Lundgren, he shops there. The coupling comes off the transformer at Golden Atomic Mills. Olson will tell you it's fussy. For seals you want Frostfang hide, three pelts' worth. Mind the teeth.",
+        choices: &[Choice { set: &[PUMP_STARTED], ..say("All right. I'll build you a pump.", None) }, say("Go back.", Some("ov.pump.offer"))],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.wait",
+        speaker: OVERSEER,
+        text: "The engineers are sharpening their pencils. Bring the parts when you have them. This is what's left:",
+        choices: &[say("I'm on it.", None)],
+        with_log: true,
+    },
+    Node {
+        id: "ov.pump.install",
+        speaker: OVERSEER,
+        text: "An impeller, a coupling and a set of seals. I would shake your hand if I had a hand to spare. The pump housing is in the reactor room; fit it there, and come tell me when the lines run warm.",
+        choices: &[say("On my way.", None)],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.report",
+        speaker: OVERSEER,
+        text: "I can hear it from here: the lines are running warm for the first time since the Long Winter. Two winters, and now twenty. The vault will want to know how it was done.\n\nHow shall I say it?",
+        choices: &[
+            Choice { needs: Needs::Flag(ENDING_TRUTH), set: &[PUMP_REPORTED], ..say("Tell them everyone's work kept the lights on.", Some("ov.pump.end.truth")) },
+            Choice { needs: Needs::NoFlag(ENDING_TRUTH), set: &[PUMP_REPORTED], ..say("Tell them the vault's old systems held. Keep it simple.", Some("ov.pump.end.cover")) },
+            say("Give me a moment.", None),
+        ],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.end.truth",
+        speaker: OVERSEER,
+        text: "They already know the worst of it, and they are pulling together anyway; the engineers are teaching the children how the pump works. I did not think I would live to see that. Thank you, wanderer. Vault 143 owes you its winters.",
+        choices: &[say("Stay warm, Overseer.", None)],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.end.cover",
+        speaker: OVERSEER,
+        text: "A tidy story, and the pump keeps it true for now. The vault sleeps well, and I lie awake over how long a lie keeps. Thank you, wanderer. The pump runs, and the door stays open to you.",
+        choices: &[say("Stay warm, Overseer.", None)],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.after.truth",
+        speaker: OVERSEER,
+        text: "The pump hums and the vault hums with it. People argue over who gets to oil it. Go on, wanderer. Whatever is out there, you have given us time to meet it.",
+        choices: &[say("Goodbye.", None)],
+        with_log: false,
+    },
+    Node {
+        id: "ov.pump.after.cover",
+        speaker: OVERSEER,
+        text: "The pump hums, and nobody asks why it was needed. I listen to it at night and say nothing. Go on, wanderer. You have given us time. I will try to use it well.",
         choices: &[say("Goodbye.", None)],
         with_log: false,
     },
@@ -190,7 +264,17 @@ static NODES: &[Node] = &[
         id: "lundgren.after",
         speaker: "LUNDGREN",
         text: "You found the trucks? Then it's true. The vault sent help and something took it. Whatever the Overseer says, folks out here aren't forgotten. Stay warm.",
-        choices: &[say("I will.", None)],
+        choices: &[
+            say("I will.", None),
+            Choice { needs: Needs::Flag(PUMP_STARTED), ..say("I'm hunting a pump impeller.", Some("lundgren.pump")) },
+        ],
+        with_log: false,
+    },
+    Node {
+        id: "lundgren.pump",
+        speaker: "LUNDGREN",
+        text: "An impeller! For the vault's reactor? Ya, there's a crate in the Bullseye-Mart stockroom, behind the shelves of discount parkas. I saw it the last time I went for batteries. Nobody wanted it. Mind the roof, though.",
+        choices: &[say("Thanks.", None), say("About that convoy...", Some("lundgren.after"))],
         with_log: false,
     },
     // ---- Sven: the Glowmoose ----
@@ -233,7 +317,15 @@ static NODES: &[Node] = &[
         choices: &[
             Choice { set: &["gift.sven"], needs: Needs::NoFlag("gift.sven"), gift: Some(Gift::Scrap(10)), ..say("Take the scrap.", None) },
             say("Glad to help.", None),
+            Choice { needs: Needs::Flag(PUMP_STARTED), ..say("I need Frostfang hide for pump seals.", Some("sven.pump")) },
         ],
+        with_log: false,
+    },
+    Node {
+        id: "sven.pump",
+        speaker: "SVEN",
+        text: "Pump seals from Frostfang hide? Smart. Nothing else out here stays supple at forty below. Three pelts will do you, and they're no friends of mine, so shoot straight. Cut them at a proper workbench, not on the ice.",
+        choices: &[say("Thanks, Sven.", None)],
         with_log: false,
     },
     // ---- Olson: the Mills ----
@@ -269,7 +361,15 @@ static NODES: &[Node] = &[
         choices: &[
             Choice { set: &["gift.olson"], needs: Needs::NoFlag("gift.olson"), gift: Some(Gift::Stimpak(1)), ..say("Take the Stimpak.", None) },
             say("No trouble.", None),
+            Choice { needs: Needs::Flag(PUMP_STARTED), ..say("I need a coupling from the Mills' transformer.", Some("olson.pump")) },
         ],
+        with_log: false,
+    },
+    Node {
+        id: "olson.pump",
+        speaker: "OLSON",
+        text: "The coupling on the transformer? It's seized solid with two hundred years of frost. It only works loose once there's current through it, which is why it never mattered before. With the power on, it'll come off with a good wrench and a bad word.",
+        choices: &[say("Thanks, Olson.", None)],
         with_log: false,
     },
     // ---- Ole: rumours ----
@@ -307,6 +407,20 @@ static NODES: &[Node] = &[
         with_log: false,
     },
     Node {
+        id: "ole.pump.truth",
+        speaker: "OLE",
+        text: "Heard the vault's pump runs, and that they told everybody why it needed one. Ya, that's how you fix a thing: all hands, nobody pretending. I'd shake your hand, but my stove's calling.",
+        choices: &[say("Goodbye.", None)],
+        with_log: false,
+    },
+    Node {
+        id: "ole.pump.cover",
+        speaker: "OLE",
+        text: "Heard the vault's got a new pump running, and nobody inside knows why they needed it. Hm. It's good that it runs. I'd feel better if they knew what it was running against. But I won't ask.",
+        choices: &[say("Goodbye.", None)],
+        with_log: false,
+    },
+    Node {
         id: "ole.truth",
         speaker: "OLE",
         text: "Heard the vault told everyone the real story. Frightening. But a frightened man lights his stove in October, a calm one finds out in February. Good on you.",
@@ -334,8 +448,15 @@ pub fn entry(npc: Npc, flags: &Flags) -> &'static str {
             Stage::Unstarted => "ov.intro",
             Stage::Active => "ov.wait",
             Stage::ReadyToReport => "ov.report",
-            Stage::Complete if has(flags, ENDING_TRUTH) => "ov.after.truth",
-            Stage::Complete => "ov.after.cover",
+            Stage::Complete => match quest::pump_stage(flags) {
+                PumpStage::Active => "ov.pump.wait",
+                PumpStage::ReadyToInstall => "ov.pump.install",
+                PumpStage::ReadyToReport => "ov.pump.report",
+                PumpStage::Complete if has(flags, ENDING_TRUTH) => "ov.pump.after.truth",
+                PumpStage::Complete => "ov.pump.after.cover",
+                _ if has(flags, ENDING_TRUTH) => "ov.after.truth",
+                _ => "ov.after.cover",
+            },
         },
         Npc::Lundgren if done(flags, Objective::Convoy) => "lundgren.after",
         Npc::Lundgren => "lundgren.hello",
@@ -343,6 +464,8 @@ pub fn entry(npc: Npc, flags: &Flags) -> &'static str {
         Npc::Sven => "sven.hello",
         Npc::Olson if done(flags, Objective::Power) => "olson.after",
         Npc::Olson => "olson.hello",
+        Npc::Ole if quest::pump_stage(flags) == PumpStage::Complete && has(flags, ENDING_TRUTH) => "ole.pump.truth",
+        Npc::Ole if quest::pump_stage(flags) == PumpStage::Complete => "ole.pump.cover",
         Npc::Ole if has(flags, REPORTED) && has(flags, ENDING_TRUTH) => "ole.truth",
         Npc::Ole if has(flags, REPORTED) => "ole.cover",
         Npc::Ole => "ole.hello",
@@ -435,6 +558,20 @@ mod tests {
         v.push(flags(&[STARTED, "found.convoy", "fixed.power", "killed.glowmoose"]));
         v.push(flags(&[STARTED, "found.convoy", "fixed.power", "killed.glowmoose", REPORTED, ENDING_TRUTH]));
         v.push(flags(&[STARTED, "found.convoy", "fixed.power", "killed.glowmoose", REPORTED, ENDING_COVER]));
+        let q1 = [STARTED, "found.convoy", "fixed.power", "killed.glowmoose", REPORTED];
+        for ending in [ENDING_TRUTH, ENDING_COVER] {
+            let mut base = q1.to_vec();
+            base.push(ending);
+            v.push(flags(&base));
+            base.push(PUMP_STARTED);
+            v.push(flags(&base));
+            base.extend(["found.impeller", "found.coupling", "made.seals"]);
+            v.push(flags(&base));
+            base.push("fixed.pump");
+            v.push(flags(&base));
+            base.push(PUMP_REPORTED);
+            v.push(flags(&base));
+        }
         v
     }
 
@@ -568,6 +705,107 @@ mod tests {
         assert!(choices(ole, &f).iter().any(|c| c.next == Some("ole.convoy")), "but he'll hear about the convoy");
         assert_eq!(entry(Npc::Sven, &none), "sven.hello");
         assert_eq!(entry(Npc::Ole, &none), "ole.hello");
+    }
+
+    /// Quest 1 done, with the given ending.
+    fn after_quest_one(ending: &'static str) -> Flags {
+        flags(&[STARTED, "found.convoy", "fixed.power", "killed.glowmoose", REPORTED, ending])
+    }
+
+    #[test]
+    fn the_whole_pump_quest_plays_through_in_dialogue_and_flags() {
+        for ending in [ENDING_TRUTH, ENDING_COVER] {
+            let truth = ending == ENDING_TRUTH;
+            let mut f = after_quest_one(ending);
+            // offered: the after-talk has the extra reply
+            assert_eq!(entry(Npc::Overseer, &f), if truth { "ov.after.truth" } else { "ov.after.cover" });
+            let mut s = Session::new(Npc::Overseer, &f);
+            let step = s.pick(0, &mut f).unwrap();
+            assert!(!step.ended);
+            assert_eq!(s.node().id, "ov.pump.offer");
+            s.pick(1, &mut f).unwrap();
+            assert_eq!(s.node().id, "ov.pump.parts");
+            s.pick(1, &mut f).unwrap();
+            assert_eq!(s.node().id, "ov.pump.offer");
+            assert!(!quest::has(&f, PUMP_STARTED), "asking questions is not agreeing");
+            let step = s.pick(0, &mut f).unwrap();
+            assert!(step.ended && quest::has(&f, PUMP_STARTED));
+            assert_eq!(quest::pump_stage(&f), PumpStage::Active);
+            // the reply is gone from the after nodes, and the progress check shows the log
+            assert_eq!(entry(Npc::Overseer, &f), "ov.pump.wait");
+            assert!(node("ov.pump.wait").unwrap().with_log);
+            // the parts, in a scrambled order
+            for part in [quest::Part::Seals, quest::Part::Impeller, quest::Part::Coupling] {
+                assert_eq!(entry(Npc::Overseer, &f), "ov.pump.wait");
+                quest::set(&mut f, part.flag());
+            }
+            assert_eq!(entry(Npc::Overseer, &f), "ov.pump.install");
+            quest::set(&mut f, quest::PUMP_FIXED);
+            assert_eq!(entry(Npc::Overseer, &f), "ov.pump.report");
+            let mut s = Session::new(Npc::Overseer, &f);
+            let replies = s.choices(&f);
+            assert_eq!(replies.len(), 2, "one ending offered, plus 'a moment'");
+            assert_eq!(s.pick(1, &mut f).map(|st| st.ended), Some(true), "needing a moment ends the talk");
+            assert!(!quest::has(&f, PUMP_REPORTED));
+            let mut s = Session::new(Npc::Overseer, &f);
+            let step = s.pick(0, &mut f).unwrap();
+            assert!(!step.ended);
+            assert_eq!(s.node().id, if truth { "ov.pump.end.truth" } else { "ov.pump.end.cover" });
+            assert_eq!(quest::pump_stage(&f), PumpStage::Complete);
+            assert_eq!(entry(Npc::Overseer, &f), if truth { "ov.pump.after.truth" } else { "ov.pump.after.cover" });
+            assert_eq!(entry(Npc::Ole, &f), if truth { "ole.pump.truth" } else { "ole.pump.cover" });
+            assert!(s.pick(0, &mut f).unwrap().ended);
+            assert_eq!(quest::quest_xp(&f) - quest::quest_xp(&after_quest_one(ending)), 700);
+        }
+    }
+
+    #[test]
+    fn the_pump_endings_read_differently() {
+        let t = node("ov.pump.end.truth").unwrap();
+        let c = node("ov.pump.end.cover").unwrap();
+        assert_ne!(t.text, c.text);
+        assert_ne!(node("ole.pump.truth").unwrap().text, node("ole.pump.cover").unwrap().text);
+        assert_ne!(node("ov.pump.after.truth").unwrap().text, node("ov.pump.after.cover").unwrap().text);
+    }
+
+    #[test]
+    fn nobody_is_offered_the_pump_before_the_first_quest_ends() {
+        for f in [Flags::new(), flags(&[STARTED]), flags(&[STARTED, "found.convoy", "fixed.power", "killed.glowmoose"])] {
+            let id = entry(Npc::Overseer, &f);
+            assert!(!id.starts_with("ov.pump") && !id.starts_with("ov.after"), "{id}");
+        }
+        // even with the flag set by accident, the Overseer keeps to quest 1
+        assert_eq!(entry(Npc::Overseer, &flags(&[STARTED, PUMP_STARTED])), "ov.wait");
+    }
+
+    #[test]
+    fn the_survivors_know_about_the_pump_once_you_have_agreed() {
+        let before = after_quest_one(ENDING_TRUTH);
+        let mut started = before.clone();
+        quest::set(&mut started, PUMP_STARTED);
+        for (npc, after_node, pump_node) in [(Npc::Lundgren, "lundgren.after", "lundgren.pump"), (Npc::Sven, "sven.after", "sven.pump"), (Npc::Olson, "olson.after", "olson.pump")] {
+            assert_eq!(entry(npc, &started), after_node);
+            let n = node(after_node).unwrap();
+            assert!(!choices(n, &before).iter().any(|c| c.next == Some(pump_node)), "{pump_node} before agreeing");
+            let mut f = started.clone();
+            let mut s = Session::new(npc, &f);
+            let i = s.choices(&f).iter().position(|c| c.next == Some(pump_node)).unwrap_or_else(|| panic!("{pump_node} not offered"));
+            s.pick(i, &mut f).unwrap();
+            assert_eq!(s.node().id, pump_node);
+        }
+        assert!(node("olson.pump").unwrap().text.contains("power"));
+        assert!(node("lundgren.pump").unwrap().text.contains("stockroom"));
+        // Ole says nothing new until the pump is reported
+        assert_eq!(entry(Npc::Ole, &started), "ole.truth");
+    }
+
+    #[test]
+    fn the_olson_stimpak_is_still_there_with_the_pump_reply_added() {
+        let mut f = after_quest_one(ENDING_TRUTH);
+        quest::set(&mut f, PUMP_STARTED);
+        let s = Session::new(Npc::Olson, &f);
+        assert_eq!(s.choices(&f).len(), 3);
+        assert!(s.choices(&f)[0].gift.is_some());
     }
 
     #[test]
