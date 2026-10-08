@@ -1,5 +1,3 @@
-// TEMP
-
 //! Pure game simulation for Fallout: Minnesota.
 //!
 //! Nothing in this module depends on Bevy, so all of the rules (cold, radiation,
@@ -13,6 +11,7 @@ pub mod crow;
 pub mod daynight;
 pub mod dialogue;
 pub mod flora;
+pub mod grade;
 pub mod interiors;
 pub mod keys;
 pub mod lod;

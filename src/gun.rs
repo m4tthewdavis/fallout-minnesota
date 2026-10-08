@@ -57,7 +57,7 @@ const RIFLE_SIGHT: f32 = 0.075;
 #[derive(Component)]
 pub struct GunModel;
 #[derive(Component)]
-struct ViewModelCamera;
+pub struct ViewModelCamera;
 #[derive(Component)]
 struct GunBolt(Vec3);
 #[derive(Component)]

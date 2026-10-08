@@ -22,6 +22,7 @@ mod devshot;
 mod enemy;
 mod flora;
 mod fo4ui;
+mod grade;
 mod gun;
 mod hud;
 mod interact;
@@ -103,6 +104,6 @@ fn main() {
             interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, perf::PerfPlugin, window_icon::WindowIconPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, perf::PerfPlugin, window_icon::WindowIconPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin, grade::GradePlugin))
         .run();
 }
