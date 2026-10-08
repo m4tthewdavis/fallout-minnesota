@@ -14,7 +14,7 @@
 //! * a Geiger counter that clicks gently, and keys to change the volume.
 
 use std::collections::HashMap;
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 
 use bevy::audio::{AudioSinkPlayback, SpatialAudioSink, SpatialScale, Volume};
 use bevy::prelude::*;
@@ -27,6 +27,7 @@ use crate::sim::interiors::{self, Interior};
 use crate::sim::rng::Rng;
 use crate::sim::sfx::{self, approach, Mix, Mood, MusicContext, MusicDirector};
 use crate::sim::soundscape::{self, Shelter};
+use crate::sim::recorded::{self, Takes};
 use crate::sim::synth::{Bus, Sound};
 use crate::sim::terrain::{self, SHELTERS};
 use crate::sim::weather::Phase;
@@ -183,19 +184,26 @@ fn start_generators(mut commands: Commands) {
         commands.insert_resource(BankLoader(Mutex::new(rx)));
         return;
     }
+    // Recordings in assets/sounds stand in for the synthesised clips.
+    let recorded = Arc::new(find_recordings());
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 3);
     for t in 0..threads {
         let tx = tx.clone();
+        let recorded = recorded.clone();
         std::thread::spawn(move || {
             let mut i = 0;
             for &s in Sound::ALL {
+                let takes = recorded.iter().find(|(r, _)| *r == s).map(|(_, t)| t);
                 for v in 0..s.variants() {
                     if i % threads == t {
-                        if tx.send((s, v, false, s.wav(v))).is_err() {
+                        let clip = |muffled: bool| {
+                            takes.and_then(|t| t.pick(v, muffled)).and_then(|path| std::fs::read(&path).ok()).unwrap_or_else(|| if muffled { s.wav_muffled(v) } else { s.wav(v) })
+                        };
+                        if tx.send((s, v, false, clip(false))).is_err() {
                             return;
                         }
                         // The same clip as heard through a wall or a thicket.
-                        if s.muffleable() && tx.send((s, v, true, s.wav_muffled(v))).is_err() {
+                        if s.muffleable() && tx.send((s, v, true, clip(true))).is_err() {
                             return;
                         }
                     }
@@ -205,6 +213,35 @@ fn start_generators(mut commands: Commands) {
         });
     }
     commands.insert_resource(BankLoader(Mutex::new(rx)));
+}
+
+/// The recorded clips in `assets/sounds`, by sound.
+fn find_recordings() -> Vec<(Sound, Takes<std::path::PathBuf>)> {
+    let dir = std::path::Path::new(&crate::assets::asset_root()).join("sounds");
+    let files = std::fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()));
+    let found = recorded::gather(files);
+    let n: usize = found.iter().map(|(_, t)| t.plain.len() + t.muffled.len()).sum();
+    info!("{n} recorded clips for {} sounds in {}", found.len(), dir.display());
+    found
+}
+
+/// `FMN_DUMP_SYNTH=<folder>`: write every synthesised clip there as a WAV
+/// (named like the recordings that would replace it) and quit. For matching
+/// the loudness of new recordings to the mix.
+pub fn dump_synth_if_asked() -> bool {
+    let Ok(dir) = std::env::var("FMN_DUMP_SYNTH") else { return false };
+    let dir = std::path::PathBuf::from(dir);
+    let _ = std::fs::create_dir_all(&dir);
+    for &s in Sound::ALL {
+        for v in 0..s.variants() {
+            let _ = std::fs::write(dir.join(format!("{}_{v}.wav", recorded::stem(s))), s.wav(v));
+            if s.muffleable() {
+                let _ = std::fs::write(dir.join(format!("{}_{v}_muffled.wav", recorded::stem(s))), s.wav_muffled(v));
+            }
+        }
+    }
+    println!("synthesised clips written to {}", dir.display());
+    true
 }
 
 fn receive_sounds(loader: Res<BankLoader>, mut bank: ResMut<SoundBank>, mut sources: ResMut<Assets<AudioSource>>) {

@@ -19,6 +19,7 @@ mod characters;
 mod combat;
 mod crows;
 mod devshot;
+mod dressing;
 mod enemy;
 mod flora;
 mod fo4ui;
@@ -58,6 +59,9 @@ mod world;
 use bevy::prelude::*;
 
 fn main() {
+    if audio::dump_synth_if_asked() {
+        return;
+    }
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.62, 0.66, 0.70)))
         .insert_resource(AmbientLight {
@@ -105,6 +109,6 @@ fn main() {
             interiors::InteriorPlugin,
             pipboy::PipboyPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, perf::PerfPlugin, window_icon::WindowIconPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin, grade::GradePlugin, library::LibraryPlugin))
+        .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, perf::PerfPlugin, window_icon::WindowIconPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin, grade::GradePlugin, library::LibraryPlugin, dressing::DressingPlugin))
         .run();
 }

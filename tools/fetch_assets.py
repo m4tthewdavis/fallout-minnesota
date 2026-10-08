@@ -74,6 +74,15 @@ MODELS = [
     ("Lantern_01", "lanterns in the fish houses"),
     ("life_jacket", "life jackets hung in the fish houses"),
     ("Rockingchair_01", "rocking chairs in the fish houses"),
+    # Milestone 10: dressing the outdoors.
+    ("boulder_01", "glacial boulders in the fields and woods"),
+    ("rock_face_02", "rock outcrops flanking the Vault 143 portal"),
+    ("dead_tree_trunk", "fallen logs in the woods"),
+    ("tree_stump_02", "old stumps in the woods"),
+    ("dry_branches_medium_01", "deadfall and firewood piles"),
+    ("propane_tank", "propane tanks at the shelters"),
+    ("portable_generator", "generators at the shelters and raider camps"),
+    ("concrete_road_barrier", "jersey barriers round the raider camps"),
 ]
 
 # PBR texture sets at 1k: (id, maps, use). "arm" packs AO/roughness/metal, which

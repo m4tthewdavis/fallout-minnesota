@@ -28,6 +28,7 @@ pub mod perf;
 pub mod pipnav;
 pub mod progress;
 pub mod raider;
+pub mod recorded;
 pub mod quest;
 pub mod rng;
 pub mod save;

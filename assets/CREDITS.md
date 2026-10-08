@@ -58,6 +58,14 @@ Fetched by `tools/fetch_assets.py`. Licenses: <https://polyhaven.com/license>,
 | `models/Lantern_01/` | Lantern 01 | <https://polyhaven.com/a/Lantern_01> | Rajil Jose Macatangay | lanterns in the fish houses |
 | `models/life_jacket/` | Life Jacket | <https://polyhaven.com/a/life_jacket> | PierreB3D | life jackets hung in the fish houses |
 | `models/Rockingchair_01/` | Rockingchair 01 | <https://polyhaven.com/a/Rockingchair_01> | Jorge Camacho | rocking chairs in the fish houses |
+| `models/boulder_01/` | Boulder 01 | <https://polyhaven.com/a/boulder_01> | Rico Cilliers | glacial boulders in the fields and woods |
+| `models/rock_face_02/` | Rock Face 02 | <https://polyhaven.com/a/rock_face_02> | Dario Barresi, Rico Cilliers | rock outcrops flanking the Vault 143 portal |
+| `models/dead_tree_trunk/` | Dead Tree Trunk | <https://polyhaven.com/a/dead_tree_trunk> | Rob Tuytel | fallen logs in the woods |
+| `models/tree_stump_02/` | Tree Stump 02 | <https://polyhaven.com/a/tree_stump_02> | Rob Tuytel | old stumps in the woods |
+| `models/dry_branches_medium_01/` | Dry Branches Medium 01 | <https://polyhaven.com/a/dry_branches_medium_01> | Rico Cilliers | deadfall and firewood piles |
+| `models/propane_tank/` | Propane Tank | <https://polyhaven.com/a/propane_tank> | Slinc | propane tanks at the shelters |
+| `models/portable_generator/` | Portable Generator | <https://polyhaven.com/a/portable_generator> | James Ray Cock | generators at the shelters and raider camps |
+| `models/concrete_road_barrier/` | Concrete Road Barrier | <https://polyhaven.com/a/concrete_road_barrier> | Amal Kumar | jersey barriers round the raider camps |
 | `textures/pine_bark/` | Pine Bark | <https://polyhaven.com/a/pine_bark> | Dimitrios Savva | pine trunks |
 | `textures/concrete_floor_worn_001/` | Concrete Floor Worn 001 | <https://polyhaven.com/a/concrete_floor_worn_001> | Dimitrios Savva, Rico Cilliers | Bullseye-Mart stockroom floor |
 | `textures/damaged_concrete_floor_02/` | Damaged Concrete Floor 02 | <https://polyhaven.com/a/damaged_concrete_floor_02> | Rob Tuytel | reactor room floor |

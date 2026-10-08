@@ -32,6 +32,14 @@ const SCENES: &[&str] = &[
     "Lantern_01",
     "life_jacket",
     "Rockingchair_01",
+    "boulder_01",
+    "rock_face_02",
+    "dead_tree_trunk",
+    "tree_stump_02",
+    "dry_branches_medium_01",
+    "propane_tank",
+    "portable_generator",
+    "concrete_road_barrier",
 ];
 
 /// Kits: pieces are picked out by node name.
@@ -85,11 +93,16 @@ pub struct KitPiece {
     node: &'static str,
 }
 
+/// Tints every material in a model's scene once it has spawned (each tinted
+/// model gets its own copies of the materials, shared by tint).
+#[derive(Component, Clone, Copy)]
+pub struct Tint(pub [f32; 3]);
+
 pub struct LibraryPlugin;
 
 impl Plugin for LibraryPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, load_library).add_systems(Update, build_pieces);
+        app.init_resource::<TintCache>().add_systems(PreStartup, load_library).add_systems(Update, build_pieces).add_observer(tint_scene);
     }
 }
 
@@ -152,3 +165,35 @@ fn spawn_node(c: &mut ChildSpawnerCommands, node: &GltfNode, tf: Transform, node
     });
 }
 
+
+/// Tinted copies of materials, so a hundred tinted boulders share one.
+#[derive(Resource, Default)]
+struct TintCache(HashMap<(AssetId<StandardMaterial>, [u32; 3]), Handle<StandardMaterial>>);
+
+fn tint_scene(
+    trigger: Trigger<bevy::scene::SceneInstanceReady>,
+    tints: Query<&Tint>,
+    children: Query<&Children>,
+    mut mats: Query<&mut MeshMaterial3d<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut cache: ResMut<TintCache>,
+) {
+    let root = trigger.target();
+    let Ok(&Tint(t)) = tints.get(root) else { return };
+    let key = t.map(f32::to_bits);
+    for e in children.iter_descendants(root) {
+        let Ok(mut m) = mats.get_mut(e) else { continue };
+        let id = m.0.id();
+        let tinted = match cache.0.get(&(id, key)) {
+            Some(h) => h.clone(),
+            None => {
+                let Some(base) = materials.get(id).cloned() else { continue };
+                let c = base.base_color.to_linear();
+                let h = materials.add(StandardMaterial { base_color: LinearRgba::new(c.red * t[0], c.green * t[1], c.blue * t[2], c.alpha).into(), ..base });
+                cache.0.insert((id, key), h.clone());
+                h
+            }
+        };
+        m.0 = tinted;
+    }
+}
