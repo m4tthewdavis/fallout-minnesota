@@ -3,9 +3,10 @@
 Every asset in this folder is either made for this project or released under
 **CC0 1.0** (public domain). No Fallout/Bethesda assets are used.
 
-## Downloaded (Poly Haven, CC0 1.0)
+## Downloaded (Poly Haven and ambientCG, CC0 1.0)
 
-Fetched by `tools/fetch_assets.py`. License: <https://polyhaven.com/license>.
+Fetched by `tools/fetch_assets.py`. Licenses: <https://polyhaven.com/license>,
+<https://docs.ambientcg.com/license/>.
 
 | Path | Asset | Source | Author(s) | Used for |
 | --- | --- | --- | --- | --- |
@@ -33,7 +34,36 @@ Fetched by `tools/fetch_assets.py`. License: <https://polyhaven.com/license>.
 | `models/boombox/` | Boombox | <https://polyhaven.com/a/boombox> | Thomas Paul Mouilleron | a boombox left at an abandoned camp |
 | `models/rusted_spade_01/` | Rusted Spade 01 | <https://polyhaven.com/a/rusted_spade_01> | Blemonade | a spade left in the snow at camp |
 | `models/worn_metal_rack/` | Worn Metal Rack | <https://polyhaven.com/a/worn_metal_rack> | Luca B | shelving in the Bullseye-Mart ruin |
+| `models/metal_office_desk/` | Metal Office Desk | <https://polyhaven.com/a/metal_office_desk> | Ulan Cabanilla | the Overseer's desk |
+| `models/drawer_cabinet/` | Drawer Cabinet | <https://polyhaven.com/a/drawer_cabinet> | Ulan Cabanilla | filing cabinets in the vault lobby |
+| `models/Television_01/` | Television 01 | <https://polyhaven.com/a/Television_01> | Gabriel Radić | the Overseer's monitor |
+| `models/vintage_radio_transceiver/` | Vintage Radio Transceiver | <https://polyhaven.com/a/vintage_radio_transceiver> | Mateusz Sadek | the vault's radio set |
+| `models/SchoolChair_01/` | School Chair 01 | <https://polyhaven.com/a/SchoolChair_01> | Ethan Place | chairs in the vault lobby |
+| `models/caged_hanging_light/` | Caged Hanging Light | <https://polyhaven.com/a/caged_hanging_light> | Ulan Cabanilla | caged lamps in the vault and the Bullseye-Mart |
+| `models/mounted_fluorescent_lights/` | Mounted Fluorescent Lights | <https://polyhaven.com/a/mounted_fluorescent_lights> | Ulan Cabanilla | strip lights in the vault and the Bullseye-Mart |
+| `models/modular_airduct_rectangular_01/` | Modular Airduct Rectangular 01 | <https://polyhaven.com/a/modular_airduct_rectangular_01> | James Ray Cock | air ducts in the vault lobby |
+| `models/power_box_01/` | Power Box 01 | <https://polyhaven.com/a/power_box_01> | Rico Cilliers, Yann Kervran | breaker boxes on the vault and reactor walls |
+| `models/old_military_compressor/` | Old Military Compressor | <https://polyhaven.com/a/old_military_compressor> | Brian Speight | the coolant compressors in the reactor room |
+| `models/vintage_spacecraft_instrument/` | Vintage Spacecraft Instrument | <https://polyhaven.com/a/vintage_spacecraft_instrument> | Michał Wiśniewski | gauge panels on the reactor control desk |
+| `models/modular_industrial_pipes_01/` | Modular Industrial Pipes 01 | <https://polyhaven.com/a/modular_industrial_pipes_01> | Jorge Camacho | pipe runs on the reactor walls |
+| `models/hanging_industrial_lamp/` | Hanging Industrial Lamp | <https://polyhaven.com/a/hanging_industrial_lamp> | Kuutti Siitonen | lamps over the reactor floor |
+| `models/metal_tool_chest/` | Metal Tool Chest | <https://polyhaven.com/a/metal_tool_chest> | Yann Kervran, John Hutcheson | the tool chest at the reactor workbench |
+| `models/Barrel_01/` | Barrel_01 | <https://polyhaven.com/a/Barrel_01> | Jorge Camacho | red drums in the reactor room and at the silos |
+| `models/old_gas_mask/` | Old Gas Mask | <https://polyhaven.com/a/old_gas_mask> | Michał Wiśniewski | a gas mask hung by the reactor stair |
+| `models/CashRegister_01/` | Cash Register 01 | <https://polyhaven.com/a/CashRegister_01> | Joe Seabuhr | tills on the Bullseye-Mart counters |
+| `models/painted_wooden_shelves/` | Painted Wooden Shelves | <https://polyhaven.com/a/painted_wooden_shelves> | Kirill Sannikov | shelves in the Bullseye-Mart and the fish houses |
+| `models/cardboard_box_01/` | Cardboard Box 01 | <https://polyhaven.com/a/cardboard_box_01> | Rahul Chaudhary | stock boxes in the Bullseye-Mart |
+| `models/trashbag/` | Trashbag | <https://polyhaven.com/a/trashbag> | Benny Weimer | frozen rubbish bags |
+| `models/long_life_food/` | Long Life Food | <https://polyhaven.com/a/long_life_food> | Mia Pecina Zorko | ration packs on shelves |
+| `models/Lantern_01/` | Lantern 01 | <https://polyhaven.com/a/Lantern_01> | Rajil Jose Macatangay | lanterns in the fish houses |
+| `models/life_jacket/` | Life Jacket | <https://polyhaven.com/a/life_jacket> | PierreB3D | life jackets hung in the fish houses |
+| `models/Rockingchair_01/` | Rockingchair 01 | <https://polyhaven.com/a/Rockingchair_01> | Jorge Camacho | rocking chairs in the fish houses |
 | `textures/pine_bark/` | Pine Bark | <https://polyhaven.com/a/pine_bark> | Dimitrios Savva | pine trunks |
+| `textures/concrete_floor_worn_001/` | Concrete Floor Worn 001 | <https://polyhaven.com/a/concrete_floor_worn_001> | Dimitrios Savva, Rico Cilliers | Bullseye-Mart stockroom floor |
+| `textures/damaged_concrete_floor_02/` | Damaged Concrete Floor 02 | <https://polyhaven.com/a/damaged_concrete_floor_02> | Rob Tuytel | reactor room floor |
+| `textures/dirty_tiles/` | Dirty Tiles | <https://polyhaven.com/a/dirty_tiles> | Matterfield, Jenelle van Heerden | Bullseye-Mart washroom tiles |
+| `textures/dark_wooden_planks/` | Dark Wooden Planks | <https://polyhaven.com/a/dark_wooden_planks> | Amal Kumar | fish-house floors |
+| `textures/metal_grate_rusty/` | Metal Grate Rusty | <https://polyhaven.com/a/metal_grate_rusty> | Rob Tuytel, Dimitrios Savva | drain grates and catwalks on the reactor level |
 | `textures/rusty_metal_02/` | Rusty Metal 02 | <https://polyhaven.com/a/rusty_metal_02> | Rob Tuytel | wrecked cars |
 | `textures/rusty_corrugated_iron/` | Rusty Corrugated Iron | <https://polyhaven.com/a/rusty_corrugated_iron> | Charlotte Baglioni | Golden Atomic Mills silos |
 | `textures/weathered_plank_siding/` | Weathered Plank Siding | <https://polyhaven.com/a/weathered_plank_siding> | Dimitrios Savva | fish-house walls |
@@ -46,6 +76,12 @@ Fetched by `tools/fetch_assets.py`. License: <https://polyhaven.com/license>.
 | `textures/curly_teddy_natural/` | Curly Teddy Natural | <https://polyhaven.com/a/curly_teddy_natural> | colormass, Rico Cilliers | fur trim on hoods and cuffs |
 | `textures/wool_boucle/` | Wool Boucle | <https://polyhaven.com/a/wool_boucle> | colormass, Rico Cilliers | knit beanies and scarves |
 | `textures/brown_leather/` | Brown Leather | <https://polyhaven.com/a/brown_leather> | Rob Tuytel | gun slings, belts, boots and mittens |
+| `textures/Tiles140/` | Tiles140 | <https://ambientcg.com/view?id=Tiles140> | ambientCG (Lennart Demes) | Vault 143 floor tiles |
+| `textures/PaintedMetal006/` | PaintedMetal006 | <https://ambientcg.com/view?id=PaintedMetal006> | ambientCG (Lennart Demes) | green painted steel: vault lockers and machinery |
+| `textures/PaintedMetal016/` | PaintedMetal016 | <https://ambientcg.com/view?id=PaintedMetal016> | ambientCG (Lennart Demes) | hazard stripes in the reactor room |
+| `textures/Concrete031/` | Concrete031 | <https://ambientcg.com/view?id=Concrete031> | ambientCG (Lennart Demes) | concrete panel walls on the reactor level |
+| `textures/MetalPlates013/` | MetalPlates013 | <https://ambientcg.com/view?id=MetalPlates013> | ambientCG (Lennart Demes) | riveted plating on the reactor core and machinery |
+| `textures/OfficeCeiling003/` | OfficeCeiling003 | <https://ambientcg.com/view?id=OfficeCeiling003> | ambientCG (Lennart Demes) | drop ceiling in the vault lobby |
 <!-- generated-above -->
 ## Font
 

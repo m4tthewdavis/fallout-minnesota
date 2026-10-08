@@ -118,8 +118,8 @@ fn clear_day() -> Grade {
         temperature: -0.004,
         tint: 0.0,
         saturation: 1.06,
-        shadows: Band { saturation: 1.1, contrast: 1.08, gamma: 1.0, gain: 1.0, lift: -0.01 },
-        midtones: Band { saturation: 1.04, contrast: 1.1, gamma: 1.0, gain: 1.02, lift: 0.0 },
+        shadows: Band { saturation: 1.1, contrast: 1.0, gamma: 1.0, gain: 1.0, lift: 0.0 },
+        midtones: Band { saturation: 1.04, contrast: 1.05, gamma: 1.0, gain: 1.02, lift: 0.0 },
         highlights: Band { saturation: 0.9, contrast: 1.04, gamma: 1.0, gain: 1.0, lift: 0.0 },
         aberration: 0.0,
     }
@@ -132,8 +132,8 @@ fn golden() -> Grade {
         temperature: 0.016,
         tint: 0.002,
         saturation: 1.14,
-        shadows: Band { saturation: 1.15, contrast: 1.12, gamma: 1.0, gain: 1.0, lift: -0.015 },
-        midtones: Band { saturation: 1.12, contrast: 1.12, gamma: 1.0, gain: 1.03, lift: 0.0 },
+        shadows: Band { saturation: 1.15, contrast: 1.0, gamma: 1.0, gain: 1.0, lift: 0.0 },
+        midtones: Band { saturation: 1.12, contrast: 1.05, gamma: 1.0, gain: 1.03, lift: 0.0 },
         highlights: Band { saturation: 1.0, contrast: 1.05, gamma: 1.0, gain: 1.02, lift: 0.0 },
         aberration: 0.0,
     }
@@ -146,7 +146,7 @@ fn night() -> Grade {
         temperature: -0.022,
         tint: 0.002,
         saturation: 0.72,
-        shadows: Band { saturation: 0.8, contrast: 1.05, gamma: 1.0, gain: 1.0, lift: 0.004 },
+        shadows: Band { saturation: 0.8, contrast: 1.0, gamma: 1.0, gain: 1.0, lift: 0.004 },
         midtones: Band { saturation: 0.8, contrast: 1.05, gamma: 1.0, gain: 1.0, lift: 0.0 },
         highlights: Band { saturation: 0.85, contrast: 1.0, gamma: 1.0, gain: 1.0, lift: 0.0 },
         aberration: 0.0,
@@ -160,7 +160,7 @@ fn storm() -> Grade {
         temperature: -0.008,
         tint: 0.0,
         saturation: 0.82,
-        shadows: Band { saturation: 0.85, contrast: 1.02, gamma: 1.0, gain: 1.0, lift: 0.0 },
+        shadows: Band { saturation: 0.85, contrast: 1.0, gamma: 1.0, gain: 1.0, lift: 0.0 },
         midtones: Band { saturation: 0.85, contrast: 1.04, gamma: 1.0, gain: 1.0, lift: 0.0 },
         highlights: Band { saturation: 0.85, contrast: 1.0, gamma: 1.0, gain: 0.98, lift: 0.0 },
         aberration: 0.0,
@@ -169,10 +169,10 @@ fn storm() -> Grade {
 
 /// Each room's own look.
 fn room(r: Interior) -> Grade {
-    let base = Grade { shadows: Band { contrast: 1.08, lift: -0.008, ..Band::NEUTRAL }, midtones: Band { contrast: 1.08, ..Band::NEUTRAL }, ..Grade::NEUTRAL };
+    let base = Grade { shadows: Band { contrast: 1.0, lift: 0.0, ..Band::NEUTRAL }, midtones: Band { contrast: 1.04, ..Band::NEUTRAL }, ..Grade::NEUTRAL };
     match r {
         // Lamp-lit plank walls: warm and close.
-        Interior::FishHouse(_) => Grade { temperature: 0.014, saturation: 1.1, ..base },
+        Interior::FishHouse(_) => Grade { temperature: 0.006, saturation: 1.0, ..base },
         // Clean, blue and clinical.
         Interior::VaultLobby => Grade { temperature: -0.008, saturation: 0.95, ..base },
         // A dead shop: drained of colour.
@@ -182,8 +182,8 @@ fn room(r: Interior) -> Grade {
             temperature: -0.01,
             tint: -0.004,
             saturation: 1.05,
-            shadows: Band { contrast: 1.12, lift: -0.012, ..Band::NEUTRAL },
-            midtones: Band { contrast: 1.12, ..Band::NEUTRAL },
+            shadows: Band { contrast: 1.0, lift: 0.0, ..Band::NEUTRAL },
+            midtones: Band { contrast: 1.05, ..Band::NEUTRAL },
             ..base
         },
     }
@@ -216,7 +216,7 @@ pub fn grade(m: &Mood) -> Grade {
     // Badly hurt: colour bleeds out, contrast climbs, the edges fringe.
     let dying = 1.0 - smoothstep(0.12, 0.4, m.health);
     g.saturation *= 1.0 - 0.6 * dying;
-    g.midtones.contrast += 0.12 * dying;
+    g.midtones.contrast += 0.04 * dying;
     g.aberration += 0.012 * dying;
     // A hit: a jolt of fringing.
     g.aberration += 0.03 * m.hurt.clamp(0.0, 1.0);
@@ -290,6 +290,30 @@ mod tests {
         assert!(g.aberration > 0.01);
         let hit = grade(&Mood { hurt: 1.0, ..day() });
         assert!(hit.aberration > 0.02 && hit.aberration <= 0.05);
+    }
+
+    #[test]
+    fn lift_is_never_negative() {
+        // A negative lift pushes dark pixels below zero, where they clip to black.
+        let rooms = [None, Some(Interior::FishHouse(0)), Some(Interior::VaultLobby), Some(Interior::Mart), Some(Interior::Reactor)];
+        for interior in rooms {
+            for day in [0.0, 0.5, 1.0] {
+                for health in [0.0, 0.5, 1.0] {
+                    let g = grade(&Mood { interior, day, health, warmth: day, overcast: 1.0 - day, ..day_mood() });
+                    for b in [g.shadows, g.midtones, g.highlights] {
+                        assert!(b.lift >= 0.0 && b.gain > 0.0 && b.gamma > 0.0, "{interior:?} {b:?}");
+                    }
+                    // Contrast pivots on 0.5 in linear light, before tonemapping:
+                    // any boost in the shadows clips dim rooms to black.
+                    assert!(g.shadows.contrast <= 1.0, "{interior:?}");
+                    assert!(g.midtones.contrast <= 1.1, "{interior:?}");
+                }
+            }
+        }
+    }
+
+    fn day_mood() -> Mood {
+        Mood::default()
     }
 
     #[test]

@@ -20,6 +20,7 @@ use crate::sim::keys::Bind;
 use crate::assets::GameAssets;
 use crate::characters::PersonKit;
 use crate::interact::{spawn_container, ContainerAssets, FixtureClaim};
+use crate::library::Library;
 use crate::meshes::to_mesh_tangents;
 use crate::player::{Player, EYE_HEIGHT};
 use crate::quest::{Perks, StartTalk, UseSpot};
@@ -114,8 +115,9 @@ impl Plugin for InteriorPlugin {
 // Building the rooms
 // ---------------------------------------------------------------------------
 
-/// Materials shared by the rooms.
-struct Kit {
+/// Materials shared by the rooms, and the furniture library.
+struct Kit<'a> {
+    lib: &'a Library,
     planks: Handle<StandardMaterial>,
     concrete: Handle<StandardMaterial>,
     metal: Handle<StandardMaterial>,
@@ -137,8 +139,9 @@ struct Kit {
     alarm: Handle<StandardMaterial>,
 }
 
-fn make_kit(materials: &mut Assets<StandardMaterial>, assets: &GameAssets) -> Kit {
+fn make_kit<'a>(materials: &mut Assets<StandardMaterial>, assets: &GameAssets, lib: &'a Library) -> Kit<'a> {
     Kit {
+        lib,
         planks: assets.planks_dark.clone(),
         concrete: assets.concrete.clone(),
         metal: assets.vault_metal.clone(),
@@ -186,6 +189,31 @@ fn flicker(r: &mut ChildSpawnerCommands, color: Color, intensity: f32, range: f3
     r.spawn((flicker_light(color, intensity, range, false, seed), Transform::from_xyz(at[0], at[1], at[2])));
 }
 
+/// A library model at `at` (local to the room), turned `yaw`, scaled `scale`.
+fn model(r: &mut ChildSpawnerCommands, k: &Kit, id: &str, at: [f32; 3], yaw: f32, scale: f32) {
+    r.spawn((k.lib.scene(id), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(Quat::from_rotation_y(yaw)).with_scale(Vec3::splat(scale))));
+}
+
+/// One piece of a library kit at `at`, turned by `rot`.
+fn piece(r: &mut ChildSpawnerCommands, k: &Kit, kit: &str, node: &'static str, at: [f32; 3], rot: Quat) {
+    r.spawn((k.lib.piece(kit, node), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(rot), Visibility::default()));
+}
+
+/// A fluorescent fitting on the ceiling, its tube glowing, running along z.
+fn tube_light(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, at: [f32; 3]) {
+    piece(r, k, "mounted_fluorescent_lights", "mounted_fluorescent_lights_a", [at[0], at[1], at[2]], Quat::from_rotation_y(FRAC_PI_2));
+    glowing(r, meshes, &k.strip, [at[0], at[1] - 0.035, at[2]], [0.035, 0.03, 0.86]);
+}
+
+/// Panels of another surface on the lower part of every wall (`top` high).
+fn wainscot(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, room: Interior, material: &Handle<StandardMaterial>, top: f32) {
+    let (hw, hd) = room.half();
+    let t = 0.04;
+    for (x, z, w, d) in [(0.0, -hd + t / 2.0, hw * 2.0, t), (0.0, hd - t / 2.0, hw * 2.0, t), (-hw + t / 2.0, 0.0, t, hd * 2.0), (hw - t / 2.0, 0.0, t, hd * 2.0)] {
+        block(r, meshes, material, [x, top / 2.0, z], [w, top, d]);
+    }
+}
+
 /// The four walls, floor and ceiling of a room, with colliders. `door_wall`
 /// is the south wall. Returns nothing: the rest is furniture.
 #[allow(clippy::too_many_arguments)]
@@ -225,9 +253,10 @@ pub fn spawn_interiors(
     mut rng: ResMut<RngRes>,
     mut colliders: ResMut<Colliders>,
     people: Res<PersonKit>,
+    lib: Res<Library>,
 ) {
     let solid = &mut colliders.0;
-    let kit = make_kit(&mut materials, &assets);
+    let kit = make_kit(&mut materials, &assets, &lib);
     for room in interiors::ALL {
         let (ox, oz) = room.origin();
         // Rooms are hidden until you're in one (see `show_current_room`).
@@ -264,7 +293,7 @@ fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, 
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
     let h = room.height();
-    shell(r, meshes, solid, room, &k.planks, &k.planks, &k.planks);
+    shell(r, meshes, solid, room, &k.lib.surface("dark_wooden_planks"), &k.planks, &k.planks);
     // Ceiling beams.
     for z in [-1.0f32, 1.0] {
         block(r, meshes, &k.pole, [0.0, h - 0.08, z], [hw * 2.0, 0.14, 0.16]);
@@ -301,9 +330,13 @@ fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, 
         block(r, meshes, &k.pole, [0.4 + dx, 0.38, -0.1 + dz], [0.07, 0.76, 0.07]);
     }
     solid.push(Shape::rect_centered(ox + 0.4, oz - 0.1, 1.5, 1.0));
-    cylinder(r, meshes, &k.lamp, [0.2, 0.9, -0.1], 0.07, 0.16);
+    model(r, k, "Lantern_01", [0.2, 0.815, -0.1], 0.4, 1.3);
+    cylinder(r, meshes, &k.lamp, [0.2, 0.97, -0.1], 0.022, 0.07);
     flicker(r, Color::srgb(1.0, 0.8, 0.45), 90_000.0, 6.0, [0.2, 1.05, -0.1], 5.0 + i as f32);
-    cylinder(r, meshes, &k.pole, [1.2, 0.25, 0.8], 0.2, 0.5);
+    // A rocking chair turned to the stove, and a life jacket on a nail by the door.
+    model(r, k, "Rockingchair_01", [1.35, 0.0, 0.95], PI - 0.5, 1.0);
+    solid.push(Shape::Circle { x: ox + 1.35, z: oz + 0.95, r: 0.45 });
+    model(r, k, "life_jacket", [hw - 0.1, 1.45, 1.45], -FRAC_PI_2, 0.9);
     // A shelf of tins on the north wall, a rug, and fishing gear on the east wall.
     block(r, meshes, &k.pole, [-0.4, 1.35, -hd + 0.15], [1.4, 0.05, 0.28]);
     for dx in [-0.8f32, -0.5, -0.2, 0.0] {
@@ -371,7 +404,9 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
     let h = room.height();
-    shell(r, meshes, solid, room, &k.concrete, &k.metal, &k.concrete);
+    shell(r, meshes, solid, room, &k.lib.surface("Tiles140"), &k.metal, &k.concrete);
+    // Two-tone walls: institutional green below the stripe.
+    wainscot(r, meshes, room, &k.lib.surface("PaintedMetal006"), 0.95);
     // Yellow lane markings on the floor and a stripe round the walls.
     for x in [-1.6f32, 1.6] {
         glowing(r, meshes, &k.yellow, [x, 0.005, 0.0], [0.12, 0.01, hd * 2.0 - 1.0]);
@@ -383,11 +418,21 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
         glowing(r, meshes, &k.yellow, [x, 1.0, 0.0], [0.02, 0.14, hd * 2.0]);
     }
     // Ceiling light strips and the pools of light under them.
-    for (n, z) in [-3.6f32, -1.2, 1.2, 3.6].into_iter().enumerate() {
+    for z in [-3.6f32, -1.2, 1.2, 3.6] {
         for x in [-3.8f32, 3.8] {
-            glowing(r, meshes, &k.strip, [x, h - 0.04, z], [0.25, 0.05, 1.6]);
+            tube_light(r, meshes, k, [x, h, z - 0.46]);
+            tube_light(r, meshes, k, [x, h, z + 0.46]);
         }
-        let _ = n;
+    }
+    // Air ducts along the ceiling over both sides of the hall.
+    for x in [-5.7f32, 5.7] {
+        for n in 0..6 {
+            piece(r, k, "modular_airduct_rectangular_01", "modular_airduct_rectangular_01_tripple_01", [x, h - 0.35, -hd + 0.15 + n as f32 * 1.8], Quat::IDENTITY);
+        }
+    }
+    // Breaker boxes on the east wall.
+    for z in [3.4f32, 4.0] {
+        model(r, k, "power_box_01", [hw - 0.06, 1.7, z], -FRAC_PI_2, 1.0);
     }
     for (x, z) in [(-3.8f32, -2.4f32), (3.8, -2.4), (-3.8, 2.4), (3.8, 2.4)] {
         light(r, Color::srgb(0.9, 0.95, 1.0), 260_000.0, 12.0, [x, h - 0.5, z]);
@@ -425,22 +470,27 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
         cylinder(r, meshes, &k.yellow, [a.cos() * 2.0, 2.2 + a.sin() * 2.0, dz - 0.4], 0.07, 0.08);
     }
     light(r, Color::srgb(1.0, 0.85, 0.5), 120_000.0, 7.0, [0.0, 1.0, hd - 1.4]);
-    // The Overseer's desk and terminal, against the north wall.
-    block(r, meshes, &k.metal, [0.0, 0.45, -hd + 1.0], [3.4, 0.9, 1.0]);
-    block(r, meshes, &k.dark, [0.0, 0.92, -hd + 1.0], [3.5, 0.06, 1.1]);
-    block(r, meshes, &k.black, [0.0, 1.25, -hd + 0.85], [0.8, 0.6, 0.6]);
+    // The Overseer's desk and terminal, against the north wall, a radio set
+    // beside it and filing cabinets either side.
+    let top = 0.79 * 1.2;
+    model(r, k, "metal_office_desk", [0.0, 0.0, -hd + 1.0], 0.0, 1.2);
+    model(r, k, "Television_01", [0.0, top, -hd + 0.85], 0.0, 1.1);
     r.spawn((
-        Mesh3d(meshes.add(Cuboid::new(0.64, 0.46, 0.02))),
+        Mesh3d(meshes.add(Cuboid::new(0.42, 0.3, 0.01))),
         MeshMaterial3d(k.screen.clone()),
-        Transform::from_xyz(0.0, 1.27, -hd + 1.16).with_rotation(Quat::from_rotation_x(-0.12)),
+        Transform::from_xyz(0.0, top + 0.26, -hd + 0.85 + 0.27),
         NotShadowCaster,
     ));
+    model(r, k, "vintage_radio_transceiver", [0.85, top, -hd + 0.8], -0.25, 1.0);
+    for x in [-2.2f32, 2.2] {
+        model(r, k, "drawer_cabinet", [x, 0.0, -hd + 0.3], 0.0, 1.0);
+        solid.push(Shape::rect_centered(ox + x, oz - hd + 0.3, 1.3, 0.7));
+    }
     light(r, Color::srgb(1.0, 0.65, 0.3), 90_000.0, 6.0, [0.0, 1.5, -hd + 2.0]);
-    solid.push(Shape::rect_centered(ox, oz - hd + 1.0, 3.6, 1.2));
+    solid.push(Shape::rect_centered(ox, oz - hd + 1.0, 2.6, 1.3));
     r.spawn((Transform::from_xyz(0.0, 1.0, -hd + 1.9), Fixture { kind: FixtureKind::Talk(Npc::Overseer), space: Some(room) }));
-    // An office chair, two benches along the east wall.
-    block(r, meshes, &k.dark, [0.0, 0.5, -hd + 2.2], [0.5, 0.08, 0.5]);
-    block(r, meshes, &k.dark, [0.0, 0.85, -hd + 2.42], [0.5, 0.6, 0.07]);
+    // A chair, two benches along the east wall.
+    model(r, k, "SchoolChair_01", [0.0, 0.0, -hd + 2.1], PI, 1.0);
     for z in [-1.5f32, 1.5] {
         block(r, meshes, &k.metal, [hw - 0.6, 0.45, z], [0.5, 0.08, 1.8]);
         block(r, meshes, &k.metal, [hw - 0.4, 0.8, z], [0.08, 0.7, 1.8]);
@@ -485,7 +535,7 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
     let h = room.height();
-    shell(r, meshes, solid, room, &k.concrete, &k.concrete, &k.concrete);
+    shell(r, meshes, solid, room, &k.lib.surface("concrete_floor_worn_001"), &k.concrete, &k.concrete);
     // Exposed girders overhead.
     for z in [-5.0f32, -1.7, 1.6, 4.9] {
         block(r, meshes, &k.rust, [0.0, h - 0.2, z], [hw * 2.0, 0.3, 0.3]);
@@ -524,7 +574,7 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
     // Checkout counters by the loading dock, and boxes on the floor.
     for x in [-5.0f32, -2.5] {
         block(r, meshes, &k.dark, [x, 0.5, hd - 2.4], [1.9, 1.0, 0.8]);
-        block(r, meshes, &k.black, [x - 0.4, 1.12, hd - 2.4], [0.4, 0.25, 0.4]);
+        model(r, k, "CashRegister_01", [x - 0.4, 1.0, hd - 2.4], PI, 1.0);
         solid.push(Shape::rect_centered(ox + x, oz + hd - 2.4, 2.0, 0.9));
     }
     for (n, (x, z)) in [(6.4f32, 3.4f32), (7.4, 2.4), (-7.6, 3.6), (4.2, 4.6), (-0.5, 5.0)].into_iter().enumerate() {
@@ -532,6 +582,23 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
         r.spawn((SceneRoot(scene.clone()), Transform::from_xyz(x, 0.0, z).with_rotation(Quat::from_rotation_y(n as f32)).with_scale(Vec3::splat(1.2))));
         solid.push(Shape::Circle { x: ox + x, z: oz + z, r: 0.5 });
     }
+    // Stock boxes stacked along the side walls, rubbish bags by the dock.
+    for (n, (x, y, z)) in [(8.6f32, 0.0f32, -3.4f32), (8.55, 0.34, -3.35), (8.7, 0.0, -2.8), (8.6, 0.0, -1.0), (-8.8, 0.0, -3.0), (-8.7, 0.34, -2.95), (-8.6, 0.0, -1.1)].into_iter().enumerate() {
+        model(r, k, "cardboard_box_01", [x, y, z], n as f32 * 0.7, 1.4);
+    }
+    for (x, z) in [(8.6f32, -3.1f32), (8.6, -1.0), (-8.7, -2.0)] {
+        solid.push(Shape::Circle { x: ox + x, z: oz + z, r: 0.6 });
+    }
+    for (n, (x, z)) in [(5.9f32, 6.6f32), (6.5, 6.9), (5.3, 6.95), (-3.4, 6.8)].into_iter().enumerate() {
+        model(r, k, "trashbag", [x, 0.0, z], n as f32 * 1.3, 1.1);
+    }
+    solid.push(Shape::Circle { x: ox + 5.9, z: oz + 6.8, r: 0.9 });
+    // Painted shelves of rations along the west wall.
+    for z in [5.4f32, 6.0] {
+        model(r, k, "painted_wooden_shelves", [-hw + 0.05, 0.0, z], FRAC_PI_2, 1.1);
+        model(r, k, "long_life_food", [-hw + 0.25, 0.62, z + 0.2], FRAC_PI_2, 0.9);
+    }
+    solid.push(Shape::rect_centered(ox - hw + 0.3, oz + 5.7, 0.7, 1.4));
     // The loading dock's roller door.
     let (dx, dz) = (0.0f32, hd - 0.1);
     block(r, meshes, &k.rust, [dx, 1.4, dz - 0.05], [3.2, 2.8, 0.1]);
@@ -541,7 +608,8 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
     glowing(r, meshes, &k.cold_light, [dx, 0.015, dz - 0.14], [3.1, 0.03, 0.03]);
     // Strip lights, some of them dying.
     for (n, (x, z)) in [(-6.0f32, -4.0f32), (-1.5, -4.0), (5.5, -4.0), (-6.0, 2.5), (-1.0, 2.5), (6.0, 2.5)].into_iter().enumerate() {
-        glowing(r, meshes, &k.strip, [x, h - 0.06, z], [0.2, 0.05, 1.8]);
+        tube_light(r, meshes, k, [x, h, z - 0.46]);
+        tube_light(r, meshes, k, [x, h, z + 0.46]);
         flicker(r, Color::srgb(0.75, 0.85, 1.0), if n % 2 == 0 { 200_000.0 } else { 120_000.0 }, 9.5, [x, h - 0.6, z], n as f32 * 1.7);
     }
 }
@@ -598,10 +666,12 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
     let h = room.height();
-    shell(r, meshes, solid, room, &k.concrete, &k.metal, &k.concrete);
-    // Hazard-striped floor round the core, and yellow rails along the walls.
-    for (x, z, w, d) in [(0.0, -1.8 - 2.5, 5.2, 0.12), (0.0, -1.8 + 2.5, 5.2, 0.12), (-2.6, -1.8, 0.12, 5.0), (2.6, -1.8, 0.12, 5.0)] {
-        glowing(r, meshes, &k.yellow, [x, 0.006, z], [w, 0.012, d]);
+    shell(r, meshes, solid, room, &k.lib.surface("damaged_concrete_floor_02"), &k.lib.surface("Concrete031"), &k.concrete);
+    // Hazard-striped skirting, a hazard border round the core, and yellow rails along the walls.
+    let hazard = k.lib.surface("PaintedMetal016");
+    wainscot(r, meshes, room, &hazard, 0.3);
+    for (x, z, w, d) in [(0.0, -1.8 - 2.55, 5.4, 0.3), (0.0, -1.8 + 2.55, 5.4, 0.3), (-2.55, -1.8, 0.3, 4.8), (2.55, -1.8, 0.3, 4.8)] {
+        block(r, meshes, &hazard, [x, 0.008, z], [w, 0.016, d]);
     }
     for x in [-hw + 0.06, hw - 0.06] {
         glowing(r, meshes, &k.yellow, [x, 1.0, 0.0], [0.02, 0.12, hd * 2.0]);
@@ -610,7 +680,12 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
     // ---- The reactor core: a plinth, a fat steel column and rings of cold light ----
     let core = [0.0f32, -1.8];
     cylinder(r, meshes, &k.dark, [core[0], 0.25, core[1]], 2.2, 0.5);
-    cylinder(r, meshes, &k.metal, [core[0], h / 2.0, core[1]], 1.45, h);
+    let plates = k.lib.surface("MetalPlates013");
+    r.spawn((
+        Mesh3d(meshes.add(to_mesh_tangents(&meshgen::lathe(&[(1.45, -h / 2.0), (1.45, h / 2.0)], 24, 1.5, false, false)))),
+        MeshMaterial3d(plates.clone()),
+        Transform::from_xyz(core[0], h / 2.0, core[1]),
+    ));
     for y in [1.0f32, 2.1, 3.2, 4.3] {
         cylinder(r, meshes, &k.coolant, [core[0], y, core[1]], 1.52, 0.12);
     }
@@ -645,6 +720,16 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
     r.spawn((PointLight { color: Color::srgb(1.0, 0.2, 0.15), intensity: 90_000.0, range: 6.0, ..default() }, Transform::from_xyz(hw - 1.4, 2.4, pz), PumpDead));
     r.spawn((PointLight { color: Color::srgb(0.4, 0.95, 1.0), intensity: 160_000.0, range: 7.0, ..default() }, Transform::from_xyz(hw - 1.4, 2.4, pz), PumpRunning, Visibility::Hidden));
 
+    // ---- Two old compressors along the east wall, south of the pump ----
+    for z in [-2.2f32, -4.4] {
+        // (The model sits 4 m off its own origin: move it back under ours.)
+        r.spawn((Transform::from_xyz(hw - 0.7, 0.0, z), Visibility::default())).with_children(|c| {
+            c.spawn((k.lib.scene("old_military_compressor"), Transform::from_xyz(0.42, 0.0, 4.22)));
+        });
+    }
+    solid.push(Shape::rect_centered(ox + hw - 0.7, oz - 3.3, 0.9, 4.0));
+    model(r, k, "hanging_industrial_lamp", [PUMP_BAY.0 - 0.6, h, PUMP_BAY.1], 0.0, 1.0);
+
     // ---- The bench where seals are cut ----
     let (bx, bz) = BENCH;
     block(r, meshes, &k.pole, [bx, 0.9, bz], [2.6, 0.08, 1.1]);
@@ -654,11 +739,31 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
     block(r, meshes, &k.dark, [bx, 0.97, bz], [2.4, 0.04, 0.95]);
     r.spawn((SceneRoot(assets.toolbox.clone()), Transform::from_xyz(bx - 0.8, 0.94, bz).with_scale(Vec3::splat(1.5))));
     solid.push(Shape::rect_centered(ox + bx, oz + bz, 2.8, 1.3));
+    model(r, k, "hanging_industrial_lamp", [bx, h, bz], 0.0, 1.0);
+    model(r, k, "metal_tool_chest", [bx + 1.75, 0.0, bz - 0.1], -0.3, 1.1);
+    solid.push(Shape::Circle { x: ox + bx + 1.75, z: oz + bz - 0.1, r: 0.45 });
+    // Red drums in the corner behind the pillar.
+    for (n, (x, z)) in [(-5.7f32, -2.6f32), (-5.95, -1.95), (-5.35, -1.85)].into_iter().enumerate() {
+        model(r, k, "Barrel_01", [x, 0.0, z], n as f32 * 1.9, 1.0);
+    }
+    solid.push(Shape::Circle { x: ox - 5.65, z: oz - 2.15, r: 0.85 });
     light(r, Color::srgb(1.0, 0.85, 0.6), 140_000.0, 6.0, [bx, 2.2, bz]);
 
     // ---- A control desk along the north wall, its lamps blinking ----
     block(r, meshes, &k.metal, [-hw + 2.4, 0.5, -hd + 0.6], [3.4, 1.0, 0.9]);
     block(r, meshes, &k.black, [-hw + 2.4, 1.15, -hd + 0.45], [3.2, 0.4, 0.5]);
+    for x in [-hw + 1.3, -hw + 2.4, -hw + 3.5] {
+        model(r, k, "vintage_spacecraft_instrument", [x, 1.35 + 0.17, -hd + 0.42], 0.0, 1.3);
+    }
+    // Pipe runs and breaker boxes on the north wall.
+    for (node, x, y) in [("modular_industrial_pipes_01_pipe02", 1.4f32, 1.0f32), ("modular_industrial_pipes_01_pipe02", 1.8, 1.0), ("modular_industrial_pipes_01_pipe03", 2.6, 0.7), ("modular_industrial_pipes_01_pipe05", 2.6, 1.75)] {
+        piece(r, k, "modular_industrial_pipes_01", node, [x, y, -hd + 0.14], Quat::IDENTITY);
+    }
+    for x in [3.6f32, 4.1] {
+        model(r, k, "power_box_01", [x, 1.7, -hd + 0.06], 0.0, 1.0);
+    }
+    // A gas mask hung by the stair.
+    model(r, k, "old_gas_mask", [-hw + 0.1, 2.1, hd - 2.4], FRAC_PI_2, 1.0);
     for n in 0..8 {
         let lamp = if n % 3 == 0 { &k.alarm } else { &k.coolant };
         r.spawn((
@@ -676,7 +781,10 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
         solid.push(Shape::rect_centered(ox + x, oz + z, 0.9, 0.9));
     }
     for z in [-3.5f32, 0.5, 3.5] {
-        glowing(r, meshes, &k.strip, [0.0, h - 0.05, z], [2.8, 0.05, 0.2]);
+        for x in [-0.95f32, 0.0, 0.95] {
+            piece(r, k, "mounted_fluorescent_lights", "mounted_fluorescent_lights_a", [x, h, z], Quat::IDENTITY);
+            glowing(r, meshes, &k.strip, [x, h - 0.035, z], [0.86, 0.03, 0.035]);
+        }
     }
     // The stair up, against the west wall.
     for n in 0..5 {
