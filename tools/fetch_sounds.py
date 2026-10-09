@@ -6,7 +6,8 @@ Run from the repository root:
     python3 tools/fetch_sounds.py            # download (cached), process, write, update CREDITS.md
     python3 tools/fetch_sounds.py --report   # also print a loudness / length table for every clip
     python3 tools/fetch_sounds.py --force    # rebuild every clip even if it is up to date
-    python3 tools/fetch_sounds.py --music    # rebuild only the three music loops (+ credits)
+    python3 tools/fetch_sounds.py --music    # rebuild only the two music loops (+ credits)
+    python3 tools/fetch_sounds.py --check    # offline listening proxies for the music (seam, levels, masking)
     python3 tools/fetch_sounds.py --verify   # re-check each source's licence on its Freesound page (online)
 
 What it does
@@ -26,7 +27,7 @@ What it does
   synth.rs `muffled()`, so the loader doesn't fall back to a bright copy through a wall.
 * Files are named `<snake_case_sound>_<take>.ogg` (src/sim/recorded.rs). Sounds with no files stay
   synthesised (Geiger, Pip-Boy).
-* The music (`music_calm_0`, `music_tense_0`, `music_danger_0`) comes from three CC0 OpenGameArt tracks listed in
+* The music (`music_calm_0`, `music_danger_0`; tense stays synthesised) comes from two CC0 OpenGameArt tracks listed in
   MUSIC. Each is cut to a loop of whole bars (the tail is cross-faded into the head at the best-matching phase),
   made mono when the recording is mono anyway (the music bus is not spatial), high-passed at 25 Hz, and levelled to
   the loudness of the synthesised music (TARGET_DB). Cached under ~/stage/audio_cache/music/.
@@ -112,7 +113,7 @@ LICENCE_URL = {
 # ---------------------------------------------------------------------------------------------
 # Music. stem -> source (OpenGameArt page, direct file URL, cache name, author, title, licence), the loop
 # (start s, length s, cross-fade s, phase search s, "tonal"|"noise") and the Vorbis quality. The lengths are whole
-# bars of each track (tense: 3.75 s bars; danger: 9.08 s = 4 bars), found by autocorrelating the onsets.
+# bars of each track (danger: 9.08 s = 4 bars), found by autocorrelating the onsets.
 # ---------------------------------------------------------------------------------------------
 OGA = "https://opengameart.org/sites/default/files/"
 MUSIC = {
@@ -121,11 +122,6 @@ MUSIC = {
         cache="the_world_fell_silent_loop.flac", author="Loukyo", title="The World Fell Silent (loop version)", lic="CC0",
         loop=(0.0, 148.0, 4.0, 0.0, "noise"), q=0.3,
         note="sparse post-nuclear ambient; slow pads, long swells"),
-    "music_tense": dict(
-        page="https://opengameart.org/content/a-lurking-evil-horror-ambience", url=OGA + "evil_0.ogg",
-        cache="evil_0.ogg", author="Tsorthan Grove", title="A lurking evil (horror ambience)", lic="CC0",
-        loop=(0.0, 67.5, 2.0, 0.15, "tonal"), q=0.3,
-        note="heartbeat pulses and sparse piano"),
     "music_danger": dict(
         page="https://opengameart.org/content/danger-escape", url=OGA + "Danger%20Escape_0.ogg",
         cache="danger_escape_0.ogg", author="Fupi", title="Danger Escape", lic="CC0",
@@ -1000,8 +996,8 @@ def credits_section():
         "Built by `tools/fetch_sounds.py` into `sounds/` (Ogg Vorbis). Every clip is trimmed, mixed to mono, resampled to",
         "44.1 kHz, faded, level-matched and (for the muffled copies) low-passed: modified from the originals. Sources are the",
         "CC0 Kenney packs (Impact Sounds and RPG Audio; <https://kenney.nl/assets>) and Freesound sounds under CC0 or",
-        "CC BY (attribution below, as the licence requires). The three music loops are cut from CC0 OpenGameArt tracks (listed",
-        "under CC0, loop lengths and levels are ours). Sounds with no file here (the Geiger counter and the Pip-Boy",
+        "CC BY (attribution below, as the licence requires). The two music loops are cut from CC0 OpenGameArt tracks (listed",
+        "under CC0, loop lengths and levels are ours). Sounds with no file here (the tense music, the Geiger counter and the Pip-Boy",
         "interface sounds) are still synthesised from code.",
         "",
     ]
@@ -1053,10 +1049,104 @@ def write_credits():
     print("wrote", os.path.relpath(CREDITS, ROOT))
 
 
+# ---------------------------------------------------------------------------------------------
+# Offline listening proxies (python3 tools/fetch_sounds.py --check): numbers for what a human should hear.
+# ---------------------------------------------------------------------------------------------
+def a_weight_db(f):
+    f2 = np.maximum(f, 1e-3) ** 2
+    ra = (12194 ** 2 * f2 ** 2) / ((f2 + 20.6 ** 2) * np.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194 ** 2))
+    return 20 * np.log10(ra + 1e-12) + 2.0
+
+
+def a_weighted(x):
+    X = np.fft.rfft(x)
+    return np.fft.irfft(X * 10 ** (a_weight_db(np.fft.rfftfreq(len(x), 1.0 / SR)) / 20), len(x))
+
+
+def load_mono(name):
+    x, _ = sf.read(os.path.join(OUT, name), dtype="float64")
+    return x if x.ndim == 1 else x.mean(axis=1)
+
+
+def band_db(x, lo, hi):
+    X = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    f = np.fft.rfftfreq(len(x), 1.0 / SR)
+    return 10 * np.log10(X[(f >= lo) & (f < hi)].sum() / len(x) ** 2 * 8 / 3 + 1e-20)
+
+
+def run_checks():
+    MIX_MUSIC, MIX_SFX, LEVELS = 0.8 * 0.6, 0.8 * 1.0, {"music_calm": 0.8, "music_tense": 0.9, "music_danger": 1.0}
+    # 1. The tense seam: three laps, pulse onsets across the join.
+    if not os.path.exists(os.path.join(OUT, "music_tense_0.ogg")):
+        print("tense music is synthesised: no seam / level check")
+        return
+    t = load_mono("music_tense_0.ogg")
+    n = len(t)
+    three = np.concatenate([t, t, t])
+    w = SR // 100
+    env = np.sqrt((three[:len(three) // w * w].reshape(-1, w) ** 2).mean(axis=1)) + 1e-7
+    db = 20 * np.log10(env)
+    flux = np.diff(db)
+    on = [i for i in range(2, len(flux) - 2) if flux[i] > 6 and flux[i] >= flux[i - 1] and flux[i] >= flux[i + 1]]
+    seam1, seam2 = n // w, 2 * n // w
+    iois = np.diff(on) / 100.0
+    across = [(on[i + 1] - on[i]) / 100.0 for i in range(len(on) - 1) if on[i] < seam2 <= on[i + 1] or on[i] < seam1 <= on[i + 1]]
+    inside = [(on[i + 1] - on[i]) / 100.0 for i in range(len(on) - 1) if seam1 < on[i] and on[i + 1] < seam2]
+    bar = 3.75
+    phase = [((o / 100.0 - 0.0) % bar) for o in on if seam1 < o < seam2]
+    ph_in = np.median(phase)
+    ph_seam = [((o / 100.0) % bar) for o in on if abs(o - seam2) < 400 or abs(o - seam1) < 400]
+    step = lambda c: 20 * np.log10(np.sqrt((three[c:c + SR // 2] ** 2).mean()) / np.sqrt((three[c - SR // 2:c] ** 2).mean()))
+    blocks = [abs(20 * np.log10(np.sqrt((t[a:a + SR // 2] ** 2).mean()) / np.sqrt((t[a - SR // 2:a] ** 2).mean()))) for a in range(SR // 2, n - SR // 2, SR // 2)]
+    print("tense seam")
+    print(f"  pulse onsets in 3 laps: {len(on)}; gap inside a lap median {np.median(inside):.2f}s; gaps straddling the seam {', '.join(f'{a:.2f}' for a in across)} s")
+    print(f"  onset phase within the 3.75 s bar: median {ph_in:.2f}s inside, near seams {', '.join(f'{p_:.2f}' for p_ in ph_seam)}")
+    print(f"  level step across the join (0.5 s RMS after/before): {step(n):+.1f} dB; typical 0.5 s step inside the loop {np.median(blocks):.1f} dB, 90th pct {np.percentile(blocks, 90):.1f} dB")
+    # 2. Calm vs tense at the same mix (director LEVEL and bus gain applied; A-weighted 1 s windows).
+    print("calm vs tense (A-weighted, after director level x music bus 0.48), 1 s windows")
+    res = {}
+    for stem in ("music_calm", "music_tense", "music_danger"):
+        x = a_weighted(load_mono(f"{stem}_0.ogg")) * LEVELS[stem] * MIX_MUSIC
+        wv = np.sqrt((x[:len(x) // SR * SR].reshape(-1, SR) ** 2).mean(axis=1))
+        d = 20 * np.log10(wv + 1e-9)
+        res[stem] = d
+        print(f"  {stem:13s} p10 {np.percentile(d, 10):6.1f}  median {np.median(d):6.1f}  p90 {np.percentile(d, 90):6.1f}  mean-power {10 * np.log10((wv ** 2).mean()):6.1f} dBFS(A)")
+    print(f"  tense minus calm: median {np.median(res['music_tense']) - np.median(res['music_calm']):+.1f} dB, mean-power {10 * np.log10((10 ** (res['music_tense'] / 10)).mean()) - 10 * np.log10((10 ** (res['music_calm'] / 10)).mean()):+.1f} dB")
+    # 3. Danger vs a rifle shot: band levels below 120 Hz, the shot's first 150 ms vs the music's 150 ms windows.
+    d = load_mono("music_danger_0.ogg") * LEVELS["music_danger"] * MIX_MUSIC
+    bands = [(25, 40), (40, 63), (63, 100), (100, 160), (160, 250), (250, 500), (500, 1000), (1000, 4000)]
+    win = int(0.15 * SR)
+    print("danger vs rifle shot (rifle 0.85 x sfx 0.8; danger level 1.0 x music 0.48), dB per band; margin = shot minus danger p90")
+    print(f"  {'band Hz':>10s} " + " ".join(f"{('rifle_%d' % k):>9s}" for k in range(6)) + "   danger p50  p90   margin(min..max)")
+    shots = []
+    for k in range(6):
+        r = load_mono(f"rifle_shot_{k}.ogg") * 0.85 * MIX_SFX
+        i = int(np.argmax(np.abs(r)))
+        shots.append(r[max(0, i - win // 6):max(0, i - win // 6) + win])
+    wins = [d[a:a + win] for a in range(0, len(d) - win, win // 2)]
+    share = []
+    for lo, hi in bands:
+        sh = [band_db(s_, lo, hi) for s_ in shots]
+        dd = np.array([band_db(w_, lo, hi) for w_ in wins])
+        p50, p90 = np.percentile(dd, 50), np.percentile(dd, 90)
+        print(f"  {lo:4d}-{hi:<5d} " + " ".join(f"{v:9.1f}" for v in sh) + f"   {p50:8.1f} {p90:6.1f}   {min(sh) - p90:+.1f}..{max(sh) - p90:+.1f}")
+    for k, s_ in enumerate(shots):
+        e_lo = 10 ** (band_db(s_, 20, 120) / 10)
+        e_all = 10 ** (band_db(s_, 20, 20000) / 10)
+        share.append(100 * e_lo / e_all)
+    print("  share of each shot's energy below 120 Hz: " + ", ".join(f"{v:.0f}%" for v in share))
+    full = [10 * np.log10((s_ ** 2).mean()) for s_ in shots]
+    print(f"  shot RMS over its first 150 ms (full band) {np.mean(full):.1f} dBFS; danger RMS {10 * np.log10((d ** 2).mean()):.1f} dBFS; below 120 Hz the danger loop holds "
+          f"{100 * 10 ** (band_db(d[:SR * 20], 20, 120) / 10) / 10 ** (band_db(d[:SR * 20], 20, 20000) / 10):.0f}% of its energy")
+
+
 def main():
     args = set(sys.argv[1:])
     if "--verify" in args:
         return 0 if verify_licences() else 1
+    if "--check" in args:
+        run_checks()
+        return 0
     if "--music" in args:  # music only (the effects are left untouched)
         for r in build_music(report=True, force=True):
             print(f"{r[0]:22s} {r[1]:6.2f}s peak {20 * np.log10(r[2]):5.1f} rms {r[3]:6.1f} (target {r[4]:.1f}) limiter {r[5]:.1f} dB seam {r[6]:.1f} {r[7]} {r[8] / 1e6:.2f} MB")

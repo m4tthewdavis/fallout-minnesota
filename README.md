@@ -187,6 +187,7 @@ python3 tools/fetch_assets.py     # CC0 models and textures from Poly Haven and 
 python3 tools/fetch_sounds.py     # recorded sounds (CC0 / CC BY) into assets/sounds/
 python3 tools/decimate_models.py  # cuts the heavy scanned models to game budgets (needs gltfpack or npx)
 python3 tools/bake_ibl.py         # bakes the winter sky lighting maps into assets/environment/
+python3 tools/compress_textures.py --out DIR --all  # optional, not used by the release yet: GPU-compressed .ktx2 copies of the textures (a quarter of the video memory; the game prefers a .ktx2 next to a .jpg). Known issue: the reactor's ceiling pipes vanish with the converted rusty_metal_02 colour map, so it is not in CI.
 pip install numpy pillow
 python3 tools/gen_textures.py     # generated textures, signs and HUD images
 ```

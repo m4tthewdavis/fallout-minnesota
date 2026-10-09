@@ -146,8 +146,8 @@ without a file there is still synthesised from code.
 Built by `tools/fetch_sounds.py` into `sounds/` (Ogg Vorbis). Every clip is trimmed, mixed to mono, resampled to
 44.1 kHz, faded, level-matched and (for the muffled copies) low-passed: modified from the originals. Sources are the
 CC0 Kenney packs (Impact Sounds and RPG Audio; <https://kenney.nl/assets>) and Freesound sounds under CC0 or
-CC BY (attribution below, as the licence requires). The three music loops are cut from CC0 OpenGameArt tracks (listed
-under CC0, loop lengths and levels are ours). Sounds with no file here (the Geiger counter and the Pip-Boy
+CC BY (attribution below, as the licence requires). The two music loops are cut from CC0 OpenGameArt tracks (listed
+under CC0, loop lengths and levels are ours). Sounds with no file here (the tense music, the Geiger counter and the Pip-Boy
 interface sounds) are still synthesised from code.
 
 ### CC BY 4.0 (<https://creativecommons.org/licenses/by/4.0/>)
@@ -248,7 +248,6 @@ interface sounds) are still synthesised from code.
 | "Howl_Echo.wav" | taure | <https://freesound.org/people/taure/sounds/380156/> | `howl_near` |
 | "Walking_Wood.mp3" | taure | <https://freesound.org/people/taure/sounds/362777/> | `step_wood` |
 | "ammo box opening.wav" | tommy_mooney | <https://freesound.org/people/tommy_mooney/sounds/386698/> | `container_open` |
-| "A lurking evil (horror ambience)" (cut into a loop) | Tsorthan Grove | <https://opengameart.org/content/a-lurking-evil-horror-ambience> | `music_tense` |
 | "Dog's Yelping 7" | unfa | <https://freesound.org/people/unfa/sounds/160478/> | `yelp` |
 | "IR-02 (gunshot in a chapel MIXED)" | unfa | <https://freesound.org/people/unfa/sounds/182806/> | `shot_tail_indoor` |
 | "Medium Male Pain Grunts" | unfa | <https://freesound.org/people/unfa/sounds/610998/> | `raider_grunt`, `raider_shout` |

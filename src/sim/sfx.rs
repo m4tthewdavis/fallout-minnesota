@@ -227,6 +227,20 @@ pub struct MusicDirector {
 /// Levels each mood plays at (the music slider is applied later).
 const LEVEL: [f32; 3] = [0.8, 0.9, 1.0];
 
+/// How fast a mood's level moves (per second). Calm pads drift in over about 12 s and out over 10 s;
+/// the pulse of the tense loop arrives in 4 s and the danger loop in under 3 s; whatever is playing
+/// gets out of the way in 5 s when a threat takes over, and threats release over 6 s.
+pub fn fade_rate(mood: Mood, rising: bool, threatened: bool) -> f32 {
+    match (mood, rising) {
+        (Mood::Calm, true) => 0.08,
+        (Mood::Tense, true) => 0.25,
+        (Mood::Danger, true) => 0.35,
+        (_, false) if threatened => 0.2,
+        (Mood::Calm, false) => 0.1,
+        (_, false) => 0.16,
+    }
+}
+
 impl MusicDirector {
     pub fn new(rng: &mut Rng) -> Self {
         MusicDirector {
@@ -268,10 +282,12 @@ impl MusicDirector {
             self.window_timer -= dt;
             if self.window_timer <= 0.0 {
                 self.window_open = !self.window_open;
+                // The recorded calm loop is 148 s, sparse and already full of quiet passages, so the
+                // gaps are shorter than they were for the dense synthesised one.
                 self.window_timer = if self.window_open {
-                    rng.range(80.0, 150.0)
+                    rng.range(100.0, 170.0)
                 } else {
-                    rng.range(90.0, 220.0)
+                    rng.range(60.0, 150.0)
                 };
             }
         }
@@ -284,7 +300,7 @@ impl MusicDirector {
             } else {
                 0.0
             };
-            let rate = if want > self.levels[m.index()] { 0.25 } else { 0.16 };
+            let rate = fade_rate(m, want > self.levels[m.index()], threatened);
             self.levels[m.index()] = approach(self.levels[m.index()], want, rate, dt);
         }
         self.levels
@@ -537,8 +553,24 @@ mod tests {
             }
         }
         let frac = silent as f32 / total as f32;
-        assert!(frac > 0.35 && frac < 0.8, "silent {:.0}% of the time", frac * 100.0);
-        assert!(longest_gap > 70.0, "longest silence {longest_gap}s");
+        assert!(frac > 0.3 && frac < 0.65, "silent {:.0}% of the time", frac * 100.0);
+        assert!(longest_gap > 55.0, "longest silence {longest_gap}s");
+    }
+
+    #[test]
+    fn music_fades_suit_the_loops() {
+        // Calm drifts in over 10-15 s; a threat mood arrives within 4 s and calm leaves within 5 s.
+        assert!((10.0..=15.0).contains(&(0.8 / fade_rate(Mood::Calm, true, false))));
+        assert!(1.0 / fade_rate(Mood::Danger, true, true) < 3.0);
+        assert!(0.9 / fade_rate(Mood::Tense, true, true) <= 4.0);
+        assert!(0.8 / fade_rate(Mood::Calm, false, true) <= 4.0);
+        // In the director: from silence, a close wolf has the tense loop above 90% within 4 s.
+        let mut r = rng();
+        let mut d = MusicDirector::new(&mut r);
+        let near = MusicContext { enemy_dist: Some(20.0), ..Default::default() };
+        run(&mut d, &near, 4.0, &mut r);
+        assert!(d.levels[Mood::Tense as usize] > 0.85, "tense {}", d.levels[1]);
+        // Calm windows now average 100-170 s with 60-150 s gaps: 30-60% silence.
     }
 
     #[test]

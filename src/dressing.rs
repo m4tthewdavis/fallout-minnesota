@@ -129,11 +129,9 @@ fn dress_world(
         let rot = Quat::from_rotation_y(yaw) * Quat::from_rotation_z(tilt);
         let log = place(&mut commands, &lib, "dead_tree_trunk", Vec3::new(x, ground(x, z) - 0.06 * s, z), rot, s, true);
         commands.entity(log).insert(SNOWY_WOOD);
-        // The log is a line of small circles to walk round.
+        // One capsule along the log (one obstacle for sound occlusion too).
         let dir = Vec2::new(yaw.cos(), -yaw.sin());
-        for t in [-1.1f32, 0.0, 1.1] {
-            solid.push(Shape::Circle { x: x + dir.x * t * s, z: z + dir.y * t * s, r: 0.3 });
-        }
+        solid.push(Shape::capsule(x - dir.x * 1.1 * s, z - dir.y * 1.1 * s, x + dir.x * 1.1 * s, z + dir.y * 1.1 * s, 0.3));
     }
     for _ in 0..STUMPS {
         let Some((tx, tz)) = pick_tree(&mut rng) else { break };

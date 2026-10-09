@@ -180,9 +180,26 @@ fn repeat_sampler() -> ImageSampler {
     })
 }
 
+/// The GPU-compressed copy of a JPG, which the release package ships in
+/// its place (see `tools/compress_textures.py`).
+fn compressed_twin(path: &str) -> Option<String> {
+    path.strip_suffix(".jpg").map(|stem| format!("{stem}.ktx2"))
+}
+
+/// Use the compressed copy of a texture when there is one: a quarter of the
+/// video memory, and no mip chain to build at load.
+fn prefer_compressed(path: String) -> String {
+    static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    let root = ROOT.get_or_init(|| PathBuf::from(asset_root()));
+    match compressed_twin(&path) {
+        Some(twin) if root.join(&twin).is_file() => twin,
+        _ => path,
+    }
+}
+
 /// A tiling texture; `srgb` is false for normal and roughness/metal maps.
 pub(crate) fn tiled(server: &AssetServer, path: String, srgb: bool) -> Handle<Image> {
-    server.load_with_settings(path, move |s: &mut ImageLoaderSettings| {
+    server.load_with_settings(prefer_compressed(path), move |s: &mut ImageLoaderSettings| {
         s.is_srgb = srgb;
         s.sampler = repeat_sampler();
     })
@@ -507,6 +524,13 @@ fn count_missing(mut failed: EventReader<UntypedAssetLoadFailedEvent>, mut missi
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_jpgs_have_a_compressed_twin() {
+        assert_eq!(compressed_twin("textures/Ice003/diff.jpg").as_deref(), Some("textures/Ice003/diff.ktx2"));
+        assert_eq!(compressed_twin("textures/generated/spray_fir.png"), None);
+        assert_eq!(compressed_twin("environment/snow_field_diffuse.ktx2"), None);
+    }
+
     use super::*;
 
     #[test]
