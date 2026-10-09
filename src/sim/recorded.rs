@@ -45,16 +45,33 @@ pub struct Takes<T> {
 }
 
 impl<T: Clone> Takes<T> {
-    /// The take that stands in for synthesised variant `variant` (the takes
-    /// are cycled when there are fewer of them than variants). A muffled copy
-    /// falls back to the plain take when there's no muffled recording.
-    pub fn pick(&self, variant: usize, muffled: bool) -> Option<T> {
-        let list = if muffled && !self.muffled.is_empty() { &self.muffled } else { &self.plain };
-        if list.is_empty() {
-            return None;
+    /// Every take that plays in variant slot `slot` of `slots`: take `t` goes
+    /// in slot `t % slots`, so extra takes share slots and none go unused.
+    /// With fewer takes than slots, a slot borrows a take round-robin. With no
+    /// muffled recordings a muffled slot is empty, so the synthesised muffled
+    /// clip plays (a clear recording would sound wrong through a wall).
+    pub fn for_slot(&self, slot: usize, slots: usize, muffled: bool) -> Vec<T> {
+        let list = if muffled { &self.muffled } else { &self.plain };
+        if list.is_empty() || slots == 0 {
+            return Vec::new();
         }
-        Some(list[variant % list.len()].clone())
+        let mine: Vec<T> = list.iter().enumerate().filter(|(t, _)| t % slots == slot).map(|(_, x)| x.clone()).collect();
+        if mine.is_empty() {
+            vec![list[slot % list.len()].clone()]
+        } else {
+            mine
+        }
     }
+}
+
+/// Can the game's decoder play these bytes? Only Ogg Vorbis and RIFF WAV are
+/// accepted: Bevy panics on the first play of anything it can't decode (an
+/// Opus or MP3 file renamed `.ogg`, a broken download), so those fall back to
+/// the synthesised clip instead.
+pub fn playable(bytes: &[u8]) -> bool {
+    let vorbis = bytes.starts_with(b"OggS") && bytes.len() > 64 && bytes[..64].windows(7).any(|w| w == b"\x01vorbis");
+    let wav = bytes.len() > 44 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WAVE";
+    vorbis || wav
 }
 
 /// Sort a folder listing into takes per sound. Takes are ordered by number;
@@ -107,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn takes_cycle_and_muffled_falls_back() {
+    fn takes_borrow_round_robin_and_muffled_needs_its_own() {
         let got = gather(vec![
             ("caw_1.ogg".to_string(), "c1"),
             ("caw_0.ogg".to_string(), "c0"),
@@ -118,11 +135,117 @@ mod tests {
         assert_eq!(got.len(), 2);
         let caw = &got.iter().find(|(s, _)| *s == Sound::Caw).unwrap().1;
         assert_eq!(caw.plain, vec!["c0", "c1"]);
-        assert_eq!(caw.pick(0, false), Some("c0"));
-        assert_eq!(caw.pick(3, false), Some("c1"));
-        assert_eq!(caw.pick(2, true), Some("c0"));
+        assert_eq!(caw.for_slot(0, 4, false), vec!["c0"]);
+        assert_eq!(caw.for_slot(3, 4, false), vec!["c1"]);
+        assert!(caw.for_slot(2, 4, true).is_empty());
         let howl = &got.iter().find(|(s, _)| *s == Sound::HowlFar).unwrap().1;
-        assert_eq!(howl.pick(5, true), Some("h0m"));
-        assert_eq!(Takes::<&str>::default().pick(0, false), None);
+        assert_eq!(howl.for_slot(1, 3, true), vec!["h0m"]);
+    }
+
+    #[test]
+    fn only_vorbis_and_wav_are_playable() {
+        let mut ogg = b"OggS".to_vec();
+        ogg.extend_from_slice(&[0; 24]);
+        ogg.extend_from_slice(b"\x01vorbis");
+        ogg.resize(200, 0);
+        assert!(playable(&ogg));
+        let mut opus = b"OggS".to_vec();
+        opus.extend_from_slice(&[0; 24]);
+        opus.extend_from_slice(b"OpusHead");
+        opus.resize(200, 0);
+        assert!(!playable(&opus));
+        assert!(playable(&Sound::Caw.wav(0)));
+        assert!(!playable(b"ID3\x03 an mp3"));
+        assert!(!playable(b""));
+        assert!(!playable(b"OggS"));
+    }
+
+    #[test]
+    fn every_take_lands_in_some_slot() {
+        let t = Takes { plain: (0..11).collect::<Vec<_>>(), muffled: vec![] };
+        let mut all: Vec<i32> = (0..6).flat_map(|s| t.for_slot(s, 6, false)).collect();
+        all.sort();
+        assert_eq!(all, (0..11).collect::<Vec<_>>());
+        assert_eq!(t.for_slot(0, 6, false), vec![0, 6]);
+        // Fewer takes than slots: every slot still gets one.
+        let few = Takes { plain: vec!["a", "b"], muffled: vec![] };
+        assert_eq!(few.for_slot(3, 4, false), vec!["b"]);
+        assert!(few.for_slot(2, 4, true).is_empty());
+        assert!(Takes::<i32>::default().for_slot(0, 4, false).is_empty());
+    }
+
+    // ---- audit ----
+
+    #[test]
+    fn odd_file_names_never_confuse_the_parser() {
+        for bad in ["", ".ogg", "_0.ogg", "caw_.ogg", "caw_-1.ogg", "caw_1.5.ogg", "caw_muffled.ogg", "caw_1_muffled_muffled.ogg", "Caw_0.ogg", "caw_0.OGG", "caw_0.ogg.bak", "caw_0", "dir/caw_0.ogg"] {
+            assert_eq!(parse(bad), None, "{bad:?}");
+        }
+        // Leading zeros are the same take; long names resolve to the longest sound.
+        assert_eq!(parse("caw_007.ogg"), Some((Sound::Caw, 7, false)));
+        assert_eq!(parse("step_snow_run_0.wav"), Some((Sound::StepSnowRun, 0, false)));
+        assert_eq!(parse("step_snow_0.wav"), Some((Sound::StepSnow, 0, false)));
+    }
+
+    #[test]
+    fn gather_is_independent_of_listing_order_and_keeps_duplicates() {
+        let a = gather(vec![("caw_2.ogg".to_string(), 2), ("caw_0_muffled.ogg".to_string(), 10), ("caw_0.ogg".to_string(), 0), ("caw_1.ogg".to_string(), 1)]);
+        let b = gather(vec![("caw_0.ogg".to_string(), 0), ("caw_1.ogg".to_string(), 1), ("caw_2.ogg".to_string(), 2), ("caw_0_muffled.ogg".to_string(), 10)]);
+        assert_eq!(a, b);
+        assert_eq!(a[0].1.plain, vec![0, 1, 2]);
+        assert_eq!(a[0].1.muffled, vec![10]);
+        // A .wav and an .ogg of the same take both survive; neither is dropped silently.
+        let dup = gather(vec![("caw_0.ogg".to_string(), 'a'), ("caw_0.wav".to_string(), 'b')]);
+        assert_eq!(dup[0].1.plain.len(), 2);
+        assert!(gather(Vec::<(String, u8)>::new()).is_empty());
+        assert!(gather(vec![("notes.txt".to_string(), 1)]).is_empty());
+    }
+
+    #[test]
+    fn gather_output_follows_the_sound_list_order() {
+        let got = gather(vec![("howl_far_0.ogg".to_string(), 1), ("caw_0.ogg".to_string(), 2), ("step_snow_0.ogg".to_string(), 3)]);
+        let pos = |s: Sound| Sound::ALL.iter().position(|x| *x == s).unwrap();
+        let order: Vec<usize> = got.iter().map(|(s, _)| pos(*s)).collect();
+        let mut sorted = order.clone();
+        sorted.sort();
+        assert_eq!(order, sorted);
+    }
+
+    #[test]
+    fn for_slot_degenerate_arguments() {
+        let t = Takes { plain: vec![1, 2, 3], muffled: vec![9] };
+        assert!(t.for_slot(0, 0, false).is_empty(), "zero slots");
+        // A slot number past the end still gets something to play (no panic, no modulo by zero).
+        assert_eq!(t.for_slot(7, 4, false), vec![2]);
+        assert_eq!(t.for_slot(100, 1, false), vec![2]);
+        // One slot gets every take; plain and muffled lists never mix.
+        assert_eq!(t.for_slot(0, 1, false), vec![1, 2, 3]);
+        assert_eq!(t.for_slot(0, 1, true), vec![9]);
+        assert!(Takes::<i32> { plain: vec![1], muffled: vec![] }.for_slot(0, 2, true).is_empty());
+    }
+
+    #[test]
+    fn playable_rejects_lookalikes_and_truncated_files() {
+        // RIFF but not WAVE (an AVI, say), and a WAV header cut short.
+        let mut avi = b"RIFF\0\0\0\0AVI ".to_vec();
+        avi.resize(100, 0);
+        assert!(!playable(&avi));
+        let mut wav = b"RIFF\0\0\0\0WAVE".to_vec();
+        wav.resize(44, 0);
+        assert!(!playable(&wav), "header only, no audio");
+        wav.resize(45, 0);
+        assert!(playable(&wav));
+        // Vorbis marker must be in the first page; "OggS" with FLAC or nothing is out.
+        let mut late = b"OggS".to_vec();
+        late.resize(100, 0);
+        late.extend_from_slice(b"\x01vorbis");
+        assert!(!playable(&late));
+        let mut flac = b"OggS".to_vec();
+        flac.extend_from_slice(&[0; 24]);
+        flac.extend_from_slice(b"\x7fFLAC");
+        flac.resize(200, 0);
+        assert!(!playable(&flac));
+        assert!(!playable(&[0u8; 500]));
+        assert!(!playable(b"RIFF"));
     }
 }

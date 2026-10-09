@@ -27,7 +27,7 @@ use crate::sim::interiors::{self, Interior};
 use crate::sim::rng::Rng;
 use crate::sim::sfx::{self, approach, Mix, Mood, MusicContext, MusicDirector};
 use crate::sim::soundscape::{self, Shelter};
-use crate::sim::recorded::{self, Takes};
+use crate::sim::recorded;
 use crate::sim::synth::{Bus, Sound};
 use crate::sim::terrain::{self, SHELTERS};
 use crate::sim::weather::Phase;
@@ -44,13 +44,23 @@ pub struct GeigerOn(pub bool);
 /// Every generated clip: (sound, variant, heard through something) -> handle.
 /// Gunfire, voices and boots also have a muffled version for when walls or
 /// trees are in the way.
+/// A variant can hold several recorded takes; each play takes the next one.
 #[derive(Resource, Default)]
-struct SoundBank(HashMap<(Sound, usize, bool), Handle<AudioSource>>);
+struct SoundBank(HashMap<(Sound, usize, bool), Takes>);
+
+/// The clips for one variant, and whose turn is next.
+#[derive(Default)]
+struct Takes {
+    clips: Vec<Handle<AudioSource>>,
+    turn: std::sync::atomic::AtomicUsize,
+}
 
 impl SoundBank {
     fn get(&self, sound: Sound, variant: usize, muffled: bool) -> Option<Handle<AudioSource>> {
         // Until the muffled clip has been generated, play the clear one.
-        self.0.get(&(sound, variant, muffled)).or_else(|| self.0.get(&(sound, variant, false))).cloned()
+        let takes = self.0.get(&(sound, variant, muffled)).or_else(|| self.0.get(&(sound, variant, false)))?;
+        let turn = takes.turn.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        takes.clips.get(turn % takes.clips.len().max(1)).cloned()
     }
     fn has_all(&self, sounds: &[Sound]) -> bool {
         sounds.iter().all(|s| (0..s.variants()).all(|v| self.0.contains_key(&(*s, v, false))))
@@ -196,15 +206,27 @@ fn start_generators(mut commands: Commands) {
                 let takes = recorded.iter().find(|(r, _)| *r == s).map(|(_, t)| t);
                 for v in 0..s.variants() {
                     if i % threads == t {
-                        let clip = |muffled: bool| {
-                            takes.and_then(|t| t.pick(v, muffled)).and_then(|path| std::fs::read(&path).ok()).unwrap_or_else(|| if muffled { s.wav_muffled(v) } else { s.wav(v) })
+                        // The recorded takes for this variant, or the synthesised clip.
+                        let clips = |muffled: bool| -> Vec<Vec<u8>> {
+                            let read: Vec<Vec<u8>> = takes.map(|t| t.for_slot(v, s.variants(), muffled)).unwrap_or_default().iter().filter_map(|p| std::fs::read(p).ok()).filter(|b| recorded::playable(b)).collect();
+                            if read.is_empty() {
+                                vec![if muffled { s.wav_muffled(v) } else { s.wav(v) }]
+                            } else {
+                                read
+                            }
                         };
-                        if tx.send((s, v, false, clip(false))).is_err() {
-                            return;
+                        for clip in clips(false) {
+                            if tx.send((s, v, false, clip)).is_err() {
+                                return;
+                            }
                         }
                         // The same clip as heard through a wall or a thicket.
-                        if s.muffleable() && tx.send((s, v, true, clip(true))).is_err() {
-                            return;
+                        if s.muffleable() {
+                            for clip in clips(true) {
+                                if tx.send((s, v, true, clip)).is_err() {
+                                    return;
+                                }
+                            }
                         }
                     }
                     i += 1;
@@ -216,7 +238,7 @@ fn start_generators(mut commands: Commands) {
 }
 
 /// The recorded clips in `assets/sounds`, by sound.
-fn find_recordings() -> Vec<(Sound, Takes<std::path::PathBuf>)> {
+fn find_recordings() -> Vec<(Sound, recorded::Takes<std::path::PathBuf>)> {
     let dir = std::path::Path::new(&crate::assets::asset_root()).join("sounds");
     let files = std::fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()));
     let found = recorded::gather(files);
@@ -250,8 +272,9 @@ fn receive_sounds(loader: Res<BankLoader>, mut bank: ResMut<SoundBank>, mut sour
     for _ in 0..16 {
         match rx.try_recv() {
             Ok((sound, variant, muffled, wav)) => {
-                bank.0.insert((sound, variant, muffled), sources.add(AudioSource { bytes: wav.into() }));
-                if bank.0.len() == total {
+                let takes = bank.0.entry((sound, variant, muffled)).or_default();
+                takes.clips.push(sources.add(AudioSource { bytes: wav.into() }));
+                if takes.clips.len() == 1 && bank.0.len() == total {
                     info!("sound bank ready ({total} clips)");
                 }
             }
