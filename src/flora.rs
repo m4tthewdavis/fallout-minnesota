@@ -164,7 +164,7 @@ fn make_materials(materials: &mut Assets<StandardMaterial>, server: &AssetServer
     barks.insert(
         Bark::RedPine,
         materials.add(StandardMaterial {
-            base_color: Color::srgb(1.0, 0.66, 0.5),
+            base_color: Color::srgb(0.92, 0.7, 0.58),
             base_color_texture: Some(tiled(server, "textures/pine_bark/diff.jpg".into(), true)),
             normal_map_texture: Some(tiled(server, "textures/pine_bark/nor.jpg".into(), false)),
             perceptual_roughness: 0.95,

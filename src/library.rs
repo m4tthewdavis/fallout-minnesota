@@ -105,6 +105,8 @@ pub struct Weathered {
     pub tint: [f32; 3],
     /// 0..1: how much snow lies on it.
     pub snow: f32,
+    /// 0..1: fine stone grain added up close (see `RockSnowExt::detail`).
+    pub grain: f32,
 }
 
 /// Colour maps drained of most of their colour as they load (path, how much
@@ -115,7 +117,7 @@ pub const GREYED: &[(&str, f32)] = &[
     ("models/rock_07/textures/rock_07_diff_1k.jpg", 0.15),
     ("models/concrete_road_barrier/textures/concrete_road_barrier_diff_1k.jpg", 0.2),
     // The pine trunks read as flat saturated orange; red pine is only reddish.
-    ("textures/pine_bark/diff.jpg", 0.55),
+    ("textures/pine_bark/diff.jpg", 0.35),
 ];
 
 /// The glass parts of these models are exported as blended but with no
@@ -201,7 +203,7 @@ fn spawn_node(c: &mut ChildSpawnerCommands, node: &GltfNode, tf: Transform, node
 
 /// Weathered copies of materials, so a hundred boulders share one.
 #[derive(Resource, Default)]
-struct WeatherCache(HashMap<(AssetId<StandardMaterial>, [u32; 4]), Handle<RockSnowMaterial>>);
+struct WeatherCache(HashMap<(AssetId<StandardMaterial>, [u32; 5]), Handle<RockSnowMaterial>>);
 
 fn weather_scene(
     trigger: Trigger<bevy::scene::SceneInstanceReady>,
@@ -214,8 +216,8 @@ fn weather_scene(
     mut cache: ResMut<WeatherCache>,
 ) {
     let root = trigger.target();
-    let Ok(&Weathered { tint: t, snow }) = weathered.get(root) else { return };
-    let key = [t[0], t[1], t[2], snow].map(f32::to_bits);
+    let Ok(&Weathered { tint: t, snow, grain }) = weathered.get(root) else { return };
+    let key = [t[0], t[1], t[2], snow, grain].map(f32::to_bits);
     for e in children.iter_descendants(root) {
         let Ok(m) = mats.get(e) else { continue };
         let id = m.0.id();
@@ -228,7 +230,7 @@ fn weather_scene(
                 };
                 let c = base.base_color.to_linear();
                 let base = StandardMaterial { base_color: LinearRgba::new(c.red * t[0], c.green * t[1], c.blue * t[2], c.alpha).into(), ..base };
-                let h = rock_materials.add(RockSnowMaterial { base, extension: RockSnowExt { snow: ROCK_SNOW.extend(snow) } });
+                let h = rock_materials.add(RockSnowMaterial { base, extension: RockSnowExt { snow: ROCK_SNOW.extend(snow), detail: Vec4::new(grain, 0.0, 0.0, 0.0) } });
                 cache.0.insert((id, key), h.clone());
                 h
             }

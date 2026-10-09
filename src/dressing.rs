@@ -24,13 +24,13 @@ use crate::world::{ground, open_spot, spawn_contact_shadow, spawn_drift, Pickup,
 const SEED: u64 = 0x5EED_0010;
 /// Cold grey granite (on a colour map already drained grey, see
 /// `library::GREYED`), with snow on its top.
-pub const GRANITE: Weathered = Weathered { tint: [0.58, 0.62, 0.68], snow: 0.45 };
+pub const GRANITE: Weathered = Weathered { tint: [0.58, 0.62, 0.68], snow: 0.45, grain: 1.0 };
 /// The vault's outcrops: the same stone, more snow on their ledges.
-const OUTCROP: Weathered = Weathered { tint: [0.6, 0.64, 0.7], snow: 0.6 };
+const OUTCROP: Weathered = Weathered { tint: [0.6, 0.64, 0.7], snow: 0.6, grain: 1.0 };
 /// Weathered grey concrete, a line of snow along the top.
-const CONCRETE: Weathered = Weathered { tint: [0.9, 0.93, 0.98], snow: 0.4 };
+const CONCRETE: Weathered = Weathered { tint: [0.9, 0.93, 0.98], snow: 0.4, grain: 0.6 };
 /// Bark and cut wood keep their colour; snow lies along logs and on stumps.
-const SNOWY_WOOD: Weathered = Weathered { tint: [1.0, 1.0, 1.0], snow: 0.5 };
+const SNOWY_WOOD: Weathered = Weathered { tint: [1.0, 1.0, 1.0], snow: 0.35, grain: 0.0 };
 /// Keep this far from pickups and quest fixtures (they have no colliders).
 const FIXTURE_CLEAR: f32 = 2.0;
 const BOULDERS: usize = 14;

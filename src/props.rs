@@ -198,7 +198,7 @@ pub fn spawn_props(
             ..default()
         },
         // Snow lying in patches on the roof (see shaders/rock_snow.wgsl).
-        extension: RockSnowExt { snow: ROCK_SNOW.extend(0.6) },
+        extension: RockSnowExt { snow: ROCK_SNOW.extend(0.6), detail: Vec4::ZERO },
     });
 
     let tent_dark = mat(&mut materials, Color::srgb(0.02, 0.02, 0.02));

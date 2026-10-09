@@ -154,7 +154,16 @@ fn make_kit<'a>(materials: &mut Assets<StandardMaterial>, assets: &GameAssets, l
         wool_red: mat(materials, Color::srgb(0.5, 0.13, 0.1)),
         pillow: mat(materials, Color::srgb(0.75, 0.72, 0.66)),
         yellow: mat(materials, Color::srgb(0.85, 0.66, 0.1)),
-        window: glow(materials, Color::srgb(0.12, 0.15, 0.19), LinearRgba::rgb(0.3, 0.42, 0.62)),
+        // Frosted glass: dim blue daylight through crystals of rime (the
+        // ice scan's cracks and bubbles), not a flat white panel.
+        window: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.06, 0.08, 0.1),
+            emissive: LinearRgba::rgb(1.5, 2.0, 2.8),
+            emissive_texture: Some(assets.ice_diff.clone()),
+            perceptual_roughness: 0.2,
+            reflectance: 0.6,
+            ..default()
+        }),
         lamp: glow(materials, Color::srgb(1.0, 0.8, 0.45), LinearRgba::rgb(5.0, 3.0, 0.9)),
         strip: glow(materials, Color::srgb(0.9, 0.95, 1.0), LinearRgba::rgb(3.0, 3.4, 4.0)),
         cold_light: glow(materials, Color::srgb(0.7, 0.8, 0.95), LinearRgba::rgb(0.9, 1.2, 1.8)),
@@ -175,8 +184,21 @@ fn glowing(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material: &H
     r.spawn((Mesh3d(meshes.add(Cuboid::new(size[0], size[1], size[2]))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2]), NotShadowCaster));
 }
 
+/// A primitive mesh with tangents: normal-mapped (and GPU-compressed)
+/// surfaces need them, or the mesh can draw wrongly or not at all.
+fn with_tangents(shape: impl Into<Mesh>) -> Mesh {
+    let mesh: Mesh = shape.into();
+    match mesh.clone().with_generated_tangents() {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("no tangents for a room mesh: {e}");
+            mesh
+        }
+    }
+}
+
 fn cylinder(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material: &Handle<StandardMaterial>, at: [f32; 3], radius: f32, height: f32) {
-    r.spawn((Mesh3d(meshes.add(Cylinder::new(radius, height))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2])));
+    r.spawn((Mesh3d(meshes.add(with_tangents(Cylinder::new(radius, height)))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2])));
 }
 
 fn light(r: &mut ChildSpawnerCommands, color: Color, intensity: f32, range: f32, at: [f32; 3]) {
@@ -303,6 +325,9 @@ fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, 
     // A window on the north wall, and a stripe of day through it.
     block(r, meshes, &k.pole, [1.0, 1.55, -hd + 0.03], [0.8, 0.6, 0.05]);
     glowing(r, meshes, &k.window, [1.0, 1.55, -hd + 0.06], [0.66, 0.46, 0.03]);
+    // Its glazing bars.
+    block(r, meshes, &k.pole, [1.0, 1.55, -hd + 0.085], [0.04, 0.46, 0.03]);
+    block(r, meshes, &k.pole, [1.0, 1.55, -hd + 0.085], [0.66, 0.04, 0.03]);
     // Bunk against the west wall: two decks, posts, wool and a pillow.
     let bx = -hw + 0.5;
     for (y, wool) in [(0.45f32, &k.wool_red), (1.4, &k.wool_green)] {
@@ -341,11 +366,11 @@ fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, 
         r.spawn((SceneRoot(assets.can.clone()), Transform::from_xyz(-0.4 + dx + 0.3, 1.38, -hd + 0.15).with_scale(Vec3::splat(1.2))));
     }
     let rug = if i.is_multiple_of(2) { &k.wool_red } else { &k.wool_green };
-    r.spawn((Mesh3d(meshes.add(Cylinder::new(1.0, 0.02))), MeshMaterial3d(rug.clone()), Transform::from_xyz(0.2, 0.012, 0.9)));
+    r.spawn((Mesh3d(meshes.add(with_tangents(Cylinder::new(1.0, 0.02)))), MeshMaterial3d(rug.clone()), Transform::from_xyz(0.2, 0.012, 0.9)));
     for (n, z) in [-0.9f32, -0.5, -0.1].into_iter().enumerate() {
         let tilt = 0.05 * n as f32;
         r.spawn((
-            Mesh3d(meshes.add(Cylinder::new(0.012, 1.7))),
+            Mesh3d(meshes.add(with_tangents(Cylinder::new(0.012, 1.7)))),
             MeshMaterial3d(k.dark.clone()),
             Transform::from_xyz(hw - 0.07, 1.2, z).with_rotation(Quat::from_rotation_z(0.04 + tilt)),
         ));
@@ -462,7 +487,7 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
         MeshMaterial3d(k.metal.clone()),
         Transform::from_xyz(dx, 2.2, dz - 0.15).with_rotation(Quat::from_rotation_y(PI)),
     ));
-    r.spawn((Mesh3d(meshes.add(Torus::new(2.65, 2.85))), MeshMaterial3d(k.yellow.clone()), Transform::from_xyz(dx, 2.2, dz - 0.3).with_rotation(Quat::from_rotation_x(FRAC_PI_2))));
+    r.spawn((Mesh3d(meshes.add(with_tangents(Torus::new(2.65, 2.85)))), MeshMaterial3d(k.yellow.clone()), Transform::from_xyz(dx, 2.2, dz - 0.3).with_rotation(Quat::from_rotation_x(FRAC_PI_2))));
     for n in 0..12 {
         let a = n as f32 / 12.0 * TAU;
         cylinder(r, meshes, &k.yellow, [a.cos() * 2.0, 2.2 + a.sin() * 2.0, dz - 0.4], 0.07, 0.08);
@@ -516,7 +541,7 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
 
 /// A short yellow bolt sticking out of a wall facing +x.
 fn cylinder_x(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material: &Handle<StandardMaterial>, at: [f32; 3]) {
-    r.spawn((Mesh3d(meshes.add(Cylinder::new(0.07, 0.1))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(Quat::from_rotation_z(FRAC_PI_2))));
+    r.spawn((Mesh3d(meshes.add(with_tangents(Cylinder::new(0.07, 0.1)))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(Quat::from_rotation_z(FRAC_PI_2))));
 }
 
 fn vault_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut Vec<Shape>) {
@@ -550,14 +575,21 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
             shadows_enabled: false,
             ..default()
         },
-        Transform::from_xyz(2.0, h - 0.1, -1.5).looking_to(Vec3::NEG_Y, Vec3::Z),
+        Transform::from_xyz(5.6, h - 0.1, -2.4).looking_to(Vec3::NEG_Y, Vec3::Z),
     ));
-    glowing(r, meshes, &k.cold_light, [2.0, h - 0.02, -1.5], [2.6, 0.03, 2.6]);
+    // (Over the empty aisle, so its drift isn't in the way of the way out.)
+    glowing(r, meshes, &k.cold_light, [5.6, h - 0.02, -2.4], [2.2, 0.03, 2.2]);
     r.spawn((
-        Mesh3d(meshes.add(to_mesh_tangents(&meshgen::blob(1.6, 0.35, 0.25, 77, 1.5)))),
+        Mesh3d(meshes.add(to_mesh_tangents(&meshgen::blob(1.3, 0.35, 0.25, 77, 1.5)))),
         MeshMaterial3d(assets.snow.clone()),
-        Transform::from_xyz(2.0, 0.1, -1.5),
+        Transform::from_xyz(5.6, 0.1, -2.4),
     ));
+    // Caged work lights someone wired to a generator: warm pools of light
+    // at the tills and down the west aisle, against the cold strip lights.
+    for (x, z) in [(-3.75f32, hd - 2.4), (-5.2, -1.0), (1.5, 1.0)] {
+        model(r, k, "caged_hanging_light", [x, h - 0.3, z], 0.0, 1.0);
+        light(r, Color::srgb(1.0, 0.78, 0.5), 160_000.0, 8.0, [x, h - 1.0, z]);
+    }
     // Metal shelving in three aisles; the middle one has come down.
     for (n, z) in [-5.2f32, -2.4, 0.4].into_iter().enumerate() {
         for x in [-6.4f32, -3.9, -1.4, 4.4, 6.9] {
@@ -646,7 +678,7 @@ fn mart_extras(commands: &mut Commands, assets: &GameAssets, containers: &Contai
 /// A pipe along x or z (`along_x`), `length` long, centred at `at`.
 fn pipe(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material: &Handle<StandardMaterial>, at: [f32; 3], radius: f32, length: f32, along_x: bool) {
     let rot = if along_x { Quat::from_rotation_z(FRAC_PI_2) } else { Quat::from_rotation_x(FRAC_PI_2) };
-    r.spawn((Mesh3d(meshes.add(Cylinder::new(radius, length))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(rot)));
+    r.spawn((Mesh3d(meshes.add(with_tangents(Cylinder::new(radius, length)))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(rot)));
 }
 
 /// Where the dead coolant pump's housing stands, and the bench where seals
@@ -689,8 +721,9 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
         cylinder(r, meshes, &k.coolant, [core[0], y, core[1]], 1.52, 0.12);
     }
     solid.push(Shape::Circle { x: ox + core[0], z: oz + core[1], r: 2.35 });
-    light(r, Color::srgb(0.5, 0.95, 1.0), 340_000.0, 13.0, [core[0], 2.2, core[1] + 2.4]);
-    flicker(r, Color::srgb(0.45, 0.9, 1.0), 160_000.0, 9.0, [core[0], 3.4, core[1] - 2.2], 3.1);
+    // The core's glow stays near it; the room is lit by the work lamps.
+    light(r, Color::srgb(0.55, 0.92, 1.0), 200_000.0, 9.0, [core[0], 2.2, core[1] + 2.4]);
+    flicker(r, Color::srgb(0.5, 0.88, 1.0), 80_000.0, 7.0, [core[0], 3.4, core[1] - 2.2], 3.1);
 
     // ---- Coolant lines: from the core across the ceiling and down to the pump ----
     pipe(r, meshes, &k.rust, [core[0] + 2.4, 3.9, core[1]], 0.3, 4.4, true);
@@ -729,7 +762,7 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
     solid.push(Shape::rect_centered(ox + hw - 0.7, oz - 3.3, 0.9, 4.0));
     model(r, k, "hanging_industrial_lamp", [PUMP_BAY.0 - 0.6, h, PUMP_BAY.1], 0.0, 1.0);
     // A warm work lamp over the pump bay, against the core's cold glow.
-    light(r, Color::srgb(1.0, 0.78, 0.5), 120_000.0, 5.5, [PUMP_BAY.0 - 0.6, 2.6, PUMP_BAY.1]);
+    light(r, Color::srgb(1.0, 0.76, 0.48), 220_000.0, 7.0, [PUMP_BAY.0 - 0.6, 2.6, PUMP_BAY.1]);
 
     // ---- The bench where seals are cut ----
     let (bx, bz) = BENCH;
@@ -776,6 +809,9 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
         ));
     }
     solid.push(Shape::rect_centered(ox - hw + 2.4, oz - hd + 0.6, 3.6, 1.1));
+    // A work lamp over the desk, so the panels read warm against the core.
+    model(r, k, "hanging_industrial_lamp", [-hw + 2.4, h, -hd + 1.2], 0.0, 1.0);
+    light(r, Color::srgb(1.0, 0.8, 0.55), 160_000.0, 6.5, [-hw + 2.4, 2.6, -hd + 1.2]);
     // Pillars, ceiling light strips.
     for (x, z) in [(-4.2f32, -1.8f32), (4.2, -3.6)] {
         block(r, meshes, &k.concrete, [x, h / 2.0, z], [0.6, h, 0.6]);

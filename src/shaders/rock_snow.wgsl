@@ -9,11 +9,14 @@
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
     forward_io::{VertexOutput, FragmentOutput},
+    mesh_view_bindings::view,
 }
 
 struct RockSnow {
     // Snow colour (rgb, linear) and how much snow there is (a: 0..1).
     snow: vec4<f32>,
+    // Fine stone grain up close (x: strength).
+    detail: vec4<f32>,
 }
 
 @group(2) @binding(100) var<uniform> rock: RockSnow;
@@ -54,13 +57,31 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let s = max(cover, dust);
 
     var color = pbr_input.material.base_color.rgb;
+    // Granite grain: speckles of dark mica and pale feldspar a centimetre or
+    // two across, and a little mottling, where the scan has gone soft. Faded
+    // out by 12 m, before it could shimmer.
+    let near = 1.0 - smoothstep(4.0, 12.0, distance(view.world_position.xyz, wp));
+    let g = rock.detail.x * near;
+    var n_rock = n_map;
+    if g > 0.001 {
+        let speck = noise3(wp * 55.0);
+        let mottle = noise3(wp * 9.0);
+        let grain = 1.0 + g * (0.32 * (speck - 0.5) + 0.18 * (mottle - 0.5));
+        color = color * grain;
+        // The speckles catch a little relief too.
+        let e = 0.02;
+        let dx = noise3((wp + vec3<f32>(e, 0.0, 0.0)) * 55.0) - speck;
+        let dz = noise3((wp + vec3<f32>(0.0, 0.0, e)) * 55.0) - speck;
+        let dy = noise3((wp + vec3<f32>(0.0, e, 0.0)) * 55.0) - speck;
+        n_rock = normalize(n_map - vec3<f32>(dx, dy, dz) * 0.6 * g);
+    }
     let powder = rock.snow.rgb * (0.94 + 0.08 * noise3(wp * 5.0));
     color = mix(color, powder, s);
     pbr_input.material.base_color = vec4<f32>(color, pbr_input.material.base_color.a);
     pbr_input.material.perceptual_roughness = mix(pbr_input.material.perceptual_roughness, 0.85, s);
     pbr_input.material.metallic = mix(pbr_input.material.metallic, 0.0, s);
     // Deep snow hides the stone's bumps and is not darkened by its crevices.
-    pbr_input.N = normalize(mix(n_map, n_geo, cover * 0.85));
+    pbr_input.N = normalize(mix(n_rock, n_geo, cover * 0.85));
     pbr_input.diffuse_occlusion = mix(pbr_input.diffuse_occlusion, vec3<f32>(1.0), cover * 0.7);
 
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);

@@ -22,6 +22,10 @@ pub type RockSnowMaterial = ExtendedMaterial<StandardMaterial, RockSnowExt>;
 pub struct RockSnowExt {
     #[uniform(100)]
     pub snow: Vec4,
+    /// Fine grain the scan is too blurry to show up close (x: 0 none, 1
+    /// granite); fades out with distance.
+    #[uniform(100)]
+    pub detail: Vec4,
 }
 
 impl MaterialExtension for RockSnowExt {

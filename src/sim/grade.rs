@@ -179,12 +179,12 @@ fn room(r: Interior) -> Grade {
         // Clean, blue and clinical.
         Interior::VaultLobby => Grade { temperature: -0.008, saturation: 0.95, ..base },
         // A dead shop: drained of colour.
-        Interior::Mart => Grade { temperature: -0.004, saturation: 0.8, ..base },
+        Interior::Mart => Grade { temperature: -0.002, saturation: 0.88, ..base },
         // Cold machine light, hard contrast; only a nudge cooler, so the
         // yellow rails, orange pipes and warm work lamps still read.
         Interior::Reactor => Grade {
-            temperature: -0.004,
-            tint: -0.001,
+            temperature: -0.002,
+            tint: 0.0,
             saturation: 1.05,
             shadows: Band { contrast: 1.0, lift: 0.0, ..Band::NEUTRAL },
             midtones: Band { contrast: 1.05, ..Band::NEUTRAL },

@@ -123,8 +123,8 @@ impl Interior {
         match self {
             Interior::FishHouse(_) => ([1.0, 0.8, 0.55], 190.0),
             Interior::VaultLobby => ([0.8, 0.9, 1.0], 260.0),
-            Interior::Mart => ([0.6, 0.66, 0.72], 120.0),
-            Interior::Reactor => ([0.62, 0.74, 0.84], 190.0),
+            Interior::Mart => ([0.66, 0.68, 0.72], 150.0),
+            Interior::Reactor => ([0.74, 0.77, 0.8], 160.0),
         }
     }
 
