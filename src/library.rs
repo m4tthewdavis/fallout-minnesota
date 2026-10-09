@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use bevy::gltf::{Gltf, GltfMesh, GltfNode};
 use bevy::prelude::*;
 
+use crate::snow::{RockSnowExt, RockSnowMaterial, ROCK_SNOW};
+
 /// Whole models, spawned as scenes.
 const SCENES: &[&str] = &[
     "metal_office_desk",
@@ -93,16 +95,47 @@ pub struct KitPiece {
     node: &'static str,
 }
 
-/// Tints every material in a model's scene once it has spawned (each tinted
-/// model gets its own copies of the materials, shared by tint).
+/// Weathers a model's materials once its scene has spawned: a colour
+/// multiply (cold granite, grey concrete) and snow lying on its upward faces
+/// (see `shaders/rock_snow.wgsl`). Materials are shared by every model with
+/// the same weathering. The multiply alone can't turn the scans' warm
+/// sandstone grey, so their colour maps are drained first (see [`GREYED`]).
 #[derive(Component, Clone, Copy)]
-pub struct Tint(pub [f32; 3]);
+pub struct Weathered {
+    pub tint: [f32; 3],
+    /// 0..1: how much snow lies on it.
+    pub snow: f32,
+}
+
+/// Colour maps drained of most of their colour as they load (path, how much
+/// saturation to keep), so the stone takes the cold tint it is given.
+pub const GREYED: &[(&str, f32)] = &[
+    ("models/boulder_01/textures/boulder_01_diff_1k.jpg", 0.12),
+    ("models/rock_face_02/textures/rock_face_02_diff_1k.jpg", 0.12),
+    ("models/rock_07/textures/rock_07_diff_1k.jpg", 0.15),
+    ("models/concrete_road_barrier/textures/concrete_road_barrier_diff_1k.jpg", 0.2),
+    // The pine trunks read as flat saturated orange; red pine is only reddish.
+    ("textures/pine_bark/diff.jpg", 0.55),
+];
+
+/// The glass parts of these models are exported as blended but with no
+/// alpha anywhere, so they drew as opaque metal in the transparent pass:
+/// (file, glTF material index). They become thin, glossy, see-through glass.
+const GLASS: &[(&str, usize)] = &[
+    ("models/Lantern_01/Lantern_01.gltf", 1),
+    ("models/old_military_compressor/old_military_compressor.gltf", 1),
+    ("models/street_lamp_01/street_lamp_01.gltf", 1),
+    ("models/portable_generator/portable_generator.gltf", 1),
+];
 
 pub struct LibraryPlugin;
 
 impl Plugin for LibraryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TintCache>().add_systems(PreStartup, load_library).add_systems(Update, build_pieces).add_observer(tint_scene);
+        app.init_resource::<WeatherCache>()
+            .add_systems(PreStartup, load_library)
+            .add_systems(Update, (build_pieces, fix_glass))
+            .add_observer(weather_scene);
     }
 }
 
@@ -166,34 +199,62 @@ fn spawn_node(c: &mut ChildSpawnerCommands, node: &GltfNode, tf: Transform, node
 }
 
 
-/// Tinted copies of materials, so a hundred tinted boulders share one.
+/// Weathered copies of materials, so a hundred boulders share one.
 #[derive(Resource, Default)]
-struct TintCache(HashMap<(AssetId<StandardMaterial>, [u32; 3]), Handle<StandardMaterial>>);
+struct WeatherCache(HashMap<(AssetId<StandardMaterial>, [u32; 4]), Handle<RockSnowMaterial>>);
 
-fn tint_scene(
+fn weather_scene(
     trigger: Trigger<bevy::scene::SceneInstanceReady>,
-    tints: Query<&Tint>,
+    mut commands: Commands,
+    weathered: Query<&Weathered>,
     children: Query<&Children>,
-    mut mats: Query<&mut MeshMaterial3d<StandardMaterial>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut cache: ResMut<TintCache>,
+    mats: Query<&MeshMaterial3d<StandardMaterial>>,
+    materials: Res<Assets<StandardMaterial>>,
+    mut rock_materials: ResMut<Assets<RockSnowMaterial>>,
+    mut cache: ResMut<WeatherCache>,
 ) {
     let root = trigger.target();
-    let Ok(&Tint(t)) = tints.get(root) else { return };
-    let key = t.map(f32::to_bits);
+    let Ok(&Weathered { tint: t, snow }) = weathered.get(root) else { return };
+    let key = [t[0], t[1], t[2], snow].map(f32::to_bits);
     for e in children.iter_descendants(root) {
-        let Ok(mut m) = mats.get_mut(e) else { continue };
+        let Ok(m) = mats.get(e) else { continue };
         let id = m.0.id();
-        let tinted = match cache.0.get(&(id, key)) {
+        let handle = match cache.0.get(&(id, key)) {
             Some(h) => h.clone(),
             None => {
-                let Some(base) = materials.get(id).cloned() else { continue };
+                let Some(base) = materials.get(id).cloned() else {
+                    warn!("weathering: material not loaded yet");
+                    continue;
+                };
                 let c = base.base_color.to_linear();
-                let h = materials.add(StandardMaterial { base_color: LinearRgba::new(c.red * t[0], c.green * t[1], c.blue * t[2], c.alpha).into(), ..base });
+                let base = StandardMaterial { base_color: LinearRgba::new(c.red * t[0], c.green * t[1], c.blue * t[2], c.alpha).into(), ..base };
+                let h = rock_materials.add(RockSnowMaterial { base, extension: RockSnowExt { snow: ROCK_SNOW.extend(snow) } });
                 cache.0.insert((id, key), h.clone());
                 h
             }
         };
-        m.0 = tinted;
+        commands.entity(e).remove::<MeshMaterial3d<StandardMaterial>>().insert(MeshMaterial3d(handle));
+    }
+}
+
+/// Turns the mis-exported glass (see [`GLASS`]) into glass as it loads.
+fn fix_glass(mut events: EventReader<AssetEvent<StandardMaterial>>, server: Res<AssetServer>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    for event in events.read() {
+        let AssetEvent::Added { id } = event else { continue };
+        let Some(path) = server.get_path(*id) else { continue };
+        let Some(label) = path.label() else { continue };
+        let file = path.path().to_string_lossy().replace('\\', "/");
+        let glass = GLASS.iter().any(|&(f, i)| file == f && (label == format!("Material{i}") || label == format!("Material{i} (inverted)")));
+        if !glass {
+            continue;
+        }
+        if let Some(m) = materials.get_mut(*id) {
+            m.alpha_mode = AlphaMode::Blend;
+            m.base_color = m.base_color.with_alpha(0.22);
+            m.perceptual_roughness = 0.08;
+            m.metallic = 0.0;
+            m.metallic_roughness_texture = None;
+            m.reflectance = 0.5;
+        }
     }
 }

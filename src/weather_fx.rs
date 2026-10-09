@@ -30,13 +30,13 @@ struct FlakeMaterial(Handle<StandardMaterial>);
 
 /// Smoothed visual weather values so changes fade in instead of popping.
 #[derive(Resource)]
-struct VisualWeather {
-    fog: f32,
+pub(crate) struct VisualWeather {
+    pub(crate) fog: f32,
     snow: f32,
     wind: f32,
-    light: f32,
+    pub(crate) light: f32,
     /// 0 = clean white fog, 1 = radioactive green.
-    sick: f32,
+    pub(crate) sick: f32,
 }
 
 pub struct WeatherPlugin;
@@ -56,6 +56,8 @@ impl Plugin for WeatherPlugin {
         .init_resource::<SkyLook>()
         .add_systems(
             Update,
+            // Never gate this chain (e.g. while paused): `apply_atmosphere`
+            // rewrites the ambient light every frame and envlight.rs scales it.
             (update_weather, smooth_visuals, apply_atmosphere.in_set(AtmosphereSet), update_fog_volume, move_flakes).chain(),
         );
     }

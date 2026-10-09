@@ -27,7 +27,7 @@ use crate::state::{alive, outdoors, ClockRes, Colliders, Fx, FxQueue, Game, Guns
 
 /// Where the camps' fires are, and who's there. A camp's fire pit is 3.6 m
 /// east and 0.8 m south of its tent, turned by the camp's yaw (see `props.rs`).
-const CAMPS: [(f32, f32, f32); 2] = [(-110.0, 15.0, 0.4), (160.0, 55.0, -0.9)];
+pub(crate) const CAMPS: [(f32, f32, f32); 2] = [(-110.0, 15.0, 0.4), (160.0, 55.0, -0.9)];
 /// Hit sphere: torso height and size.
 const BODY_CENTER: f32 = 1.1;
 const BODY_RADIUS: f32 = 0.5;

@@ -1,12 +1,14 @@
 # Asset credits
 
 Every asset in this folder is either made for this project or released under
-**CC0 1.0** (public domain). No Fallout/Bethesda assets are used.
+**CC0 1.0** (public domain), except some recorded sound effects that are **CC BY 3.0/4.0**
+(attribution under "Recorded sounds" below). No Fallout/Bethesda assets are used.
 
 ## Downloaded (Poly Haven and ambientCG, CC0 1.0)
 
 Fetched by `tools/fetch_assets.py`. Licenses: <https://polyhaven.com/license>,
-<https://docs.ambientcg.com/license/>.
+<https://docs.ambientcg.com/license/>. The heaviest scanned models are then
+cut to game budgets by `tools/decimate_models.py`.
 
 | Path | Asset | Source | Author(s) | Used for |
 | --- | --- | --- | --- | --- |
@@ -84,13 +86,28 @@ Fetched by `tools/fetch_assets.py`. Licenses: <https://polyhaven.com/license>,
 | `textures/curly_teddy_natural/` | Curly Teddy Natural | <https://polyhaven.com/a/curly_teddy_natural> | colormass, Rico Cilliers | fur trim on hoods and cuffs |
 | `textures/wool_boucle/` | Wool Boucle | <https://polyhaven.com/a/wool_boucle> | colormass, Rico Cilliers | knit beanies and scarves |
 | `textures/brown_leather/` | Brown Leather | <https://polyhaven.com/a/brown_leather> | Rob Tuytel | gun slings, belts, boots and mittens |
+| `textures/hessian_230/` | Hessian 230 | <https://polyhaven.com/a/hessian_230> | colormass, Rico Cilliers | weathered canvas on the raider-camp tents |
 | `textures/Tiles140/` | Tiles140 | <https://ambientcg.com/view?id=Tiles140> | ambientCG (Lennart Demes) | Vault 143 floor tiles |
 | `textures/PaintedMetal006/` | PaintedMetal006 | <https://ambientcg.com/view?id=PaintedMetal006> | ambientCG (Lennart Demes) | green painted steel: vault lockers and machinery |
 | `textures/PaintedMetal016/` | PaintedMetal016 | <https://ambientcg.com/view?id=PaintedMetal016> | ambientCG (Lennart Demes) | hazard stripes in the reactor room |
 | `textures/Concrete031/` | Concrete031 | <https://ambientcg.com/view?id=Concrete031> | ambientCG (Lennart Demes) | concrete panel walls on the reactor level |
 | `textures/MetalPlates013/` | MetalPlates013 | <https://ambientcg.com/view?id=MetalPlates013> | ambientCG (Lennart Demes) | riveted plating on the reactor core and machinery |
 | `textures/OfficeCeiling003/` | OfficeCeiling003 | <https://ambientcg.com/view?id=OfficeCeiling003> | ambientCG (Lennart Demes) | drop ceiling in the vault lobby |
+| `textures/Snow014/` | Snow014 | <https://ambientcg.com/view?id=Snow014> | ambientCG (Lennart Demes) | surface relief of the snow ground (normal map) |
+| `textures/Ice003/` | Ice003 | <https://ambientcg.com/view?id=Ice003> | ambientCG (Lennart Demes) | clear green-black lake ice with bubbles and cracks |
+| `textures/LeafSet019/` | LeafSet019 | <https://ambientcg.com/view?id=LeafSet019> | ambientCG (Lennart Demes) | photo-scanned fir sprays on the balsam fir and spruce cards (see gen_textures.py) |
 <!-- generated-above -->
+<!-- ibl-start -->
+## Environment lighting (HDRIs, CC0 1.0)
+
+Baked by `tools/bake_ibl.py` into the cubemaps in `environment/`. The sun is removed and the sky is filtered; the photographs themselves are not shipped.
+
+| Path | HDRI | Source | Author | Used for |
+| --- | --- | --- | --- | --- |
+| `environment/snow_field_*.ktx2` | Snow Field | <https://polyhaven.com/a/snow_field> | Sergej Majboroda | overcast and night image-based lighting |
+| `environment/rural_winter_roadside_*.ktx2` | Rural Winter Roadside | <https://polyhaven.com/a/rural_winter_roadside> | Sergej Majboroda | clear-sky image-based lighting |
+<!-- ibl-end -->
+
 ## Font
 
 | Path | Font | Source | Author | License |
@@ -118,6 +135,127 @@ aspen, tamarack), red osier dogwood, staghorn sumac, juniper, prairie grass, cat
 the four Frostfang looks, the Glowmoose and its antlers, the 1950s sedans and snowmobiles, gloved hands and
 sleeves, sleds, tents, shopping carts, mailboxes, fish houses, silos, the vault gear door, rocks and
 snowdrifts, all four weapons (pipe rifle, scrap shotgun, frontier revolver, ice axe), the sky dome, the
-snow shader (`src/shaders/snow.wgsl`), the Pip-Boy map picture, and every sound effect and the music
+snow shader (`src/shaders/snow.wgsl`), the Pip-Boy map picture, and the Geiger counter and the Pip-Boy interface sounds
 (`src/sim/meshgen.rs`, `src/sim/vehicles.rs`, `src/sim/flora.rs`, `src/sim/synth.rs`, `src/sim/mapdata.rs`).
-No audio files are used, so there is no audio to credit.
+The music and the other sound effects are recordings in `sounds/` (CC0 or CC BY, credited under "Recorded sounds" below); any sound
+without a file there is still synthesised from code.
+
+<!-- recorded-sounds-begin -->
+## Recorded sounds
+
+Built by `tools/fetch_sounds.py` into `sounds/` (Ogg Vorbis). Every clip is trimmed, mixed to mono, resampled to
+44.1 kHz, faded, level-matched and (for the muffled copies) low-passed: modified from the originals. Sources are the
+CC0 Kenney packs (Impact Sounds and RPG Audio; <https://kenney.nl/assets>) and Freesound sounds under CC0 or
+CC BY (attribution below, as the licence requires). The three music loops are cut from CC0 OpenGameArt tracks (listed
+under CC0, loop lengths and levels are ours). Sounds with no file here (the Geiger counter and the Pip-Boy
+interface sounds) are still synthesised from code.
+
+### CC BY 4.0 (<https://creativecommons.org/licenses/by/4.0/>)
+
+| Title | Author | Source | Used for |
+| --- | --- | --- | --- |
+| "Wind at door howling 4.wav" | Bosk1 | <https://freesound.org/people/Bosk1/sounds/217186/> | `wind_howl` |
+| "Elk 7.wav" | Hyperionn | <https://freesound.org/people/Hyperionn/sounds/250191/> | `moose_bellow` |
+| "Gunshot, Distant, A.wav" | InspectorJ | <https://freesound.org/people/InspectorJ/sounds/417345/> | `shot_tail_outdoor` |
+| "wolf-growl.wav" | newagesoup | <https://freesound.org/people/newagesoup/sounds/338674/> | `growl` |
+| "Single Action Army - classic revolver cock" | oneshotofficial | <https://freesound.org/people/oneshotofficial/sounds/647593/> | `hammer_cock` |
+| "Pistol Dry Fire (Bersa BP9CC 9x19)" | Sophia_C | <https://freesound.org/people/Sophia_C/sounds/467183/> | `dry_click` |
+| "DogYelp.wav" | TobiasKosmos | <https://freesound.org/people/TobiasKosmos/sounds/163280/> | `yelp` |
+| "Sudet ulvovat / Wolves howling, small pack, frost snapping" | YleArkisto | <https://freesound.org/people/YleArkisto/sounds/253087/> | `howl_near` |
+
+### CC BY 3.0 (<https://creativecommons.org/licenses/by/3.0/>)
+
+| Title | Author | Source | Used for |
+| --- | --- | --- | --- |
+| "DryFire_01.wav" | fastson | <https://freesound.org/people/fastson/sounds/399116/> | `dry_click` |
+| "Tikka M65_1.wav" | fastson | <https://freesound.org/people/fastson/sounds/399066/> | `rifle_shot` |
+| "low_grunt1.wav" | primeval_polypod | <https://freesound.org/people/primeval_polypod/sounds/156506/> | `moose_grunt` |
+| "Snow Footsteps Running" | qubodup | <https://freesound.org/people/qubodup/sounds/216570/> | `step_snow_run` |
+
+### CC0 (<https://creativecommons.org/publicdomain/zero/1.0/>)
+
+| Title | Author | Source | Used for |
+| --- | --- | --- | --- |
+| "Cocking a revolver" | acidsnowflake | <https://freesound.org/people/acidsnowflake/sounds/402790/> | `hammer_cock` |
+| "Mossberg 500A - 1 shot and pump" | AnthonyChan0 | <https://freesound.org/people/AnthonyChan0/sounds/159710/> | `shotgun_shot` |
+| "footsteps - ice 09.wav" | Anthousai | <https://freesound.org/people/Anthousai/sounds/539683/> | `step_ice` |
+| "Tornado siren in Streamwood IL.wav" | audible-edge | <https://freesound.org/people/audible-edge/sounds/72831/> | `siren` |
+| "Cooper Creek 20160313_014852 solitary wolf howl very clear.wav" | betchkal | <https://freesound.org/people/betchkal/sounds/500646/> | `howl_far` |
+| "silent windy pine forest.wav" | bruno.auzet | <https://freesound.org/people/bruno.auzet/sounds/670307/> | `wind_breeze`, `wind_high`, `wind_low`, `wind_mid` |
+| "Wind-Gusts-late-autumn.wav" | BudJillett | <https://freesound.org/people/BudJillett/sounds/109485/> | `gust` |
+| "Revolver Gunshots" | C-V | <https://freesound.org/people/C-V/sounds/835200/> | `revolver_shot` |
+| "shell load.ogg" | CeebFrack | <https://freesound.org/people/CeebFrack/sounds/108793/> | `clunk_in` |
+| "22 Bolt.wav" | Danwardvs | <https://freesound.org/people/Danwardvs/sounds/204204/> | `bolt_rack` |
+| "Buffalos in the tall-grass prairie in Oklahoma, growling, grunting, sniffing and eating some food" | felix.blume | <https://freesound.org/people/felix.blume/sounds/197361/> | `moose_grunt` |
+| "Rifle gunshot, one shot" | felix.blume | <https://freesound.org/people/felix.blume/sounds/710084/> | `rifle_shot` |
+| "Wood fire crackling, near flames" | felix.blume | <https://freesound.org/people/felix.blume/sounds/779877/> | `fire` |
+| "Footsteps on concrete" | florianreichelt | <https://freesound.org/people/florianreichelt/sounds/459964/> | `step_concrete` |
+| "footsteps in fresh snow" | florianreichelt | <https://freesound.org/people/florianreichelt/sounds/453168/> | `step_snow` |
+| "footsteps on surfaced road in boots" | Frigus_XIII | <https://freesound.org/people/Frigus_XIII/sounds/456428/> | `step_road` |
+| "Danger Escape" (cut into a loop) | Fupi | <https://opengameart.org/content/danger-escape> | `music_danger` |
+| "Brass bullet shell casing drop onto concrete, multiple takes" | GrayJoy | <https://freesound.org/people/GrayJoy/sounds/210102/> | `shell_tink` |
+| "Revolver Cylinder Spin - Remington 1875" | Guy_Personface | <https://freesound.org/people/Guy_Personface/sounds/795313/> | `cylinder_spin` |
+| "gunfiddle.wav" | j1987 | <https://freesound.org/people/j1987/sounds/107795/> | `jam` |
+| "Swing Woosh" | Jofae | <https://freesound.org/people/Jofae/sounds/389590/> | `swing` |
+| "44_black_powder.wav" | Jon285 | <https://freesound.org/people/Jon285/sounds/34708/> | `revolver_shot` |
+| "21_Lobo_gruñendo.wav" | JoseAgudelo | <https://freesound.org/people/JoseAgudelo/sounds/472401/> | `growl` |
+| Sound pack | Kenney, Impact Sounds | <https://kenney.nl/assets/impact-sounds> | `break_close`, `break_open`, `clunk_in`, `clunk_out`, `craft`, `hoof`, `jam`, `melee_hit`, `pickup_ammo`, `pickup_food`, `pickup_med`, `pickup_scrap`, `step_concrete`, `step_snow`, `step_wood` |
+| Sound pack | Kenney, RPG Audio | <https://kenney.nl/assets/rpg-audio> | `break_close`, `break_open`, `craft`, `creak`, `pickup_ammo`, `pickup_food`, `pickup_med`, `pickup_scrap` |
+| "Fire Crackling 01.wav" | kingsrow | <https://freesound.org/people/kingsrow/sounds/181563/> | `fire` |
+| "UTS-15 Shotgun with pump action 4takes.wav" | klangfabrik | <https://freesound.org/people/klangfabrik/sounds/233044/> | `shotgun_shot` |
+| "Male Grunts" | Kodack | <https://freesound.org/people/Kodack/sounds/256603/> | `raider_grunt` |
+| "bark yelp dog small int.flac" | kyles | <https://freesound.org/people/kyles/sounds/452180/> | `yelp` |
+| "footsteps boots squeaky snow medium speed pass 3 times.flac" | kyles | <https://freesound.org/people/kyles/sounds/454021/> | `step_snow_squeak` |
+| "footsteps rubber boots walk run packed snow squeaky on and offmic.flac" | kyles | <https://freesound.org/people/kyles/sounds/452102/> | `step_snow_squeak` |
+| "footsteps shoes walk road asphalt hard.flac" | kyles | <https://freesound.org/people/kyles/sounds/637556/> | `step_road` |
+| "gun lee enfield 303 rifle clean shot.wav" | kyles | <https://freesound.org/people/kyles/sounds/450853/> | `rifle_shot` |
+| "hum electric transformer in large room2.flac" | kyles | <https://freesound.org/people/kyles/sounds/453445/> | `room_hum` |
+| "snowmobile footsteps boots hard crunchy snow walk away to snowmobile, start and pull away far.wav" | kyles | <https://freesound.org/people/kyles/sounds/450869/> | `step_snow` |
+| "Centerfire Rifle Gun Shot 01.wav" | LilMati | <https://freesound.org/people/LilMati/sounds/411567/> | `rifle_shot` |
+| "Centerfire Rifle Gun Shot 02.wav" | LilMati | <https://freesound.org/people/LilMati/sounds/483536/> | `rifle_shot` |
+| "Rifle Gun Shot 02.wav" | LilMati | <https://freesound.org/people/LilMati/sounds/484036/> | `rifle_shot` |
+| "The World Fell Silent (loop version)" (cut into a loop) | Loukyo | <https://opengameart.org/content/the-world-fell-silent> | `music_calm` |
+| "elk.1.wav" | lwdickens | <https://freesound.org/people/lwdickens/sounds/263489/> | `moose_bellow`, `moose_grunt` |
+| "footsteps crunchy ice.wav" | lwdickens | <https://freesound.org/people/lwdickens/sounds/263491/> | `step_ice` |
+| "Fire in the stove" | mcmikai | <https://freesound.org/people/mcmikai/sounds/532191/> | `fire` |
+| "22 bolt action rifle cycle" | Metrolynn | <https://freesound.org/people/Metrolynn/sounds/620928/> | `bolt_clack` |
+| "Hooded Crow: Cawing" | Mish7913 | <https://freesound.org/people/Mish7913/sounds/741366/> | `caw` |
+| "Distant Gunshot 1.wav" | morganpurkis | <https://freesound.org/people/morganpurkis/sounds/384717/> | `shot_tail_outdoor` |
+| "Simple Gunshot Reverb Test.wav" | morganpurkis | <https://freesound.org/people/morganpurkis/sounds/399266/> | `shot_tail_indoor` |
+| "Simple Gunshot Reverb Test.wav" | morganpurkis | <https://freesound.org/people/morganpurkis/sounds/399268/> | `shot_tail_indoor` |
+| "shotgun shoot" | MrGungus | <https://freesound.org/people/MrGungus/sounds/773873/> | `shotgun_shot` |
+| "crow.wav" | nigelcoop | <https://freesound.org/people/nigelcoop/sounds/75162/> | `caw` |
+| "Swinging staff whoosh (strong) 04.wav" | Nightflame | <https://freesound.org/people/Nightflame/sounds/422513/> | `swing` |
+| "Footsteps_Mountain_Boots_Snow_Walk_Mono.wav" | Nox_Sound | <https://freesound.org/people/Nox_Sound/sounds/613849/> | `step_snow` |
+| "Footsteps_Wood_Walk_Mono.wav" | Nox_Sound | <https://freesound.org/people/Nox_Sound/sounds/543685/> | `step_wood` |
+| "Footsteps on crunchy ice on sidewalk - MP3" | OBXJohn | <https://freesound.org/people/OBXJohn/sounds/416939/> | `step_ice` |
+| "Dog Growling Snarling Grumbling" | qubodup | <https://freesound.org/people/qubodup/sounds/122183/> | `growl`, `snarl` |
+| "SWOSH-01 44.1kHz" | qubodup | <https://freesound.org/people/qubodup/sounds/59988/> | `swing` |
+| "Whoosh" | qubodup | <https://freesound.org/people/qubodup/sounds/60013/> | `swing` |
+| "Opening & closing a small metal container 2" | randbsoundbites | <https://freesound.org/people/randbsoundbites/sounds/868416/> | `container_open` |
+| "Opening & putting down lid back down onto a ornate metal container" | randbsoundbites | <https://freesound.org/people/randbsoundbites/sounds/844289/> | `container_open` |
+| "Angry Ram" | ReadeOnly | <https://freesound.org/people/ReadeOnly/sounds/186921/> | `moose_bellow` |
+| "Revolver calibre 38 - dois disparos" | reishugo | <https://freesound.org/people/reishugo/sounds/346905/> | `revolver_shot` |
+| "Distant Gunshot" | Resaural | <https://freesound.org/people/Resaural/sounds/541164/> | `shot_tail_outdoor` |
+| "Wood Creak Single V10" | Rudmer_Rotteveel | <https://freesound.org/people/Rudmer_Rotteveel/sounds/506665/> | `creak` |
+| "Water Dripping in Cave.wav" | Sclolex | <https://freesound.org/people/Sclolex/sounds/177958/> | `drip` |
+| "distantshot.wav" | Sclolex | <https://freesound.org/people/Sclolex/sounds/210531/> | `shot_tail_outdoor` |
+| "9mm Handgun Being Dry Fired" | ser%C3%B8ut%C5%8Dnin--depriv%C9%99d | <https://freesound.org/people/ser%C3%B8ut%C5%8Dnin--depriv%C9%99d/sounds/674568/> | `dry_click` |
+| "A rifle being dry fired once" | ser%C3%B8ut%C5%8Dnin--depriv%C9%99d | <https://freesound.org/people/ser%C3%B8ut%C5%8Dnin--depriv%C9%99d/sounds/725402/> | `dry_click` |
+| "357 Magnum Revolver Gunshot" | Shark_Anthony | <https://freesound.org/people/Shark_Anthony/sounds/683186/> | `revolver_shot` |
+| "Single Action Revolver Cylinder Spinning.wav" | shelbyshark | <https://freesound.org/people/shelbyshark/sounds/501560/> | `cylinder_spin` |
+| "Concrete Footsteps" | SoftDistortionFX | <https://freesound.org/people/SoftDistortionFX/sounds/465299/> | `step_concrete` |
+| "Howl_Echo.wav" | taure | <https://freesound.org/people/taure/sounds/380156/> | `howl_near` |
+| "Walking_Wood.mp3" | taure | <https://freesound.org/people/taure/sounds/362777/> | `step_wood` |
+| "ammo box opening.wav" | tommy_mooney | <https://freesound.org/people/tommy_mooney/sounds/386698/> | `container_open` |
+| "A lurking evil (horror ambience)" (cut into a loop) | Tsorthan Grove | <https://opengameart.org/content/a-lurking-evil-horror-ambience> | `music_tense` |
+| "Dog's Yelping 7" | unfa | <https://freesound.org/people/unfa/sounds/160478/> | `yelp` |
+| "IR-02 (gunshot in a chapel MIXED)" | unfa | <https://freesound.org/people/unfa/sounds/182806/> | `shot_tail_indoor` |
+| "Medium Male Pain Grunts" | unfa | <https://freesound.org/people/unfa/sounds/610998/> | `raider_grunt`, `raider_shout` |
+| "Rusty Metal Creaking" | unfa | <https://freesound.org/people/unfa/sounds/207993/> | `creak` |
+| "Ice - Lake fractures" | Vrymaa | <https://freesound.org/people/Vrymaa/sounds/737896/> | `ice_crack`, `ice_creak` |
+| "Metal lid - Open & close" | Vrymaa | <https://freesound.org/people/Vrymaa/sounds/775017/> | `container_open` |
+| "Ninja Vocalizations, Several Types.wav" | WannyManny | <https://freesound.org/people/WannyManny/sounds/632075/> | `raider_shout` |
+| "Mosin Nagant Bolt Action Cycle" | Zott820 | <https://freesound.org/people/Zott820/sounds/370345/> | `bolt_clack`, `bolt_rack` |
+
+<!-- recorded-sounds-end -->

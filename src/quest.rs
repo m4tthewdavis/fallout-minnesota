@@ -82,6 +82,11 @@ struct TalkHint;
 
 const ROWS: usize = 4;
 
+/// Start-up set that places the quest's fixtures (the convoy, the breaker,
+/// the coupling): things dressed round them run after it.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct QuestWorld;
+
 pub struct QuestPlugin;
 
 impl Plugin for QuestPlugin {
@@ -91,7 +96,7 @@ impl Plugin for QuestPlugin {
             .init_resource::<PerkDelay>()
             .add_event::<StartTalk>()
             .add_event::<UseSpot>()
-            .add_systems(Startup, (build_talk_ui, spawn_quest_world.after(crate::state::WorldGen)))
+            .add_systems(Startup, (build_talk_ui, spawn_quest_world.after(crate::state::WorldGen).in_set(QuestWorld)))
             .add_systems(
                 Update,
                 (

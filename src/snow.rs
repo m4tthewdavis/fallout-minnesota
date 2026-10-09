@@ -13,6 +13,25 @@ use crate::state::WeatherRes;
 use crate::world::Sun;
 
 pub type SnowMaterial = ExtendedMaterial<StandardMaterial, SnowExt>;
+/// Rock and concrete with snow lying on whatever faces up (`shaders/rock_snow.wgsl`).
+pub type RockSnowMaterial = ExtendedMaterial<StandardMaterial, RockSnowExt>;
+
+/// Snow on a model: its colour (linear rgb) and how much (w, 0..1: 0 is a
+/// bare rock, 0.5 a cap on the flat top, 1 everything but the steep sides).
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub struct RockSnowExt {
+    #[uniform(100)]
+    pub snow: Vec4,
+}
+
+impl MaterialExtension for RockSnowExt {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://fallout_minnesota/shaders/rock_snow.wgsl".into()
+    }
+}
+
+/// The colour of the powder lying on rocks: the snow ground's own colour.
+pub const ROCK_SNOW: Vec3 = Vec3::new(0.52, 0.55, 0.61);
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub struct SnowExt {
@@ -44,7 +63,8 @@ pub struct SnowPlugin;
 impl Plugin for SnowPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "shaders/snow.wgsl");
-        app.add_plugins(MaterialPlugin::<SnowMaterial>::default()).add_systems(Update, follow_sun);
+        embedded_asset!(app, "shaders/rock_snow.wgsl");
+        app.add_plugins((MaterialPlugin::<SnowMaterial>::default(), MaterialPlugin::<RockSnowMaterial>::default())).add_systems(Update, follow_sun);
     }
 }
 

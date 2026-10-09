@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use crate::assets::GameAssets;
 use crate::landmarks::{CARS, RUINS};
 use crate::meshes::to_mesh_tangents;
+use crate::perf::Lod;
 use crate::sim::collision::{self, Shape};
 use crate::sim::meshgen;
 use crate::sim::terrain;
@@ -57,20 +58,15 @@ pub fn spawn_nature(
     }
 
     // ---------- Boulders poking through the snow ----------
-    let cap = meshes.add(to_mesh_tangents(&meshgen::blob(1.0, 0.3, 0.25, 31, 1.0)));
     for _ in 0..ROCKS {
         let Some((x, z)) = open_spot(&mut rng, solid, 1.5, &SCATTER) else { continue };
         let s = rng.0.range(8.0, 16.0);
         let yaw = rng.0.range(0.0, std::f32::consts::TAU);
         let gy = ground(x, z);
-        prop(&mut commands, &assets.rock, Vec3::new(x, gy - 0.04 * s, z), yaw, s);
-        commands.spawn((
-            Mesh3d(cap.clone()),
-            MeshMaterial3d(assets.snow.clone()),
-            Transform::from_xyz(x, gy + 0.09 * s, z)
-                .with_rotation(Quat::from_rotation_y(yaw))
-                .with_scale(Vec3::new(0.09 * s, 0.09 * s, 0.13 * s)),
-        ));
+        // 2.6-5 m across: these go with the trees, not with the small props.
+        // Grey granite with the snow lying on its top (see dressing.rs).
+        let rock = prop(&mut commands, &assets.rock, Vec3::new(x, gy - 0.04 * s, z), yaw, s);
+        commands.entity(rock).insert((Lod::Large, crate::dressing::GRANITE));
         solid.push(Shape::Circle { x, z, r: 0.12 * s });
         spawn_contact_shadow(&mut commands, &mut meshes, &assets, x, z, 0.2 * s, 0.2 * s, yaw);
         let d = 0.12 * s;

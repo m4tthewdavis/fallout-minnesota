@@ -156,7 +156,7 @@ fn card_material(materials: &mut Assets<StandardMaterial>, server: &AssetServer,
 
 fn make_materials(materials: &mut Assets<StandardMaterial>, server: &AssetServer, assets: &GameAssets) -> Materials {
     let mut cards = HashMap::new();
-    for (card, file) in [(Card::Pine, "spray_pine.png"), (Card::Fir, "spray_fir.png"), (Card::Twigs, "twigs.png"), (Card::Tamarack, "spray_tamarack.png")] {
+    for (card, file) in [(Card::Pine, "spray_pine.png"), (Card::Fir, "spray_fir_photo.png"), (Card::Twigs, "twigs.png"), (Card::Tamarack, "spray_tamarack.png")] {
         cards.insert(card, card_material(materials, server, file, Color::WHITE));
     }
     let mut barks = HashMap::new();

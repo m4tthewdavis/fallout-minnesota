@@ -49,9 +49,12 @@ jobs:
       - name: Check the package has its game files
         shell: pwsh
         run: |
-          foreach ($f in @("dist/FalloutMinnesota.exe", "dist/assets/textures/generated/snow_diff.jpg", "dist/assets/models/barrel_stove/barrel_stove.gltf", "dist/assets/textures/generated/flame_sheet.png", "dist/assets/textures/generated/spray_fir.png", "dist/assets/ui/pip_frame.png", "dist/assets/ui/mascot_idle.png", "dist/assets/textures/blue_metal_plate/diff.jpg", "dist/assets/textures/polar_fleece/diff.jpg", "dist/assets/textures/generated/frost_rime.png", "dist/assets/ui/icon.png", "dist/CREDITS.md", "dist/Benchmark.bat", "dist/PlayWithProfile.bat", "dist/VERSION.txt")) {
+          foreach ($f in @("dist/FalloutMinnesota.exe", "dist/assets/textures/generated/snow_diff.jpg", "dist/assets/models/barrel_stove/barrel_stove.gltf", "dist/assets/textures/generated/flame_sheet.png", "dist/assets/textures/generated/spray_fir.png", "dist/assets/ui/pip_frame.png", "dist/assets/ui/mascot_idle.png", "dist/assets/textures/blue_metal_plate/diff.jpg", "dist/assets/textures/polar_fleece/diff.jpg", "dist/assets/textures/generated/frost_rime.png", "dist/assets/ui/icon.png", "dist/assets/sounds/step_snow_0.ogg", "dist/assets/environment/snow_field_diffuse.ktx2", "dist/assets/environment/snow_field_specular.ktx2", "dist/assets/environment/rural_winter_roadside_diffuse.ktx2", "dist/assets/environment/rural_winter_roadside_specular.ktx2", "dist/assets/textures/Ice003/diff.jpg", "dist/assets/textures/LeafSet019/diff.jpg", "dist/assets/models/boulder_01/boulder_01.gltf", "dist/assets/models/metal_office_desk/metal_office_desk.gltf", "dist/assets/textures/Tiles140/diff.jpg", "dist/CREDITS.md", "dist/Benchmark.bat", "dist/PlayWithProfile.bat", "dist/VERSION.txt")) {
             if (-not (Test-Path $f)) { Write-Error "Missing from the package: $f"; exit 1 }
           }
+          # A missing sounds folder would fall back to synthesised sound silently.
+          $n = (Get-ChildItem dist/assets/sounds -Filter *.ogg).Count
+          if ($n -lt 100) { Write-Error "Only $n recorded sounds in the package"; exit 1 }
 
       - name: Upload the game for download
         uses: actions/upload-artifact@v4

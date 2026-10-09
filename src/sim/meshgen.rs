@@ -701,6 +701,37 @@ pub fn gable_walls(w: f32, h: f32, d: f32, gable: f32, uv_scale: f32) -> MeshDat
     m
 }
 
+/// A ridge tent: [`gable_walls`] with two sloping canvas roof panels that
+/// run past the walls by `overhang` (eaves and front/back), so the roof is
+/// part of the tent instead of a lid. Base at the origin, ridge along z.
+pub fn tent(w: f32, h: f32, d: f32, gable: f32, overhang: f32, uv_scale: f32) -> MeshData {
+    let mut m = gable_walls(w, h, d, gable, uv_scale);
+    let half = w * 0.5;
+    let top = h + gable;
+    // The slope carries on past the wall top to the eave.
+    let ex = half + overhang;
+    let ey = h - overhang * gable / half;
+    let zf = d * 0.5 + overhang;
+    let slope = ((ex * ex) + (top - ey) * (top - ey)).sqrt();
+    for side in [-1.0f32, 1.0] {
+        let n = normalize([side * gable, half, 0.0]);
+        let v = |m: &mut MeshData, x: f32, y: f32, z: f32, along: f32| m.vertex([x, y, z], n, [z / uv_scale, -along / uv_scale], WHITE);
+        let a = v(&mut m, side * ex, ey, zf, 0.0);
+        let b = v(&mut m, side * ex, ey, -zf, 0.0);
+        let c = v(&mut m, 0.0, top, -zf, slope);
+        let e = v(&mut m, 0.0, top, zf, slope);
+        // Wind the quad so it faces the way its normal does.
+        let p = |i: u32| m.positions[i as usize];
+        let facing = cross(sub(p(b), p(a)), sub(p(c), p(a)));
+        if facing[0] * n[0] + facing[1] * n[1] > 0.0 {
+            m.quad(a, b, c, e);
+        } else {
+            m.quad(a, e, c, b);
+        }
+    }
+    m
+}
+
 const SNOW: [f32; 4] = [0.92, 0.95, 1.0, 1.0];
 
 /// A bare, dead tree (snag): a few crooked branches. Returned as tubes in one
@@ -1177,6 +1208,24 @@ mod tests {
     }
 
     #[test]
+    fn tent_has_a_roof_that_faces_up_and_out() {
+        let m = tent(2.4, 1.1, 3.0, 0.9, 0.15, 1.5);
+        assert!(m.is_valid());
+        let (lo, hi) = m.bounds();
+        assert!((hi[1] - 2.0).abs() < 1e-5, "ridge at wall height + gable");
+        assert!(hi[0] > 1.2 && lo[0] < -1.2, "eaves overhang the walls");
+        assert!(hi[2] > 1.5, "roof runs past the gable ends");
+        // Every roof triangle (above the walls, sloping) winds the way its normal points, upwards.
+        let roof: Vec<_> = m.indices.chunks_exact(3).filter(|t| t.iter().all(|&i| m.normals[i as usize][1] > 0.3 && m.normals[i as usize][1] < 0.99)).collect();
+        assert_eq!(roof.len(), 4);
+        for t in roof {
+            let p = |k: usize| m.positions[t[k] as usize];
+            let f = cross(sub(p(1), p(0)), sub(p(2), p(0)));
+            assert!(f[1] > 0.0, "roof faces up");
+        }
+    }
+
+    #[test]
     fn wolf_parts_line_up() {
         let body = wolf_body_variant(0);
         let head = wolf_head_variant(0);
@@ -1305,5 +1354,21 @@ mod tests {
         assert!(rhi[0] > 1.2, "palms spread wide: {}", rhi[0]);
         // Tips stand above the head and nowhere near the ground.
         assert!(rt.iter().all(|t| t[1] > 2.1));
+    }
+
+    #[test]
+    fn tent_without_overhang_stops_at_the_walls_and_still_faces_up() {
+        let m = tent(2.0, 1.0, 3.0, 0.8, 0.0, 1.0);
+        assert!(m.is_valid());
+        let (lo, hi) = m.bounds();
+        assert!((hi[0] - 1.0).abs() < 1e-5 && (lo[0] + 1.0).abs() < 1e-5, "no eaves");
+        assert!((hi[2] - 1.5).abs() < 1e-5 && (lo[2] + 1.5).abs() < 1e-5, "no front/back overhang");
+        assert!((hi[1] - 1.8).abs() < 1e-5);
+        assert!(lo[1] >= -1e-5, "base stays at the origin");
+        // More canvas never makes the tent smaller than the bare walls.
+        let (_, big) = tent(2.0, 1.0, 3.0, 0.8, 0.4, 1.0).bounds();
+        assert!(big[0] > hi[0] && big[2] > hi[2]);
+        // A tent with no gable rise is a flat-topped box and must still be a valid mesh.
+        assert!(tent(2.0, 1.0, 3.0, 0.0, 0.1, 1.0).is_valid());
     }
 }

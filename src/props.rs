@@ -10,6 +10,7 @@ use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
 use crate::assets::GameAssets;
+use crate::snow::{RockSnowExt, RockSnowMaterial, ROCK_SNOW};
 use crate::interact::{spawn_container, ContainerAssets, Workbench};
 use crate::landmarks::{sign, RUINS};
 use crate::meshes::{to_mesh, to_mesh_tangents};
@@ -79,6 +80,8 @@ pub fn spawn_props(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rng: ResMut<RngRes>,
     mut colliders: ResMut<Colliders>,
+    server: Res<AssetServer>,
+    mut rock_materials: ResMut<Assets<RockSnowMaterial>>,
 ) {
     let solid = &mut colliders.0;
     let snow_blob = |meshes: &mut Assets<Mesh>, r: f32, seed: u64| meshes.add(to_mesh_tangents(&meshgen::blob(r, 0.3, 0.2, seed, 1.5)));
@@ -176,15 +179,28 @@ pub fn spawn_props(
     }
 
     // ================= Camps: tent, cold fire pit, sled, gear =================
-    let tent_walls = meshes.add(to_mesh_tangents(&meshgen::gable_walls(2.4, 1.1, 3.0, 0.9, 1.5)));
-    let tent_snow = meshes.add(to_mesh_tangents(&meshgen::blob(1.0, 0.18, 0.2, 61, 1.5).scaled([1.35, 1.0, 1.7])));
-    let tent_cloth = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.78, 0.42, 0.14),
-        perceptual_roughness: 0.95,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
+    let tent_walls = meshes.add(to_mesh_tangents(&meshgen::tent(2.4, 1.1, 3.0, 0.9, 0.15, 1.5)));
+    // Old army canvas, faded to a dirty olive-tan by sun and snow (CC0
+    // hessian weave, tinted), not a bright nylon tent.
+    let canvas = |name: &str, srgb: bool| Some(crate::assets::tiled(&server, format!("textures/hessian_230/{name}"), srgb));
+    let tent_cloth = rock_materials.add(RockSnowMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(0.5, 0.53, 0.4),
+            base_color_texture: canvas("diff.jpg", true),
+            normal_map_texture: canvas("nor.jpg", false),
+            metallic_roughness_texture: canvas("arm.jpg", false),
+            occlusion_texture: canvas("arm.jpg", false),
+            metallic: 0.0,
+            perceptual_roughness: 1.0,
+            uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(2.5)),
+            double_sided: true,
+            cull_mode: None,
+            ..default()
+        },
+        // Snow lying in patches on the roof (see shaders/rock_snow.wgsl).
+        extension: RockSnowExt { snow: ROCK_SNOW.extend(0.6) },
     });
+
     let tent_dark = mat(&mut materials, Color::srgb(0.02, 0.02, 0.02));
     let char_log = materials.add(StandardMaterial {
         base_color: Color::srgb(0.06, 0.045, 0.035),
@@ -224,7 +240,6 @@ pub fn spawn_props(
             .spawn((Transform::from_xyz(tx, gy, tz).with_rotation(rot), Visibility::default()))
             .with_children(|t| {
                 t.spawn((Mesh3d(tent_walls.clone()), MeshMaterial3d(tent_cloth.clone())));
-                t.spawn((Mesh3d(tent_snow.clone()), MeshMaterial3d(assets.snow.clone()), Transform::from_xyz(0.0, 1.6, 0.0), NotShadowCaster));
                 t.spawn((Mesh3d(meshes.add(Cuboid::new(0.9, 0.9, 0.05))), MeshMaterial3d(tent_dark.clone()), Transform::from_xyz(0.0, 0.5, 1.52)));
                 for x in [-1.4f32, 1.4] {
                     for z in [-1.7f32, 1.7] {

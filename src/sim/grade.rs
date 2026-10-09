@@ -92,7 +92,8 @@ impl Grade {
 
     /// Ease towards another grade; `k` is the fraction of the way to go.
     pub fn approach(self, to: Grade, k: f32) -> Grade {
-        let k = k.clamp(0.0, 1.0);
+        // A bad time step holds the current grade rather than poisoning it.
+        let k = if k.is_nan() { 0.0 } else { k.clamp(0.0, 1.0) };
         Grade {
             exposure: lerp(self.exposure, to.exposure, k),
             temperature: lerp(self.temperature, to.temperature, k),
@@ -114,7 +115,9 @@ impl Grade {
 /// that stays white without blowing out.
 fn clear_day() -> Grade {
     Grade {
-        exposure: 0.15,
+        // Applied once now (the world used to be graded twice): a touch
+        // under the old value keeps noon snow bright without going milky.
+        exposure: 0.08,
         temperature: -0.004,
         tint: 0.0,
         saturation: 1.06,
@@ -177,10 +180,11 @@ fn room(r: Interior) -> Grade {
         Interior::VaultLobby => Grade { temperature: -0.008, saturation: 0.95, ..base },
         // A dead shop: drained of colour.
         Interior::Mart => Grade { temperature: -0.004, saturation: 0.8, ..base },
-        // Teal machine light, hard contrast.
+        // Cold machine light, hard contrast; only a nudge cooler, so the
+        // yellow rails, orange pipes and warm work lamps still read.
         Interior::Reactor => Grade {
-            temperature: -0.01,
-            tint: -0.004,
+            temperature: -0.004,
+            tint: -0.001,
             saturation: 1.05,
             shadows: Band { contrast: 1.0, lift: 0.0, ..Band::NEUTRAL },
             midtones: Band { contrast: 1.05, ..Band::NEUTRAL },
@@ -191,6 +195,21 @@ fn room(r: Interior) -> Grade {
 
 /// The grade for this moment.
 pub fn grade(m: &Mood) -> Grade {
+    // One NaN anywhere would turn the whole picture to NaN: treat a bad
+    // reading as the calm default for that field.
+    let ok = |x: f32, fallback: f32| if x.is_finite() { x } else { fallback };
+    let d = Mood::default();
+    let m = &Mood {
+        day: ok(m.day, d.day),
+        warmth: ok(m.warmth, d.warmth),
+        overcast: ok(m.overcast, d.overcast),
+        sick: ok(m.sick, d.sick),
+        interior: m.interior,
+        health: ok(m.health, d.health),
+        body_heat: ok(m.body_heat, d.body_heat),
+        rads: ok(m.rads, d.rads),
+        hurt: ok(m.hurt, d.hurt),
+    };
     let mut g = match m.interior {
         Some(r) => room(r),
         None => {
@@ -297,9 +316,9 @@ mod tests {
         // A negative lift pushes dark pixels below zero, where they clip to black.
         let rooms = [None, Some(Interior::FishHouse(0)), Some(Interior::VaultLobby), Some(Interior::Mart), Some(Interior::Reactor)];
         for interior in rooms {
-            for day in [0.0, 0.5, 1.0] {
+            for d in [0.0, 0.5, 1.0] {
                 for health in [0.0, 0.5, 1.0] {
-                    let g = grade(&Mood { interior, day, health, warmth: day, overcast: 1.0 - day, ..day_mood() });
+                    let g = grade(&Mood { interior, day: d, health, warmth: d, overcast: 1.0 - d, ..day() });
                     for b in [g.shadows, g.midtones, g.highlights] {
                         assert!(b.lift >= 0.0 && b.gain > 0.0 && b.gamma > 0.0, "{interior:?} {b:?}");
                     }
@@ -312,10 +331,6 @@ mod tests {
         }
     }
 
-    fn day_mood() -> Mood {
-        Mood::default()
-    }
-
     #[test]
     fn approach_eases_and_lands() {
         let a = Grade::NEUTRAL;
@@ -324,5 +339,134 @@ mod tests {
         assert!((half.temperature - b.temperature * 0.5).abs() < 1e-6);
         assert_eq!(a.approach(b, 1.0), b);
         assert_eq!(a.approach(b, 5.0), b);
+    }
+
+    // ---- audit ----
+
+    fn worst() -> Mood {
+        Mood { day: 0.0, warmth: 1.0, overcast: 1.0, sick: 1.0, interior: None, health: 0.0, body_heat: 0.0, rads: 1.0, hurt: 1.0 }
+    }
+
+    fn finite(g: &Grade) -> bool {
+        let bands = [g.shadows, g.midtones, g.highlights].iter().all(|b| [b.saturation, b.contrast, b.gamma, b.gain, b.lift].iter().all(|v| v.is_finite()));
+        bands && [g.exposure, g.temperature, g.tint, g.saturation, g.aberration].iter().all(|v| v.is_finite())
+    }
+
+    #[test]
+    fn the_world_is_graded_once_so_noon_exposure_stays_modest() {
+        let g = grade(&day());
+        assert!(g.exposure > 0.0 && g.exposure < 0.12, "noon exposure {}", g.exposure);
+        // No time of day pushes the single grade past what two stacked grades once did.
+        for d in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            for w in [0.0, 1.0] {
+                assert!(grade(&Mood { day: d, warmth: w, ..day() }).exposure <= 0.4, "day {d} warmth {w}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_reactor_is_only_a_nudge_cooler_so_warm_lamps_still_read() {
+        let reactor = grade(&Mood { interior: Some(Interior::Reactor), ..day() });
+        let vault = grade(&Mood { interior: Some(Interior::VaultLobby), ..day() });
+        assert!(reactor.temperature < 0.0 && reactor.temperature > -0.006, "{}", reactor.temperature);
+        assert!(reactor.temperature > vault.temperature, "colder look belongs to the vault lobby");
+        assert!(reactor.tint.abs() < 0.003);
+        assert!(reactor.midtones.contrast > vault.midtones.contrast, "hard contrast kept");
+    }
+
+    #[test]
+    fn extreme_but_finite_moods_give_a_usable_grade() {
+        let g = grade(&worst());
+        assert!(finite(&g));
+        assert!(g.aberration <= 0.05 + 1e-6, "fringing is capped: {}", g.aberration);
+        assert!(g.saturation > 0.0, "never inverted: {}", g.saturation);
+        // Out-of-range inputs (a bug elsewhere) still can't break the grade.
+        let wild = Mood { day: -4.0, warmth: 9.0, overcast: 7.0, sick: 1.0, interior: None, health: -3.0, body_heat: -500.0, rads: 40.0, hurt: 99.0 };
+        let g = grade(&wild);
+        assert!(finite(&g));
+        assert!(g.aberration <= 0.05 + 1e-6);
+        assert!(g.saturation >= 0.0);
+        assert!(g.shadows.lift >= 0.0 && g.shadows.contrast <= 1.0);
+        let huge = grade(&Mood { day: 1e6, warmth: 1e6, overcast: 1e6, rads: 1e6, health: 1e6, body_heat: 1e6, ..day() });
+        assert!(finite(&huge));
+    }
+
+    #[test]
+    fn a_clear_healthy_day_has_no_fringing_and_every_ailment_adds_some() {
+        assert_eq!(grade(&day()).aberration, 0.0);
+        assert!(grade(&Mood { rads: 1.0, ..day() }).aberration > 0.0);
+        assert!(grade(&Mood { health: 0.0, ..day() }).aberration > 0.0);
+        assert!(grade(&Mood { hurt: 0.5, ..day() }).aberration > 0.0);
+        // Being hurt-flashed at full health is a jolt, not a cap breach.
+        assert!(grade(&Mood { hurt: 1.0, rads: 1.0, health: 0.0, ..day() }).aberration <= 0.05);
+    }
+
+    #[test]
+    fn getting_colder_and_sicker_only_ever_drains_the_picture() {
+        let mut prev = grade(&Mood { body_heat: 100.0, ..day() });
+        for heat in (0..100).rev().step_by(5) {
+            let g = grade(&Mood { body_heat: heat as f32, ..day() });
+            assert!(g.saturation <= prev.saturation + 1e-6 && g.temperature <= prev.temperature + 1e-6, "heat {heat}");
+            prev = g;
+        }
+        let mut prev = grade(&day());
+        for hp in (0..=100).rev().step_by(5) {
+            let g = grade(&Mood { health: hp as f32 / 100.0, ..day() });
+            assert!(g.saturation <= prev.saturation + 1e-6, "health {hp}%");
+            prev = g;
+        }
+        let mut prev = grade(&day());
+        for r in 0..=20 {
+            let g = grade(&Mood { rads: r as f32 / 20.0, ..day() });
+            assert!(g.tint <= prev.tint + 1e-6, "rads {r}");
+            prev = g;
+        }
+    }
+
+    #[test]
+    fn the_grade_changes_smoothly_through_the_day() {
+        let mut prev = grade(&Mood { day: 0.0, ..day() });
+        for i in 1..=200 {
+            let d = i as f32 / 200.0;
+            let g = grade(&Mood { day: d, warmth: (1.0 - d) * 0.3, ..day() });
+            assert!((g.temperature - prev.temperature).abs() < 0.003, "temperature jumps at {d}");
+            assert!((g.saturation - prev.saturation).abs() < 0.05, "saturation jumps at {d}");
+            assert!((g.exposure - prev.exposure).abs() < 0.05, "exposure jumps at {d}");
+            prev = g;
+        }
+    }
+
+    #[test]
+    fn indoors_ignores_the_weather_but_not_your_body() {
+        let room = Some(Interior::Mart);
+        let calm = grade(&Mood { interior: room, ..day() });
+        assert_eq!(calm, grade(&Mood { interior: room, overcast: 1.0, sick: 1.0, warmth: 1.0, day: 0.0, ..day() }));
+        let frozen = grade(&Mood { interior: room, body_heat: 0.0, ..day() });
+        assert!(frozen.temperature < calm.temperature && frozen.saturation < calm.saturation);
+    }
+
+    #[test]
+    fn approach_clamps_its_step() {
+        let a = Grade::NEUTRAL;
+        let b = grade(&Mood { warmth: 1.0, ..day() });
+        assert_eq!(a.approach(b, -2.0), a, "never overshoots backwards");
+        assert_eq!(a.approach(a, 0.7), a);
+        assert_eq!(b.approach(b, 0.3), b);
+    }
+
+    #[test]
+    fn nan_inputs_do_not_poison_the_grade() {
+        for m in [
+            Mood { body_heat: f32::NAN, ..day() },
+            Mood { health: f32::NAN, ..day() },
+            Mood { hurt: f32::NAN, ..day() },
+            Mood { rads: f32::NAN, ..day() },
+            Mood { day: f32::NAN, ..day() },
+            Mood { overcast: f32::NAN, ..day() },
+            Mood { warmth: f32::NAN, ..day() },
+        ] {
+            assert!(finite(&grade(&m)), "{m:?}");
+        }
+        assert!(finite(&Grade::NEUTRAL.approach(grade(&day()), f32::NAN)));
     }
 }

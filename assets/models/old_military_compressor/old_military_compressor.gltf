@@ -1,259 +1,245 @@
 {
-  "asset": {
-    "generator": "Khronos glTF Blender I/O v5.1.19",
-    "version": "2.0"
+ "asset": {
+  "version": "2.0",
+  "generator": "gltfpack 1.3"
+ },
+ "buffers": [
+  {
+   "uri": "old_military_compressor.bin",
+   "byteLength": 659368
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 208056,
+   "byteStride": 12,
+   "target": 34962
   },
-  "scene": 0,
-  "scenes": [
-    {
-      "name": "Scene",
-      "nodes": [
-        0
-      ]
+  {
+   "buffer": 0,
+   "byteOffset": 208056,
+   "byteLength": 208056,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 416112,
+   "byteLength": 138704,
+   "byteStride": 8,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 554816,
+   "byteLength": 104550,
+   "target": 34963
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "byteOffset": 0,
+   "componentType": 5126,
+   "count": 17305,
+   "type": "VEC3",
+   "min": [
+    -0.71849978,
+    -0.000293962657,
+    -5.05623627
+   ],
+   "max": [
+    -0.124150634,
+    1.17628896,
+    -3.38104486
+   ]
+  },
+  {
+   "bufferView": 1,
+   "byteOffset": 0,
+   "componentType": 5126,
+   "count": 17305,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "byteOffset": 0,
+   "componentType": 5126,
+   "count": 17305,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "byteOffset": 0,
+   "componentType": 5123,
+   "count": 52164,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 0,
+   "byteOffset": 207660,
+   "componentType": 5126,
+   "count": 33,
+   "type": "VEC3",
+   "min": [
+    -0.411056817,
+    0.851632416,
+    -3.66394043
+   ],
+   "max": [
+    -0.385287166,
+    0.873531342,
+    -3.63915157
+   ]
+  },
+  {
+   "bufferView": 1,
+   "byteOffset": 207660,
+   "componentType": 5126,
+   "count": 33,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "byteOffset": 138440,
+   "componentType": 5126,
+   "count": 33,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "byteOffset": 104328,
+   "componentType": 5123,
+   "count": 111,
+   "type": "SCALAR"
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/jpeg",
+   "name": "old_military_compressor_nor_gl",
+   "uri": "textures/old_military_compressor_nor_gl_1k.jpg"
+  },
+  {
+   "mimeType": "image/jpeg",
+   "name": "old_military_compressor_diff",
+   "uri": "textures/old_military_compressor_diff_1k.jpg"
+  },
+  {
+   "mimeType": "image/jpeg",
+   "name": "old_military_compressor_metal-old_military_compressor_rough",
+   "uri": "textures/old_military_compressor_arm_1k.jpg"
+  },
+  {
+   "mimeType": "image/jpeg",
+   "name": "old_military_compressor_diff",
+   "uri": "textures/old_military_compressor_diff_1k.jpg"
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  },
+  {
+   "sampler": 0,
+   "source": 1
+  },
+  {
+   "sampler": 0,
+   "source": 2
+  },
+  {
+   "sampler": 0,
+   "source": 0
+  },
+  {
+   "sampler": 0,
+   "source": 3
+  },
+  {
+   "sampler": 0,
+   "source": 2
+  }
+ ],
+ "materials": [
+  {
+   "doubleSided": true,
+   "name": "old_military_compressor",
+   "normalTexture": {
+    "index": 0
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 1
+    },
+    "metallicRoughnessTexture": {
+     "index": 2
     }
-  ],
-  "nodes": [
-    {
-      "mesh": 0,
-      "name": "old_military_compressor"
+   }
+  },
+  {
+   "alphaMode": "BLEND",
+   "doubleSided": true,
+   "name": "old_military_compressor_glass",
+   "normalTexture": {
+    "index": 3
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 4
+    },
+    "metallicRoughnessTexture": {
+     "index": 5
     }
-  ],
-  "materials": [
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
     {
-      "doubleSided": true,
-      "name": "old_military_compressor",
-      "normalTexture": {
-        "index": 0
-      },
-      "pbrMetallicRoughness": {
-        "baseColorTexture": {
-          "index": 1
-        },
-        "metallicRoughnessTexture": {
-          "index": 2
-        }
-      }
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
     },
     {
-      "alphaMode": "BLEND",
-      "doubleSided": true,
-      "name": "old_military_compressor_glass",
-      "normalTexture": {
-        "index": 3
-      },
-      "pbrMetallicRoughness": {
-        "baseColorTexture": {
-          "index": 4
-        },
-        "metallicRoughnessTexture": {
-          "index": 5
-        }
-      }
+     "attributes": {
+      "POSITION": 4,
+      "NORMAL": 5,
+      "TEXCOORD_0": 6
+     },
+     "indices": 7,
+     "material": 1
     }
-  ],
-  "meshes": [
-    {
-      "name": "compressor_low.002",
-      "primitives": [
-        {
-          "attributes": {
-            "POSITION": 0,
-            "NORMAL": 1,
-            "TEXCOORD_0": 2
-          },
-          "indices": 3,
-          "material": 0
-        },
-        {
-          "attributes": {
-            "POSITION": 4,
-            "NORMAL": 5,
-            "TEXCOORD_0": 6
-          },
-          "indices": 7,
-          "material": 1
-        }
-      ]
-    }
-  ],
-  "textures": [
-    {
-      "sampler": 0,
-      "source": 0
-    },
-    {
-      "sampler": 0,
-      "source": 1
-    },
-    {
-      "sampler": 0,
-      "source": 2
-    },
-    {
-      "sampler": 0,
-      "source": 0
-    },
-    {
-      "sampler": 0,
-      "source": 3
-    },
-    {
-      "sampler": 0,
-      "source": 2
-    }
-  ],
-  "images": [
-    {
-      "mimeType": "image/jpeg",
-      "name": "old_military_compressor_nor_gl",
-      "uri": "textures/old_military_compressor_nor_gl_1k.jpg"
-    },
-    {
-      "mimeType": "image/jpeg",
-      "name": "old_military_compressor_diff",
-      "uri": "textures/old_military_compressor_diff_1k.jpg"
-    },
-    {
-      "mimeType": "image/jpeg",
-      "name": "old_military_compressor_metal-old_military_compressor_rough",
-      "uri": "textures/old_military_compressor_arm_1k.jpg"
-    },
-    {
-      "mimeType": "image/jpeg",
-      "name": "old_military_compressor_diff",
-      "uri": "textures/old_military_compressor_diff_1k.jpg"
-    }
-  ],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5126,
-      "count": 58183,
-      "max": [
-        -0.12284350395202637,
-        1.1774601936340332,
-        -3.381044864654541
-      ],
-      "min": [
-        -0.721126139163971,
-        -0.0016261767596006393,
-        -5.056589126586914
-      ],
-      "type": "VEC3"
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5126,
-      "count": 58183,
-      "type": "VEC3"
-    },
-    {
-      "bufferView": 2,
-      "componentType": 5126,
-      "count": 58183,
-      "type": "VEC2"
-    },
-    {
-      "bufferView": 3,
-      "componentType": 5123,
-      "count": 236358,
-      "type": "SCALAR"
-    },
-    {
-      "bufferView": 4,
-      "componentType": 5126,
-      "count": 170,
-      "max": [
-        -0.38528716564178467,
-        0.8735313415527344,
-        -3.6391515731811523
-      ],
-      "min": [
-        -0.4110568165779114,
-        0.8516324162483215,
-        -3.6649210453033447
-      ],
-      "type": "VEC3"
-    },
-    {
-      "bufferView": 5,
-      "componentType": 5126,
-      "count": 170,
-      "type": "VEC3"
-    },
-    {
-      "bufferView": 6,
-      "componentType": 5126,
-      "count": 170,
-      "type": "VEC2"
-    },
-    {
-      "bufferView": 7,
-      "componentType": 5123,
-      "count": 768,
-      "type": "SCALAR"
-    }
-  ],
-  "bufferViews": [
-    {
-      "buffer": 0,
-      "byteLength": 698196,
-      "byteOffset": 0,
-      "target": 34962
-    },
-    {
-      "buffer": 0,
-      "byteLength": 698196,
-      "byteOffset": 698196,
-      "target": 34962
-    },
-    {
-      "buffer": 0,
-      "byteLength": 465464,
-      "byteOffset": 1396392,
-      "target": 34962
-    },
-    {
-      "buffer": 0,
-      "byteLength": 472716,
-      "byteOffset": 1861856,
-      "target": 34963
-    },
-    {
-      "buffer": 0,
-      "byteLength": 2040,
-      "byteOffset": 2334572,
-      "target": 34962
-    },
-    {
-      "buffer": 0,
-      "byteLength": 2040,
-      "byteOffset": 2336612,
-      "target": 34962
-    },
-    {
-      "buffer": 0,
-      "byteLength": 1360,
-      "byteOffset": 2338652,
-      "target": 34962
-    },
-    {
-      "buffer": 0,
-      "byteLength": 1536,
-      "byteOffset": 2340012,
-      "target": 34963
-    }
-  ],
-  "samplers": [
-    {
-      "magFilter": 9729,
-      "minFilter": 9987
-    }
-  ],
-  "buffers": [
-    {
-      "byteLength": 2341548,
-      "uri": "old_military_compressor.bin"
-    }
-  ]
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "old_military_compressor",
+   "mesh": 0
+  }
+ ],
+ "scenes": [
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "scene": 0
 }

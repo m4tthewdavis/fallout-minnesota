@@ -102,7 +102,10 @@ fn spawn_player(
             Bloom::NATURAL,
             // Ears for positioned sounds (wolves, fires).
             SpatialListener::new(0.3),
-            Tonemapping::TonyMcMapface,
+            // Not tonemapped here: both HDR cameras share the frame, and the
+            // view-model camera (drawn last) tonemaps and grades all of it
+            // once. Tonemapping here too would grade the world twice.
+            Tonemapping::None,
             Projection::from(PerspectiveProjection {
                 fov: 75.0_f32.to_radians(),
                 ..default()

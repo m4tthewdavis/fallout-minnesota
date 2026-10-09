@@ -158,6 +158,8 @@ pub fn spawn_view_model(
             clear_color: ClearColorConfig::None,
             ..default()
         },
+        // Tonemaps (and colour-grades) the whole shared frame: the world
+        // camera leaves it in HDR (see player.rs).
         Tonemapping::TonyMcMapface,
         Projection::from(PerspectiveProjection {
             fov: HIP_FOV.to_radians(),

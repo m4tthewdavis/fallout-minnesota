@@ -66,22 +66,19 @@ def voronoi_edges(size, points):
 
 
 def nuclear_ice():
-    """Cracked lake ice: pale teal sheets with glowing radioactive cracks."""
+    """The radioactive glow under the lake ice: green light seeping up
+    through the real cracks and fractures of the scanned ice (ambientCG
+    Ice003, fetched by tools/fetch_assets.py), whose colour map the lakes
+    use, so the glow sits exactly in its cracks. Plus a faint, cloudy glow
+    through the whole sheet so a lake reads as lit from below at a distance."""
     n = 512
-    edges = voronoi_edges(n, 38)
-    fine = voronoi_edges(n, 140)
+    scan = Image.open(os.path.join(ASSETS, "textures", "Ice003", "diff.jpg")).convert("L").resize((n, n), Image.LANCZOS)
+    lum = np.asarray(scan, float) / 255
+    wide = np.asarray(scan.filter(ImageFilter.GaussianBlur(12)), float) / 255
+    # Thin bright lines (cracks, fracture planes) stand out from their surroundings.
+    crack = np.clip((lum - wide) * 4.0, 0, 1) ** 1.3
+    glow = np.asarray(Image.fromarray((crack * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2)), float) / 255
     cloud = value_noise(n, 4)
-    crack = np.clip(1.0 - edges / 3.0, 0, 1) ** 1.5
-    hair = np.clip(1.0 - fine / 1.4, 0, 1) * 0.45 * (cloud > 0.45)
-    lines = np.clip(crack + hair, 0, 1)
-
-    base = np.stack([0.50 + 0.10 * cloud, 0.74 + 0.08 * cloud, 0.70 + 0.10 * cloud], -1)
-    deep = np.stack([0.18, 0.42, 0.36]) * np.ones((n, n, 3))
-    ice = base * (1 - 0.35 * lines[..., None]) + deep * 0.35 * lines[..., None]
-    save(Image.fromarray((np.clip(ice, 0, 1) * 255).astype(np.uint8)), GEN, "ice_diff.png")
-
-    glow = np.clip(crack * 1.2 + hair * 0.6, 0, 1)
-    glow = np.asarray(Image.fromarray((glow * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5)), float) / 255
     em = np.stack([0.15 * glow, glow, 0.35 * glow], -1) + np.stack([0.0, 0.08, 0.03]) * cloud[..., None]
     save(Image.fromarray((np.clip(em, 0, 1) * 255).astype(np.uint8)), GEN, "ice_emissive.png")
 
@@ -1084,6 +1081,38 @@ def ui_icons():
     save(Image.fromarray((img * 255).astype(np.uint8), "RGBA"), UI, "frost.png")
 
 
+def fir_photo_card():
+    """The balsam fir / spruce spray card from a photo-scanned fir spray
+    (ambientCG LeafSet019, CC0, fetched by tools/fetch_assets.py): the
+    largest spray of the atlas stood upright (cut end at the bottom, tip at
+    the top, like the drawn cards), turned to near-white luminance so the
+    game can tint it per species with vertex colours, with the scan's
+    opacity mask packed into the alpha channel."""
+    src = os.path.join(ASSETS, "textures", "LeafSet019")
+    colour = Image.open(os.path.join(src, "diff.jpg")).convert("L")
+    mask = Image.open(os.path.join(src, "opacity.jpg")).convert("L")
+    # The biggest spray, in the bottom band of the 1K atlas (cut end on the right).
+    box = (30, 645, 965, 1010)
+    lum = np.asarray(colour.crop(box).rotate(-90, expand=True), dtype=np.float32)
+    alpha = np.asarray(mask.crop(box).rotate(-90, expand=True), dtype=np.float32)
+    inside = alpha > 128
+    # Needles near white (mean ~205) with the scan's light and dark kept.
+    mean, std = lum[inside].mean(), lum[inside].std() + 1e-3
+    lum = np.clip(205.0 + (lum - mean) / std * 32.0, 60, 255)
+    # Transparent texels take the needles' grey so mips don't fringe dark.
+    lum[~inside] = 205.0
+    h, w = lum.shape
+    W, H = 256, 512
+    scale = min(W / w, H / h)
+    size = (max(1, round(w * scale)), max(1, round(h * scale)))
+    L = Image.fromarray(lum.astype(np.uint8)).resize(size, Image.LANCZOS)
+    A = Image.fromarray(alpha.astype(np.uint8)).resize(size, Image.LANCZOS)
+    card = Image.new("LA", (W, H), (205, 0))
+    # Cut end at the bottom centre, like the drawn cards.
+    card.paste(Image.merge("LA", (L, A)), ((W - size[0]) // 2, H - size[1]))
+    save(card.convert("RGBA"), GEN, "spray_fir_photo.png")
+
+
 def main():
     print("generating textures")
     nuclear_ice()
@@ -1104,6 +1133,7 @@ def main():
     snow_textures()
     track_textures()
     plant_textures()
+    fir_photo_card()
     pipboy_art()
     flame_sheet()
 
@@ -1114,7 +1144,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "firphoto": fir_photo_card, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon}
 
 if __name__ == "__main__":
     import sys

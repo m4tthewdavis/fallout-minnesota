@@ -85,6 +85,8 @@ pub struct GameAssets {
 
     // Generated textures.
     pub ice_diff: Handle<Image>,
+    pub ice_nor: Handle<Image>,
+    pub ice_arm: Handle<Image>,
     pub ice_emissive: Handle<Image>,
     pub scorch: Handle<Image>,
     pub soft: Handle<Image>,
@@ -253,7 +255,9 @@ fn load_assets(
     let snow_base = StandardMaterial {
         base_color: Color::srgb(0.8, 0.81, 0.83),
         base_color_texture: Some(tiled(s, "textures/generated/snow_diff.jpg".into(), true)),
-        normal_map_texture: Some(tiled(s, "textures/generated/snow_nor.jpg".into(), false)),
+        // Photo-scanned crust relief (ambientCG Snow014): its colour map has
+        // grass specks that would tile, but the relief alone reads as real snow.
+        normal_map_texture: Some(tiled(s, "textures/Snow014/nor.jpg".into(), false)),
         metallic_roughness_texture: Some(tiled(s, "textures/generated/snow_arm.jpg".into(), false)),
         metallic: 0.0,
         perceptual_roughness: 1.0,
@@ -345,7 +349,9 @@ fn load_assets(
         rust_diff: tiled(s, "textures/rusty_metal_02/diff.jpg".into(), true),
         rust_normal: tiled(s, "textures/rusty_metal_02/nor.jpg".into(), false),
 
-        ice_diff: tiled(s, "textures/generated/ice_diff.png".into(), true),
+        ice_diff: tiled(s, "textures/Ice003/diff.jpg".into(), true),
+        ice_nor: tiled(s, "textures/Ice003/nor.jpg".into(), false),
+        ice_arm: tiled(s, "textures/Ice003/arm.jpg".into(), false),
         ice_emissive: tiled(s, "textures/generated/ice_emissive.png".into(), true),
         scorch: generated("scorch.png"),
         soft,
@@ -401,9 +407,14 @@ fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<As
         if desc.mip_level_count != 1 || desc.size.depth_or_array_layers != 1 || w.min(h) < 16 {
             continue;
         }
-        let Some(data) = image.data.as_ref() else { continue };
+        let Some(data) = image.data.as_mut() else { continue };
         if data.len() != (w * h * 4) as usize {
             continue;
+        }
+        // Warm scanned stone that has to read as cold granite.
+        let path = server.get_path(*id).map(|p| p.path().to_string_lossy().replace('\\', "/"));
+        if let Some(&(_, keep)) = path.as_deref().and_then(|p| crate::library::GREYED.iter().find(|(g, _)| *g == p)) {
+            mipmaps::recolour(data, keep, [1.0, 1.0, 1.0]);
         }
         let (mut chain, levels) = mipmaps::build_chain(w, h, data, srgb);
         // Alpha-tested foliage cards keep their density in the distance.

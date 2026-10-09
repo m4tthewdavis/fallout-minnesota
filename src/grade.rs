@@ -1,5 +1,5 @@
 //! The colour grade and lens: hands `sim::grade`'s numbers to Bevy's
-//! `ColorGrading` and `ChromaticAberration` on the cameras every frame,
+//! `ColorGrading` and `ChromaticAberration` on the last camera every frame,
 //! easing between looks so dusk, storms and getting hurt roll in rather than
 //! snap. Going through a door snaps (the fade hides it).
 
@@ -8,7 +8,6 @@ use bevy::prelude::*;
 use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
 
 use crate::gun::ViewModelCamera;
-use crate::player::Player;
 use crate::sim::grade::{self, Band, Grade, Mood};
 use crate::sim::survival::Survival;
 use crate::state::{ClockRes, CurrentInterior, Game};
@@ -57,8 +56,7 @@ fn apply_grade(
     interior: Res<CurrentInterior>,
     game: Res<Game>,
     mut current: ResMut<Current>,
-    mut world_cam: Query<(Entity, Option<&mut ColorGrading>, Option<&mut ChromaticAberration>), (With<Player>, Without<ViewModelCamera>)>,
-    mut gun_cam: Query<(Entity, Option<&mut ColorGrading>), (With<ViewModelCamera>, Without<Player>)>,
+    mut gun_cam: Query<(Entity, Option<&mut ColorGrading>, Option<&mut ChromaticAberration>), With<ViewModelCamera>>,
 ) {
     let sky = clock.0.sky();
     let s = &game.survival;
@@ -68,7 +66,8 @@ fn apply_grade(
         overcast: look.overcast,
         sick: look.sick,
         interior: interior.0,
-        health: (s.health / Survival::BASE_MAX_HEALTH).clamp(0.0, 1.0),
+        // Of the maximum radiation has left, so a full bar never looks like dying.
+        health: (s.health / s.max_health().max(1.0)).clamp(0.0, 1.0),
         body_heat: s.body_heat,
         rads: s.rads / Survival::MAX_RADS,
         hurt: game.hurt_flash,
@@ -82,7 +81,10 @@ fn apply_grade(
     current.grade = g;
     let cg = to_bevy(&g);
 
-    for (cam, grading, fringe) in &mut world_cam {
+    // Both HDR cameras draw into one shared frame; the view-model camera is
+    // drawn last and tonemaps the lot, so the grade and the lens fringe go
+    // on it alone (on the world camera too, the world was graded twice).
+    for (cam, grading, fringe) in &mut gun_cam {
         match grading {
             Some(mut c) => *c = cg.clone(),
             None => {
@@ -99,15 +101,6 @@ fn apply_grade(
                 commands.entity(cam).remove::<ChromaticAberration>();
             }
             (None, false) => {}
-        }
-    }
-    // The rifle is drawn by its own camera: graded the same so it sits in the world.
-    for (cam, grading) in &mut gun_cam {
-        match grading {
-            Some(mut c) => *c = cg.clone(),
-            None => {
-                commands.entity(cam).insert(cg.clone());
-            }
         }
     }
 }

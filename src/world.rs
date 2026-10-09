@@ -304,19 +304,25 @@ fn build_world(
     ));
 
     // ---------- Nuclear ice lakes ----------
+    // Clear black-green ice full of bubbles and cracks (ambientCG Ice003),
+    // the reactor's glow seeping up through it (ice_emissive).
     let ice = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.85, 1.0, 0.95),
+        base_color: Color::srgb(0.9, 1.0, 1.0),
         base_color_texture: Some(assets.ice_diff.clone()),
+        normal_map_texture: Some(assets.ice_nor.clone()),
+        metallic_roughness_texture: Some(assets.ice_arm.clone()),
         emissive: LinearRgba::rgb(0.6, 1.6, 0.8),
         emissive_texture: Some(assets.ice_emissive.clone()),
-        perceptual_roughness: 0.08,
+        metallic: 0.0,
+        // The scan's roughness: glassy, with frosted cracks.
+        perceptual_roughness: 1.0,
         reflectance: 0.7,
         ..default()
     });
     commands.insert_resource(IceGlow(ice.clone()));
     for (lx, lz, r) in LAKES {
         commands.spawn((
-            Mesh3d(meshes.add(to_mesh(&meshgen::disc(r * ICE_FRACTION, 64, 9.0)))),
+            Mesh3d(meshes.add(to_mesh_tangents(&meshgen::disc(r * ICE_FRACTION, 64, 9.0)))),
             MeshMaterial3d(ice.clone()),
             Transform::from_xyz(lx, ICE_LEVEL, lz),
             NotShadowCaster,

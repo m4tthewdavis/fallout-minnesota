@@ -124,7 +124,7 @@ impl Interior {
             Interior::FishHouse(_) => ([1.0, 0.8, 0.55], 190.0),
             Interior::VaultLobby => ([0.8, 0.9, 1.0], 260.0),
             Interior::Mart => ([0.6, 0.66, 0.72], 120.0),
-            Interior::Reactor => ([0.55, 0.78, 0.9], 210.0),
+            Interior::Reactor => ([0.62, 0.74, 0.84], 190.0),
         }
     }
 

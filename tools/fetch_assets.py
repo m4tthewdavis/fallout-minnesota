@@ -106,6 +106,7 @@ TEXTURES = [
     ("curly_teddy_natural", ["Diffuse", "nor_gl", "arm"], "fur trim on hoods and cuffs"),
     ("wool_boucle", ["Diffuse", "nor_gl", "arm"], "knit beanies and scarves"),
     ("brown_leather", ["Diffuse", "nor_gl", "arm"], "gun slings, belts, boots and mittens"),
+    ("hessian_230", ["Diffuse", "nor_gl", "arm"], "weathered canvas on the raider-camp tents"),
 ]
 
 # ambientCG PBR sets: (id, resolution, use). Fetched as JPG zips and repacked.
@@ -116,6 +117,9 @@ AMBIENTCG = [
     ("Concrete031", "1K", "concrete panel walls on the reactor level"),
     ("MetalPlates013", "1K", "riveted plating on the reactor core and machinery"),
     ("OfficeCeiling003", "1K", "drop ceiling in the vault lobby"),
+    ("Snow014", "1K", "surface relief of the snow ground (normal map)"),
+    ("Ice003", "1K", "clear green-black lake ice with bubbles and cracks"),
+    ("LeafSet019", "1K", "photo-scanned fir sprays on the balsam fir and spruce cards (see gen_textures.py)"),
 ]
 
 MAP_SUFFIX = {"Diffuse": "diff", "nor_gl": "nor", "arm": "arm"}
@@ -209,12 +213,14 @@ def write_credits(credits):
         "# Asset credits",
         "",
         "Every asset in this folder is either made for this project or released under",
-        "**CC0 1.0** (public domain). No Fallout/Bethesda assets are used.",
+        "**CC0 1.0** (public domain), except some recorded sound effects that are **CC BY 3.0/4.0**",
+        "(attribution under \"Recorded sounds\" below). No Fallout/Bethesda assets are used.",
         "",
         "## Downloaded (Poly Haven and ambientCG, CC0 1.0)",
         "",
         "Fetched by `tools/fetch_assets.py`. Licenses: <https://polyhaven.com/license>,",
-        "<https://docs.ambientcg.com/license/>.",
+        "<https://docs.ambientcg.com/license/>. The heaviest scanned models are then",
+        "cut to game budgets by `tools/decimate_models.py`.",
         "",
         "| Path | Asset | Source | Author(s) | Used for |",
         "| --- | --- | --- | --- | --- |",

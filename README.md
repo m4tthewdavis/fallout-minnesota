@@ -1,4 +1,4 @@
-# Fallout: Minnesota — Prototype (Milestone 9)
+# Fallout: Minnesota — Prototype (Milestone 10)
 
 A first-person cold-survival prototype made with **Rust + Bevy 0.16**. It is based on the *Fallout: Minnesota* design doc.
 
@@ -122,6 +122,16 @@ Then install the pump at the reactor housing (200 XP) and tell the Overseer (300
 
 Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.json` in `%APPDATA%\FalloutMinnesota` on Windows (`~/.local/share/fallout-minnesota` elsewhere; set `FMN_DATA_DIR` to change it). A save remembers where you are, your health, heat, rads, inventory, weapons and upgrades, the map you've seen, the crates you've opened and items you've taken, the time and weather, and your quest progress. Wolves and moose aren't saved: they repopulate when you load. The world itself is the same every game. Saves carry a format version; a file from a newer version of the game is refused with a message instead of being misread.
 
+## What's new in Milestone 10
+
+- **Colour grade.** The picture is graded from the light (clear day, golden hour, night, storm, rad-blizzard), the room you're in, and how you are: freezing drains colour towards blue, rads tint it green, low health bleeds it out, and hits fringe the lens.
+- **Furnished interiors.** The vault lobby, reactor level, Bullseye-Mart stockroom and fish houses use CC0 scanned furniture and surfaces from Poly Haven and ambientCG.
+- **Outdoor set dressing.** Glacial boulders, fallen logs, stumps and deadfall, rock outcrops by the vault portal, propane tanks and generators at the shelters, and jersey barriers round the raider camps.
+- **Sky lighting.** The world is lit by image-based lighting baked from CC0 Poly Haven winter HDRIs (`assets/environment/*.ktx2`, made by `tools/bake_ibl.py`): an overcast/night map and a clear-sky map, with a fade between them, which gives real reflections on ice, metal and the gun. The colour grade is applied once, on the last camera.
+- **Lighter models.** The heavy scanned models are cut to game budgets by `tools/decimate_models.py` (meshoptimizer's gltfpack); outdoors that's about 0.8M triangles instead of 4.8M.
+- **Recorded sounds.** Clips in `assets/sounds/` (`<sound>_<n>.ogg`, plus `_muffled` copies) replace the synthesised versions. The three music moods are CC0 loops from OpenGameArt. Any sound without a file, such as the Geiger counter and the Pip-Boy, stays synthesised. They are built by `tools/fetch_sounds.py` and credited in `assets/CREDITS.md`.
+- **Developer variable.** `FMN_DUMP_SYNTH=<folder>` writes every synthesised clip there as a WAV and quits; it is used to match the loudness of the recordings.
+
 ## What's in Milestone 1
 
 - **Body Heat**: drains with air temperature and wind chill. Shelters, fire barrels, hotdish, sprinting and insulation warm you up. At 0 Heat you get frostbite and start losing health.
@@ -135,7 +145,7 @@ Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.j
 ## What's new in Milestone 2
 
 - **Collision**: you and the wolves now slide around trees, walls, fish houses, cars, silos and the vault hillside instead of walking through them.
-- **Sound**: every sound is synthesised in code, so there are no audio files. You'll hear calm wind, a howling blizzard gale, the air-raid siren before a storm, footsteps crunching in snow, gunshots, jams, reloads, wolf howls, snarls and yelps, cracking ice, and Pip-Boy pickup blips.
+- **Sound**: every sound was synthesised in code (since Milestone 10, recordings in `assets/sounds/` replace most of them). You'll hear calm wind, a howling blizzard gale, the air-raid siren before a storm, footsteps crunching in snow, gunshots, jams, reloads, wolf howls, snarls and yelps, cracking ice, and Pip-Boy pickup blips.
 - **Day/night cycle**: a full day lasts 12 real minutes. The sun moves and casts moving shadows, sunrise and sunset glow orange, and nights are dark blue with moonlight. Nights are up to 12°F colder, and distant howls carry across the ice. The HUD shows the day and clock.
 - **Animated wolves**: Frostfangs trot with swinging legs (diagonal pairs, like a real trot). Their stride speeds up when they chase, and their tails wag harder on the hunt.
 
@@ -151,7 +161,7 @@ Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.j
 
 ## What's new in Milestone 4
 
-- **Sound, rebuilt.** Before changing anything I measured every sound. The worst offenders were the Geiger counter (it clicked 15 times a second through a whole blizzard), footsteps (three near-identical clips in a fixed 1-2-3 order), wolf howls (every wolf on its own timer, so packs stacked), and wind and fire (short, obvious loops). Now: every frequent sound has 3-6 variants and is never repeated back to back, with random pitch and volume; footsteps differ on snow, ice, road, concrete and wooden decks; wind is three loops of 23, 29 and 37 seconds plus random gusts, muffled in shelters; fires crackle from their own barrels; wolves, fires and brass are positioned in 3D (they pan and fade); howls share one 18-second cooldown and quick repeats get quieter; the Geiger counter is gentle (about 2 clicks a second in a blizzard) and G turns it off; music has calm, tense and danger moods that crossfade and leaves long silences. Volume keys are in the controls table. Still all synthesised in code.
+- **Sound, rebuilt.** Before changing anything I measured every sound. The worst offenders were the Geiger counter (it clicked 15 times a second through a whole blizzard), footsteps (three near-identical clips in a fixed 1-2-3 order), wolf howls (every wolf on its own timer, so packs stacked), and wind and fire (short, obvious loops). Now: every frequent sound has 3-6 variants and is never repeated back to back, with random pitch and volume; footsteps differ on snow, ice, road, concrete and wooden decks; wind is three loops of 23, 29 and 37 seconds plus random gusts, muffled in shelters; fires crackle from their own barrels; wolves, fires and brass are positioned in 3D (they pan and fade); howls share one 18-second cooldown and quick repeats get quieter; the Geiger counter is gentle (about 2 clicks a second in a blizzard) and G turns it off; music has calm, tense and danger moods that crossfade and leaves long silences. Volume keys are in the controls table.
 - **Three new weapons, found not given.** The scrap shotgun (7 pellets, breaks open to reload) is in a military footlocker inside the Bullseye-Mart ruin; the frontier revolver (heavy, rarely jams in the cold) is in an armoury crate at the Golden Atomic Mills; the ice axe (melee) is in a tackle box at a fish house. Each has its own model, aim point, recoil, reload animation and sounds. Spent revolver and shotgun brass is dumped when you reload.
 - **Scrap and upgrades.** Containers and creatures hold scrap. At a workbench beside any fish house, press B to fit an insulated action (never jams), extended magazine, choke or heavy loads. Fitted upgrades show on the models.
 - **More props.** Shelter workbenches and stashes, supply caches, two abandoned camps with tents and cold fire pits, snowmobiles, sleds, shopping carts, flickering Frost Cola vending machines, mailboxes, street lamps, chain-link fences, ice-fishing sets on the lakes, more road signs.
@@ -168,12 +178,15 @@ The prototype now looks, sounds and feels like a game instead of a box test.
 - **Sky and light**: a sky that follows the day/night clock and the weather, stars, the northern lights on clear nights, sun and moon, HDR bloom and filmic tonemapping, flickering firelight, a floodlit vault door.
 - **Effects**: breath vapour, snow kicked up by footsteps, chimney smoke, fire flames and embers, radioactive motes, muzzle flashes and smoke, ejected brass, fur and blood on hits (blood stains the snow), shattering ice.
 - **Pip-Boy HUD**: retro monospace font, icon bars (radiation eats a red slice off your max HP), a compass marking the vault (V) and the nearest shelter (H), scanlines, vignette, frost creeping in as you freeze.
-- **Audio**: an ambient "Long Winter" music loop, a Geiger counter that clicks faster the more rads you take, fire crackle near the barrels, growling and a second howl voice for the wolves, groaning ice, tinkling shell casings. All still synthesised in code.
+- **Audio**: an ambient "Long Winter" music loop, a Geiger counter that clicks faster the more rads you take, fire crackle near the barrels, growling and a second howl voice for the wolves, groaning ice, tinkling shell casings.
 
 Asset sources and licenses are listed in [assets/CREDITS.md](assets/CREDITS.md). To re-download or regenerate the assets:
 
 ```
-python3 tools/fetch_assets.py     # CC0 models and textures from Poly Haven
+python3 tools/fetch_assets.py     # CC0 models and textures from Poly Haven and ambientCG
+python3 tools/fetch_sounds.py     # recorded sounds (CC0 / CC BY) into assets/sounds/
+python3 tools/decimate_models.py  # cuts the heavy scanned models to game budgets (needs gltfpack or npx)
+python3 tools/bake_ibl.py         # bakes the winter sky lighting maps into assets/environment/
 pip install numpy pillow
 python3 tools/gen_textures.py     # generated textures, signs and HUD images
 ```
@@ -196,6 +209,10 @@ src/
   fo4ui.rs       Loot list, pickup feed, XP bar and level-up banner
   interiors.rs   Enterable rooms (fish houses, vault lobby, stockroom, reactor level), doors, fades
   quest.rs       Quest screens: dialogue panel, quest spots, perk choice
+  grade.rs       The colour grade and lens fringe on the last camera
+  envlight.rs    Sky lighting maps on the cameras
+  library.rs     The CC0 furniture and set-dressing library (kits, recolouring, settled snow)
+  dressing.rs    Outdoor set dressing: boulders, logs, outcrops, camp and shelter props
   sim/           Pure game rules, no Bevy (unit-tested)
     collision.rs Circles and rectangles that push movers out
     meshgen.rs   Procedural geometry (wolves, moose, gloves, drifts, sheds, gear door...)
@@ -210,6 +227,9 @@ src/
     mipmaps.rs   Mipmap chains for loaded textures
     daynight.rs  Clock, sun/moon position, night chill
     synth.rs     Procedural sound effects and WAV encoding
+    recorded.rs  Recorded clips in assets/sounds/ that replace synthesised ones
+    grade.rs     Colour grade from light, room and the player's state
+    envlight.rs  Which sky lighting map to use and how bright, from weather and time
     survival.rs  Body Heat, rads, health, inventory, crafting
     weather.rs   Calm / siren / blizzard cycle and conditions
     terrain.rs   Height field, lakes, shelters, radiation zones, highway

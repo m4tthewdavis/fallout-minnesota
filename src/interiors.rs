@@ -132,7 +132,6 @@ struct Kit<'a> {
     window: Handle<StandardMaterial>,
     lamp: Handle<StandardMaterial>,
     strip: Handle<StandardMaterial>,
-    screen: Handle<StandardMaterial>,
     cold_light: Handle<StandardMaterial>,
     /// Glowing coolant, and the red of a warning lamp.
     coolant: Handle<StandardMaterial>,
@@ -155,10 +154,9 @@ fn make_kit<'a>(materials: &mut Assets<StandardMaterial>, assets: &GameAssets, l
         wool_red: mat(materials, Color::srgb(0.5, 0.13, 0.1)),
         pillow: mat(materials, Color::srgb(0.75, 0.72, 0.66)),
         yellow: mat(materials, Color::srgb(0.85, 0.66, 0.1)),
-        window: glow(materials, Color::srgb(0.5, 0.6, 0.7), LinearRgba::rgb(0.5, 0.65, 0.85)),
+        window: glow(materials, Color::srgb(0.12, 0.15, 0.19), LinearRgba::rgb(0.3, 0.42, 0.62)),
         lamp: glow(materials, Color::srgb(1.0, 0.8, 0.45), LinearRgba::rgb(5.0, 3.0, 0.9)),
         strip: glow(materials, Color::srgb(0.9, 0.95, 1.0), LinearRgba::rgb(3.0, 3.4, 4.0)),
-        screen: glow(materials, Color::srgb(1.0, 0.6, 0.2), LinearRgba::rgb(2.4, 1.2, 0.3)),
         cold_light: glow(materials, Color::srgb(0.7, 0.8, 0.95), LinearRgba::rgb(0.9, 1.2, 1.8)),
     }
 }
@@ -334,8 +332,8 @@ fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, 
     cylinder(r, meshes, &k.lamp, [0.2, 0.97, -0.1], 0.022, 0.07);
     flicker(r, Color::srgb(1.0, 0.8, 0.45), 90_000.0, 6.0, [0.2, 1.05, -0.1], 5.0 + i as f32);
     // A rocking chair turned to the stove, and a life jacket on a nail by the door.
+    // (No collider: the way from the door to the stove runs past it.)
     model(r, k, "Rockingchair_01", [1.35, 0.0, 0.95], PI - 0.5, 1.0);
-    solid.push(Shape::Circle { x: ox + 1.35, z: oz + 0.95, r: 0.45 });
     model(r, k, "life_jacket", [hw - 0.1, 1.45, 1.45], -FRAC_PI_2, 0.9);
     // A shelf of tins on the north wall, a rug, and fishing gear on the east wall.
     block(r, meshes, &k.pole, [-0.4, 1.35, -hd + 0.15], [1.4, 0.05, 0.28]);
@@ -475,10 +473,12 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
     let top = 0.79 * 1.2;
     model(r, k, "metal_office_desk", [0.0, 0.0, -hd + 1.0], 0.0, 1.2);
     model(r, k, "Television_01", [0.0, top, -hd + 0.85], 0.0, 1.1);
+    // A green phosphor screen, dimmer than the room's lamps.
+    let phosphor = glow(materials, Color::srgb(0.05, 0.12, 0.07), LinearRgba::rgb(0.25, 1.1, 0.45));
     r.spawn((
         Mesh3d(meshes.add(Cuboid::new(0.42, 0.3, 0.01))),
-        MeshMaterial3d(k.screen.clone()),
-        Transform::from_xyz(0.0, top + 0.26, -hd + 0.85 + 0.27),
+        MeshMaterial3d(phosphor),
+        Transform::from_xyz(0.0, top + 0.26, -hd + 0.85 + 0.235),
         NotShadowCaster,
     ));
     model(r, k, "vintage_radio_transceiver", [0.85, top, -hd + 0.8], -0.25, 1.0);
@@ -512,7 +512,6 @@ fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material
         r.spawn((SceneRoot(assets.crate_military.clone()), Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(0.2 * n as f32)).with_scale(Vec3::splat(1.3))));
     }
     solid.push(Shape::rect_centered(ox - hw + 1.6, oz + hd - 1.2, 3.0, 1.2));
-    let _ = materials;
 }
 
 /// A short yellow bolt sticking out of a wall facing +x.
@@ -586,7 +585,7 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
     for (n, (x, y, z)) in [(8.6f32, 0.0f32, -3.4f32), (8.55, 0.34, -3.35), (8.7, 0.0, -2.8), (8.6, 0.0, -1.0), (-8.8, 0.0, -3.0), (-8.7, 0.34, -2.95), (-8.6, 0.0, -1.1)].into_iter().enumerate() {
         model(r, k, "cardboard_box_01", [x, y, z], n as f32 * 0.7, 1.4);
     }
-    for (x, z) in [(8.6f32, -3.1f32), (8.6, -1.0), (-8.7, -2.0)] {
+    for (x, z) in [(8.6f32, -3.1f32), (8.6, -1.0), (-8.8, -3.0), (-8.6, -1.1)] {
         solid.push(Shape::Circle { x: ox + x, z: oz + z, r: 0.6 });
     }
     for (n, (x, z)) in [(5.9f32, 6.6f32), (6.5, 6.9), (5.3, 6.95), (-3.4, 6.8)].into_iter().enumerate() {
@@ -690,7 +689,7 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
         cylinder(r, meshes, &k.coolant, [core[0], y, core[1]], 1.52, 0.12);
     }
     solid.push(Shape::Circle { x: ox + core[0], z: oz + core[1], r: 2.35 });
-    light(r, Color::srgb(0.5, 0.95, 1.0), 420_000.0, 13.0, [core[0], 2.2, core[1] + 2.4]);
+    light(r, Color::srgb(0.5, 0.95, 1.0), 340_000.0, 13.0, [core[0], 2.2, core[1] + 2.4]);
     flicker(r, Color::srgb(0.45, 0.9, 1.0), 160_000.0, 9.0, [core[0], 3.4, core[1] - 2.2], 3.1);
 
     // ---- Coolant lines: from the core across the ceiling and down to the pump ----
@@ -729,6 +728,8 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
     }
     solid.push(Shape::rect_centered(ox + hw - 0.7, oz - 3.3, 0.9, 4.0));
     model(r, k, "hanging_industrial_lamp", [PUMP_BAY.0 - 0.6, h, PUMP_BAY.1], 0.0, 1.0);
+    // A warm work lamp over the pump bay, against the core's cold glow.
+    light(r, Color::srgb(1.0, 0.78, 0.5), 120_000.0, 5.5, [PUMP_BAY.0 - 0.6, 2.6, PUMP_BAY.1]);
 
     // ---- The bench where seals are cut ----
     let (bx, bz) = BENCH;
@@ -747,7 +748,7 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
         model(r, k, "Barrel_01", [x, 0.0, z], n as f32 * 1.9, 1.0);
     }
     solid.push(Shape::Circle { x: ox - 5.65, z: oz - 2.15, r: 0.85 });
-    light(r, Color::srgb(1.0, 0.85, 0.6), 140_000.0, 6.0, [bx, 2.2, bz]);
+    light(r, Color::srgb(1.0, 0.8, 0.52), 200_000.0, 6.5, [bx, 2.2, bz]);
 
     // ---- A control desk along the north wall, its lamps blinking ----
     block(r, meshes, &k.metal, [-hw + 2.4, 0.5, -hd + 0.6], [3.4, 1.0, 0.9]);

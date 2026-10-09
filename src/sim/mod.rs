@@ -10,6 +10,7 @@ pub mod combat;
 pub mod crow;
 pub mod daynight;
 pub mod dialogue;
+pub mod envlight;
 pub mod flora;
 pub mod grade;
 pub mod interiors;

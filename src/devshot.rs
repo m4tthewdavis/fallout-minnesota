@@ -290,6 +290,8 @@ fn take_shot(
             weather.weather.phase = Phase::Blizzard;
             weather.weather.timer = 30.0;
         } else {
+            // Calm, so before/after shots of the same spot match.
+            weather.weather.phase = Phase::Calm;
             weather.weather.timer = 60.0;
         }
         aim.0 = shot.aim;

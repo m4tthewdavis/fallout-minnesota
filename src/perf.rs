@@ -25,6 +25,8 @@ use crate::theme::{FROST, HUD_PANEL};
 pub enum Lod {
     /// A small prop: follows the view distance setting.
     Prop,
+    /// A boulder or big rock: goes with the trees (never on Far).
+    Large,
     /// Fur tufts, frost, faces and the like on a person.
     PersonDetail,
     Crow,
@@ -140,6 +142,7 @@ fn apply_lod(
     *frame = frame.wrapping_add(1);
     let slice = *frame % 4;
     let prop_cut = lod::prop_cutoff(settings.0.view);
+    let large_cut = lod::large_cutoff(settings.0.view);
     let (mut total, mut hidden) = (0, 0);
     for (e, tf, lod, mut vis) in &mut things {
         total += 1;
@@ -147,6 +150,7 @@ fn apply_lod(
         if e.index() % 4 == slice {
             let cutoff = match lod {
                 Lod::Prop => prop_cut,
+                Lod::Large => large_cut,
                 Lod::PersonDetail => lod::PERSON_DETAIL,
                 Lod::Crow => lod::CROW,
             };

@@ -522,7 +522,7 @@ fn apply_settings(
     mut point_lights: Query<&mut PointLight, With<PointShadows>>,
     mut cameras: Query<&mut Projection, With<Player>>,
     main_camera: Query<Entity, With<Player>>,
-    all_cameras: Query<Entity, With<Camera3d>>,
+    all_cameras: Query<(Entity, Has<crate::gun::ViewModelCamera>), With<Camera3d>>,
 ) {
     let s = &settings.0;
     info!("settings applied: {s:?}");
@@ -573,10 +573,17 @@ fn apply_settings(
             c.remove::<ScreenSpaceAmbientOcclusion>();
         }
     }
-    for cam in &all_cameras {
+    for (cam, last) in &all_cameras {
         let mut c = commands.entity(cam);
         if s.ambient_occlusion {
-            c.insert((Msaa::Off, Smaa::default()));
+            // Both cameras keep the same MSAA so they share one frame; SMAA
+            // runs once, on the view-model camera that tonemaps it all.
+            c.insert(Msaa::Off);
+            if last {
+                c.insert(Smaa::default());
+            } else {
+                c.remove::<Smaa>();
+            }
         } else {
             // (Screenshots in software never use MSAA: it costs gigabytes.)
             c.insert(if std::env::var("FMN_SHOT").is_ok() { Msaa::Off } else { Msaa::Sample4 }).remove::<Smaa>();
