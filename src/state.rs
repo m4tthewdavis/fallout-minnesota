@@ -197,11 +197,19 @@ pub struct PipOpen(pub bool);
 #[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct WorldGen;
 
+/// Start-up spawners that people the built world: falling snow, raiders,
+/// wolves, crows and moose, chained in that order (world.rs). They all draw
+/// from [`RngRes`], so the order is pinned here rather than left to the
+/// scheduler; the moose also run after the quest fixtures and the outdoor
+/// dressing, so they keep out of both.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PostWorldGen;
+
 /// The world is the same every game (so saves can refer to "that crate"):
 /// it's built from this seed, then the generator is reseeded from the clock.
 pub const WORLD_SEED: u64 = 1143;
 
-fn reseed_after_world(mut rng: ResMut<RngRes>) {
+pub(crate) fn reseed_after_world(mut rng: ResMut<RngRes>) {
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
@@ -296,6 +304,7 @@ impl Plugin for StatePlugin {
             .init_resource::<CurrentInterior>()
             .init_resource::<Transition>()
             .init_resource::<TreePositions>()
+            .configure_sets(Startup, PostWorldGen.after(WorldGen).after(crate::quest::QuestWorld))
             .add_systems(PostStartup, reseed_after_world)
             .add_systems(Update, (tick_messages, tick_lifetimes));
     }

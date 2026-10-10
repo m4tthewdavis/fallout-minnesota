@@ -75,7 +75,8 @@ pub struct MoosePlugin;
 
 impl Plugin for MoosePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_assets, spawn_initial).chain().after(crate::state::WorldGen))
+        // spawn_initial runs in the PostWorldGen chain (world.rs).
+        app.add_systems(Startup, setup_assets.after(crate::state::WorldGen).before(crate::state::PostWorldGen))
             .add_systems(Update, (moose_ai.run_if(alive.and(outdoors)), animate_moose));
     }
 }

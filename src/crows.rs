@@ -55,7 +55,8 @@ pub struct CrowPlugin;
 
 impl Plugin for CrowPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_assets, spawn_initial).chain().after(crate::state::WorldGen))
+        // spawn_initial runs in the PostWorldGen chain (world.rs).
+        app.add_systems(Startup, setup_assets.after(crate::state::WorldGen).before(crate::state::PostWorldGen))
             .add_systems(Update, (crow_ai.run_if(alive.and(outdoors)), animate_crows).chain());
     }
 }

@@ -123,6 +123,20 @@ impl Plugin for WorldPlugin {
                 .chain()
                 .in_set(crate::state::WorldGen),
         )
+        // Everything that draws from the world seed after the map is built, in
+        // one fixed order: changing it moves every creature and snowflake.
+        .add_systems(
+            Startup,
+            (
+                crate::weather_fx::spawn_flakes,
+                crate::raiders::spawn_initial,
+                crate::wolves::spawn_initial_packs,
+                crate::crows::spawn_initial,
+                crate::moose::spawn_initial,
+            )
+                .chain()
+                .in_set(crate::state::PostWorldGen),
+        )
         .add_systems(
             Update,
             (

@@ -19,14 +19,14 @@ const FLAKES: usize = 900;
 const BOX_HALF: f32 = 25.0;
 
 #[derive(Component)]
-struct Flake {
-    index: usize,
-    fall: f32,
+pub(crate) struct Flake {
+    pub(crate) index: usize,
+    pub(crate) fall: f32,
 }
 
 /// The snowflake material, tinted green during rad-blizzards.
 #[derive(Resource, Default)]
-struct FlakeMaterial(Handle<StandardMaterial>);
+pub(crate) struct FlakeMaterial(Handle<StandardMaterial>);
 
 /// Smoothed visual weather values so changes fade in instead of popping.
 #[derive(Resource)]
@@ -51,7 +51,7 @@ impl Plugin for WeatherPlugin {
             light: calm.light,
             sick: 0.0,
         })
-        .add_systems(Startup, (spawn_flakes.after(crate::state::WorldGen), spawn_fog_volume))
+        .add_systems(Startup, spawn_fog_volume)
         .init_resource::<FlakeMaterial>()
         .init_resource::<SkyLook>()
         .add_systems(
@@ -63,7 +63,7 @@ impl Plugin for WeatherPlugin {
     }
 }
 
-fn spawn_flakes(
+pub(crate) fn spawn_flakes(
     mut commands: Commands,
     assets: Res<GameAssets>,
     mut meshes: ResMut<Assets<Mesh>>,

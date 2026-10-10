@@ -86,7 +86,8 @@ pub struct WolfPlugin;
 impl Plugin for WolfPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DistantHowl(20.0))
-            .add_systems(Startup, (setup_wolf_assets, spawn_initial_packs).chain().after(crate::state::WorldGen))
+            // spawn_initial_packs runs in the PostWorldGen chain (world.rs).
+            .add_systems(Startup, setup_wolf_assets.after(crate::state::WorldGen).before(crate::state::PostWorldGen))
             .add_systems(
                 Update,
                 (

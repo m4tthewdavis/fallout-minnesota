@@ -42,7 +42,7 @@ pub struct DressingPlugin;
 
 impl Plugin for DressingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, dress_world.after(crate::state::WorldGen).after(crate::quest::QuestWorld));
+        app.add_systems(Startup, dress_world.after(crate::state::WorldGen).after(crate::quest::QuestWorld).before(crate::state::PostWorldGen));
     }
 }
 
