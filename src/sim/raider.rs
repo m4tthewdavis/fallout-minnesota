@@ -112,6 +112,15 @@ pub fn sight_range(night: bool, blizzard: bool) -> f32 {
     }
 }
 
+/// Is `player` close enough for a raider at `pos` to pick out, ignoring what
+/// stands in between? `think` only counts a raider as seeing you when this
+/// holds *and* the line is clear, so a caller can skip the (costly) line-of-sight
+/// test for every raider that fails this cheap one: `Senses::los` is only
+/// ever read together with this check.
+pub fn within_sight(pos: [f32; 2], player: [f32; 2], night: bool, blizzard: bool) -> bool {
+    len(sub(player, pos)) <= sight_range(night, blizzard)
+}
+
 /// Chance one shot or pellet hits you at `dist`: falls with range, worse when
 /// you're running, in a blizzard and in numbing cold.
 pub fn hit_chance(dist: f32, range: f32, sprinting: bool, moving: bool, blizzard: bool, temp_f: f32) -> f32 {
@@ -268,7 +277,7 @@ impl Raider {
 
         let to_player = sub(s.player, s.pos);
         let dist = len(to_player);
-        let sees = s.los && dist <= sight_range(s.night, s.blizzard);
+        let sees = s.los && within_sight(s.pos, s.player, s.night, s.blizzard);
         let hearing = if s.blizzard { HEARING * 0.6 } else { HEARING };
         if sees {
             self.alert = ALERT_SECS;
@@ -681,5 +690,39 @@ mod tests {
             assert!(g.damage() > 0.0 && g.mag() > 0 && g.interval() > 0.0 && g.reload_secs() > g.interval());
             assert!(g.loot_rounds() > 0 && g.pellets() >= 1);
         }
+    }
+
+    #[test]
+    fn within_sight_is_exactly_the_distance_half_of_what_think_calls_seeing() {
+        let mut rng = Rng::new(99);
+        let mut spots = Vec::new();
+        for _ in 0..3000 {
+            let a = rng.range(0.0, std::f32::consts::TAU);
+            // Dense around each sight range so the boundary is exercised.
+            let d = [17.9, 18.0, 18.1, 34.9, 35.0, 35.1, 64.9, 65.0, 65.1][(rng.f32() * 9.0) as usize] + rng.range(-0.001, 0.001) * (rng.f32() < 0.3) as u32 as f32;
+            let d = if rng.chance(0.4) { rng.range(0.0, 120.0) } else { d };
+            spots.push([d * a.cos(), d * a.sin()]);
+        }
+        spots.push([f32::NAN, 0.0]);
+        spots.push([f32::INFINITY, 0.0]);
+        spots.push([0.0, 0.0]);
+        for (night, blizzard) in [(false, false), (true, false), (false, true), (true, true)] {
+            for &p in &spots {
+                let mut s = senses(1.0);
+                s.pos = [0.0, 0.0];
+                s.player = p;
+                s.night = night;
+                s.blizzard = blizzard;
+                for los in [true, false] {
+                    s.los = los;
+                    let mut r = Raider::new(Gun::Revolver, [0.0, 0.0]);
+                    r.think(0.1, &s, &mut Rng::new(1));
+                    let saw = r.last_known.is_some();
+                    assert_eq!(saw, los && within_sight(s.pos, p, night, blizzard), "{p:?} night={night} blizzard={blizzard} los={los}");
+                }
+            }
+        }
+        assert!(!within_sight([0.0; 2], [f32::NAN, 0.0], false, false));
+        assert!(within_sight([0.0; 2], [65.0, 0.0], false, false) && !within_sight([0.0; 2], [65.1, 0.0], false, false));
     }
 }

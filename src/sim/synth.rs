@@ -8,6 +8,7 @@
 //! pitch and volume wobble on each play, how often it may play, and how far
 //! away it can be heard.
 
+use super::mathx;
 use super::rng::Rng;
 
 pub const SAMPLE_RATE: u32 = 22_050;
@@ -1399,19 +1400,28 @@ fn bells(out: &mut [f32], rng: &mut Rng, scale: &[f32], secs: f32, gap: (f32, f3
 fn pad(out: &mut [f32], chords: &[[f32; 4]], chord_secs: f32, gain: f32, cutoff: f32) {
     let mut lp = LowPass::new(cutoff);
     let mut phases = [[0.0f32; 2]; 4];
+    // The last note value seen per voice (as bits) and its frequency.
+    let mut pitch = [(u32::MAX, 0.0f32); 4];
     for (i, o) in out.iter_mut().enumerate() {
         let t = i as f32 / SR;
         let pos = (t / chord_secs) % chords.len() as f32;
         let idx = pos as usize % chords.len();
         let next = (idx + 1) % chords.len();
-        let frac = pos - pos.floor();
+        let frac = pos - mathx::floor(pos);
         // Glide between chords over the last 2 seconds.
         let blend = ((frac * chord_secs - (chord_secs - 2.0)) / 2.0).clamp(0.0, 1.0);
         let mut v = 0.0;
         for k in 0..4 {
-            let f = semis(chords[idx][k] + (chords[next][k] - chords[idx][k]) * blend);
+            // The pitch only moves during the glide between chords (a sixth
+            // of the time); the rest of the time it is the last sample's, and
+            // the `powf` in `semis` is the most expensive thing in the loop.
+            let note = chords[idx][k] + (chords[next][k] - chords[idx][k]) * blend;
+            if note.to_bits() != pitch[k].0 {
+                pitch[k] = (note.to_bits(), semis(note));
+            }
+            let f = pitch[k].1;
             for (d, detune) in [0.997f32, 1.003].iter().enumerate() {
-                phases[k][d] = (phases[k][d] + f * detune / SR).fract();
+                phases[k][d] = mathx::fract(phases[k][d] + f * detune / SR);
                 v += (2.0 * phases[k][d] - 1.0) * if k == 0 { 0.7 } else { 0.45 };
             }
         }
@@ -1445,11 +1455,13 @@ fn music_tense(mut rng: Rng) -> Vec<f32> {
     let mut out = vec![0.0f32; total];
     let mut lp = LowPass::new(220.0);
     let mut p = [0.0f32; 3];
+    // The three drone pitches never change: work them out once, not per sample.
+    let drone = [semis(-43.0), semis(-43.0) * 1.0595, semis(-31.0) * 1.414];
     for (i, o) in out.iter_mut().enumerate() {
         let t = i as f32 / SR;
         let mut v = 0.0;
-        for (k, f) in [semis(-43.0), semis(-43.0) * 1.0595, semis(-31.0) * 1.414].into_iter().enumerate() {
-            p[k] = (p[k] + f / SR).fract();
+        for (k, f) in drone.into_iter().enumerate() {
+            p[k] = mathx::fract(p[k] + f / SR);
             v += (2.0 * p[k] - 1.0) * [0.7, 0.4, 0.15][k];
         }
         let swell = 0.6 + 0.4 * (TAU * t / 15.0).sin();
@@ -1481,14 +1493,15 @@ fn music_danger(mut rng: Rng) -> Vec<f32> {
     let mut out = vec![0.0f32; total];
     let step = 0.375; // eighth notes at 80 bpm
     let notes = [-43.0, -43.0, -43.0, -40.0, -43.0, -43.0, -41.0, -43.0];
+    let note_hz = notes.map(semis); // one `powf` per note, not per sample
     let mut phase = 0.0;
     let mut lp = LowPass::new(500.0);
     for (i, o) in out.iter_mut().enumerate() {
         let t = i as f32 / SR;
         let n = (t / step) as usize;
         let local = t - n as f32 * step;
-        let f = semis(notes[n % notes.len()]);
-        phase = (phase + f / SR).fract();
+        let f = note_hz[n % notes.len()];
+        phase = mathx::fract(phase + f / SR);
         let saw = 2.0 * phase - 1.0;
         let pump = env(local, 0.005, 6.0);
         lp.set(300.0 + 700.0 * (0.5 + 0.5 * (TAU * t / 16.0).sin()));
@@ -1764,7 +1777,7 @@ fn creak(mut rng: Rng, v: f32) -> Vec<f32> {
             let f = c + 55.0 * (TAU * 1.5 * t + a).sin() + 25.0 * (TAU * 4.0 * t + b).sin();
             phase += TAU * f.max(30.0) / SR;
             // A sawtooth, scraped: lots of harmonics, jittered in amplitude.
-            let saw = (phase / TAU).fract() * 2.0 - 1.0;
+            let saw = mathx::fract(phase / TAU) * 2.0 - 1.0;
             let scrape = 0.6 + 0.4 * noise(&mut rng);
             lp.run(saw * scrape) * (TAU * 0.5 * t).sin().abs().powf(0.7)
         })
@@ -1903,6 +1916,18 @@ impl Sound {
 
     pub fn wav_muffled(self, variant: usize) -> Vec<u8> {
         encode_wav(&self.samples_muffled(variant))
+    }
+
+    /// A clip and, for sounds that [`muffleable`](Self::muffleable), its
+    /// muffled twin, from a single run of the synthesiser: the muffled clip is
+    /// the plain one put through a filter, so there is no need to build it
+    /// twice. Byte for byte what [`wav`](Self::wav) and
+    /// [`wav_muffled`](Self::wav_muffled) return, in about half the time for
+    /// the 95 clips that have both.
+    pub fn wav_pair(self, variant: usize) -> (Vec<u8>, Option<Vec<u8>>) {
+        let samples = self.samples(variant);
+        let muffled = self.muffleable().then(|| encode_wav(&muffled(&samples)));
+        (encode_wav(&samples), muffled)
     }
 }
 
@@ -2105,5 +2130,131 @@ mod tests {
         }
         // Howls share one cooldown so a pack can't stack them.
         assert_eq!(Sound::HowlFar.profile().group, Sound::HowlNear);
+    }
+
+    /// FNV-1a over the bytes of every plain clip, each followed by its muffled
+    /// twin where it has one, per sound.
+    fn clip_hash(sound: Sound) -> u64 {
+        let mut h = 0xcbf2_9ce4_8422_2325u64;
+        let mut eat = |bytes: &[u8]| {
+            for &b in bytes {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+        };
+        for v in 0..sound.variants() {
+            eat(&sound.wav(v));
+            if sound.muffleable() {
+                eat(&sound.wav_muffled(v));
+            }
+        }
+        h
+    }
+
+    /// Pins every synthesised clip (all 272) to the bytes the original
+    /// synthesiser made, so speed-ups to the maths (caching a coefficient,
+    /// remembering a pitch) provably change no sample. If you change a
+    /// sound on purpose, run `cargo test print_synth_hashes -- --ignored
+    /// --nocapture` and paste the new line in.
+    const GOLDEN: &[(&str, u64)] = &[
+        ("StepSnow", 0x1dcfcd76d1be4b64),
+        ("StepIce", 0x6952f4a0fcf7dbd3),
+        ("StepRoad", 0xa4ba32175198aa72),
+        ("StepConcrete", 0xb347d2b7900a1ced),
+        ("StepWood", 0x7104fc426d10b255),
+        ("RifleShot", 0x0f78c12f8eecfe23),
+        ("ShotgunShot", 0xea1d5b04427b85d6),
+        ("RevolverShot", 0x531bb1696322ad56),
+        ("DryClick", 0x953b66896042526e),
+        ("Jam", 0xf15d3dec8f3385cf),
+        ("ShellTink", 0xc8030f6377cf06c3),
+        ("ClunkOut", 0xb0badbcb30e2b07a),
+        ("ClunkIn", 0xc67c98659a8c6d01),
+        ("BoltRack", 0x7bae1f3ff7dc6756),
+        ("BreakOpen", 0x2f95f73cccf9d7f8),
+        ("BreakClose", 0x2f675c57ee3002bb),
+        ("CylinderSpin", 0xdf0b661a0965e970),
+        ("Swing", 0x8b139b5466436190),
+        ("MeleeHit", 0x2da9eb80bc5774c8),
+        ("HowlNear", 0xe88c270f3e20e870),
+        ("HowlFar", 0x26fe94faa70c0fe9),
+        ("Snarl", 0x40229e92dedea33d),
+        ("Yelp", 0x72b8208e4dcb0809),
+        ("Growl", 0x88b661069fc90724),
+        ("MooseBellow", 0xfc36b58284309a77),
+        ("MooseGrunt", 0x8c756079221d354b),
+        ("Hoof", 0x45850a83c7368a2c),
+        ("Caw", 0x13eacc9248d4a36c),
+        ("ShotTailOutdoor", 0xff13160291fbb039),
+        ("ShotTailIndoor", 0xaed323960e73dabc),
+        ("BoltClack", 0xea42a0cc4842d135),
+        ("HammerCock", 0x2f31e985680af7d5),
+        ("WindBreeze", 0x4f24a12c0e2ddac6),
+        ("WindHowl", 0x2d37c20bb14082cb),
+        ("RoomHum", 0x344fbc74e97c4604),
+        ("Drip", 0xce3be65aaa3238e6),
+        ("Creak", 0x909b9fede500e78f),
+        ("RaiderShout", 0x56dd681d4c0a2f0e),
+        ("RaiderGrunt", 0x0405c7d6c795d92a),
+        ("StepSnowRun", 0x221d9600e56ce3be),
+        ("StepSnowSqueak", 0xfaa809d144a7b61c),
+        ("IceCrack", 0x33bb15cf07f3dc9c),
+        ("IceCreak", 0x8400c3c80b630c42),
+        ("Geiger", 0xceab9bcc320514cb),
+        ("PickupAmmo", 0x7628532719302dbc),
+        ("PickupMed", 0xd81cb8fac175aacb),
+        ("PickupFood", 0xa5087052275a3ce2),
+        ("PickupScrap", 0xecfdaee1cdffbe7f),
+        ("Craft", 0x980a620baace5435),
+        ("ContainerOpen", 0x93051381f702bc32),
+        ("WindLow", 0x7aa98345b2cd0bbb),
+        ("WindMid", 0xa25c90456551b897),
+        ("WindHigh", 0x6fcf461848d15c37),
+        ("Gust", 0x6e53f70eb2954e8d),
+        ("Fire", 0x88ce9cfe7c420ed9),
+        ("Siren", 0x8a98eb7b86fa6a89),
+        ("MusicCalm", 0x89895bc00c84315d),
+        ("MusicTense", 0x47c4a54de794aba0),
+        ("MusicDanger", 0x27516ade117416c3),
+        ("PipOn", 0xcfe709d5f4cf533d),
+        ("PipOff", 0x2526a0d23a728eea),
+        ("PipStatic", 0x3aaa921efaa6119a),
+        ("PipScroll", 0xc21425da0ccff6f5),
+        ("PipHum", 0x14d1b8664cee7a1a),
+        ("UiTab", 0x70775b77961e7ef1),
+    ];
+
+    #[test]
+    fn every_clip_is_byte_for_byte_what_the_original_synthesiser_made() {
+        assert_eq!(GOLDEN.len(), Sound::ALL.len(), "a sound was added or removed: update GOLDEN");
+        for (&sound, &(name, want)) in Sound::ALL.iter().zip(GOLDEN) {
+            assert_eq!(format!("{sound:?}"), name, "GOLDEN is in Sound::ALL order");
+            assert_eq!(clip_hash(sound), want, "{name} changed");
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn print_synth_hashes() {
+        for &s in Sound::ALL {
+            println!("        (\"{s:?}\", {:#018x}),", clip_hash(s));
+        }
+    }
+
+    #[test]
+    fn a_clip_and_its_muffled_twin_from_one_run_are_the_same_bytes_as_two_runs() {
+        for &s in Sound::ALL.iter().filter(|s| !s.is_loop()) {
+            for v in 0..s.variants() {
+                let (plain, muffled) = s.wav_pair(v);
+                assert!(plain == s.wav(v), "{s:?} v{v} plain");
+                match muffled {
+                    Some(m) => {
+                        assert!(s.muffleable(), "{s:?} has no muffled twin to make");
+                        assert!(m == s.wav_muffled(v), "{s:?} v{v} muffled");
+                    }
+                    None => assert!(!s.muffleable(), "{s:?} should have had one"),
+                }
+            }
+        }
     }
 }

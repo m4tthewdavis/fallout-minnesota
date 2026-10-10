@@ -5,6 +5,8 @@
 //! smaller levels with a 2x2 box filter, averaging colour textures in linear
 //! light so they don't darken.
 
+use super::mathx;
+
 /// Number of levels down to 1x1.
 pub fn level_count(width: u32, height: u32) -> u32 {
     32 - width.max(height).max(1).leading_zeros()
@@ -19,9 +21,78 @@ fn to_linear_table() -> [f32; 256] {
     t
 }
 
+/// The exact conversion: linear light to an sRGB byte. Slow (a `powf`), so
+/// the hot loops use [`SrgbTable`], which gives the same byte for every input.
 fn to_srgb(l: f32) -> u8 {
     let c = if l <= 0.0031308 { l * 12.92 } else { 1.055 * l.powf(1.0 / 2.4) - 0.055 };
     (c * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// `to_srgb` without the `powf`. `to_srgb` only ever changes value at 255
+/// points on the number line; this finds each of them once (by bisecting the
+/// original function over the bit patterns of `f32`, which are ordered like
+/// the numbers) and then looks a value up among them. A 4096-entry index
+/// narrows the search to at most two edges, which are counted without a
+/// branch (the answers of neighbouring texels are not predictable).
+struct SrgbTable {
+    /// `edge[k]` is the smallest `l` for which `to_srgb(l) > k`; one infinite
+    /// sentinel on the end so the lookup never needs a bounds test.
+    edge: [f32; 256],
+    /// How many edges lie at or below `i / BUCKETS`.
+    first: [u8; BUCKETS + 1],
+}
+
+const BUCKETS: usize = 4096;
+
+impl SrgbTable {
+    fn build() -> SrgbTable {
+        let mut edge = [f32::INFINITY; 256];
+        for (k, e) in edge.iter_mut().take(255).enumerate() {
+            // Bisect for the first bit pattern whose byte is above k. The byte
+            // never reaches 256, and 1.0 (bits 0x3F80_0000) gives 255.
+            let (mut lo, mut hi) = (0u32, 0x3F80_0000u32);
+            while lo < hi {
+                let mid = lo + (hi - lo) / 2;
+                if to_srgb(f32::from_bits(mid)) as usize > k {
+                    hi = mid;
+                } else {
+                    lo = mid + 1;
+                }
+            }
+            *e = f32::from_bits(lo);
+        }
+        let mut first = [0u8; BUCKETS + 1];
+        for (i, f) in first.iter_mut().enumerate() {
+            let at = i as f32 / BUCKETS as f32;
+            *f = edge[..255].partition_point(|&e| e <= at) as u8;
+        }
+        // The lookup below steps over at most two edges inside one bucket.
+        for w in first.windows(2) {
+            assert!(w[1] - w[0] <= 2, "edges too dense for the lookup");
+        }
+        SrgbTable { edge, first }
+    }
+
+    fn get() -> &'static SrgbTable {
+        static TABLE: std::sync::OnceLock<SrgbTable> = std::sync::OnceLock::new();
+        TABLE.get_or_init(SrgbTable::build)
+    }
+
+    /// Same result as `to_srgb(l)` for every `f32`.
+    #[inline]
+    fn byte(&self, l: f32) -> u8 {
+        // Negative, zero and NaN are all black; 1 and above are all white.
+        if l.is_nan() || l <= 0.0 {
+            return 0;
+        }
+        if l >= 1.0 {
+            return 255;
+        }
+        let mut k = self.first[(l * BUCKETS as f32) as usize] as usize;
+        k += (self.edge[k] <= l) as usize;
+        k += (self.edge[k] <= l) as usize;
+        k as u8
+    }
 }
 
 /// Drains the colour out of an sRGB RGBA8 texture, in place, keeping `keep`
@@ -31,11 +102,12 @@ fn to_srgb(l: f32) -> u8 {
 /// a plain multiply can't do that, it only darkens the orange.
 pub fn recolour(rgba: &mut [u8], keep: f32, tint: [f32; 3]) {
     let lin = to_linear_table();
+    let srgb = SrgbTable::get();
     for px in rgba.as_chunks_mut::<4>().0 {
         let c = [lin[px[0] as usize], lin[px[1] as usize], lin[px[2] as usize]];
         let y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
         for k in 0..3 {
-            px[k] = to_srgb((y + (c[k] - y) * keep) * tint[k]);
+            px[k] = srgb.byte((y + (c[k] - y) * keep) * tint[k]);
         }
     }
 }
@@ -43,6 +115,67 @@ pub fn recolour(rgba: &mut [u8], keep: f32, tint: [f32; 3]) {
 /// Returns every level, largest first, concatenated (the layout wgpu expects
 /// for one layer), plus the level count. `rgba` is `width * height * 4` bytes.
 pub fn build_chain(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>, u32) {
+    let (w0, h0) = (width as usize, height as usize);
+    // Anything that isn't a well-formed picture takes the plain route (which
+    // keeps its old behaviour for empty or ragged input).
+    if w0 == 0 || h0 == 0 || rgba.len() != w0 * h0 * 4 {
+        return build_chain_reference(width, height, rgba, srgb);
+    }
+    let levels = level_count(width, height);
+    let lin = to_linear_table();
+    let to_byte = SrgbTable::get();
+    let unit: [f32; 256] = std::array::from_fn(|v| v as f32 / 255.0);
+    // What a colour byte is worth when averaged: linear light for sRGB, itself otherwise.
+    let rgb_light = if srgb { &lin } else { &unit };
+    // The whole chain is one allocation, filled level by level.
+    let (mut total, mut tw, mut th) = (w0 * h0 * 4, w0, h0);
+    for _ in 1..levels {
+        tw = (tw / 2).max(1);
+        th = (th / 2).max(1);
+        total += tw * th * 4;
+    }
+    let mut out = Vec::with_capacity(total);
+    out.extend_from_slice(rgba);
+    let (mut w, mut h) = (w0, h0);
+    let mut prev_start = 0;
+    for _ in 1..levels {
+        let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        let start = out.len();
+        out.resize(start + nw * nh * 4, 0);
+        let (done, level) = out.split_at_mut(start);
+        let prev = &done[prev_start..];
+        for y in 0..nh {
+            let (r0, r1) = (y * 2 * w, ((y * 2 + 1).min(h - 1)) * w);
+            for x in 0..nw {
+                let (c0, c1) = (x * 2, (x * 2 + 1).min(w - 1));
+                // The four source pixels, in the order they are summed.
+                let taps = [(r0 + c0) * 4, (r0 + c1) * 4, (r1 + c0) * 4, (r1 + c1) * 4];
+                let dst = (y * nw + x) * 4;
+                let mut acc = [0.0f32; 4];
+                for i in taps {
+                    let px = &prev[i..i + 4];
+                    acc[0] += rgb_light[px[0] as usize];
+                    acc[1] += rgb_light[px[1] as usize];
+                    acc[2] += rgb_light[px[2] as usize];
+                    acc[3] += unit[px[3] as usize];
+                }
+                for c in 0..3 {
+                    let avg = acc[c] / 4.0;
+                    level[dst + c] = if srgb { to_byte.byte(avg) } else { mathx::round_u8(avg * 255.0) };
+                }
+                level[dst + 3] = mathx::round_u8(acc[3] / 4.0 * 255.0);
+            }
+        }
+        prev_start = start;
+        w = nw;
+        h = nh;
+    }
+    (out, levels)
+}
+
+/// The original, plain `build_chain`: the fallback for degenerate input, and
+/// the reference the fast one is tested against (byte for byte).
+fn build_chain_reference(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>, u32) {
     let levels = level_count(width, height);
     let lin = to_linear_table();
     let mut out = rgba.to_vec();
@@ -86,6 +219,60 @@ pub fn build_chain(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>
 /// cut-off. Rescale each smaller level's alpha so the same share of texels
 /// passes `cutoff` as in the full-size level (Castano's coverage trick).
 pub fn preserve_coverage(chain: &mut [u8], width: u32, height: u32, levels: u32, cutoff: f32) {
+    // How many alpha values pass the cut-off after scaling. Alpha is a byte,
+    // so a 256-bin count of a level answers this for any scale without
+    // scanning the pixels again (the binary search asks 12 times a level).
+    let coverage = |hist: &[u32; 256], n: usize, scale: f32| -> f32 {
+        let pass: u32 = (0..256).filter(|&a| a as f32 / 255.0 * scale > cutoff).map(|a| hist[a]).sum();
+        pass as f32 / n.max(1) as f32
+    };
+    let histogram = |px: &[u8]| -> ([u32; 256], usize) {
+        let mut hist = [0u32; 256];
+        for p in px.as_chunks::<4>().0 {
+            hist[p[3] as usize] += 1;
+        }
+        (hist, px.len() / 4)
+    };
+    let (mut w, mut h) = (width as usize, height as usize);
+    let mut offset = 0;
+    let mut target = None;
+    for _ in 0..levels {
+        let len = w * h * 4;
+        if offset + len > chain.len() {
+            break;
+        }
+        let level = &mut chain[offset..offset + len];
+        let (hist, n) = histogram(level);
+        match target {
+            None => target = Some(coverage(&hist, n, 1.0)),
+            Some(t) => {
+                // Binary search the alpha scale that restores the coverage.
+                let (mut lo, mut hi) = (0.5f32, 8.0f32);
+                for _ in 0..12 {
+                    let mid = (lo + hi) * 0.5;
+                    if coverage(&hist, n, mid) < t {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                // Err towards keeping the foliage rather than losing it.
+                let scale = hi;
+                // Only 256 distinct alphas exist: scale each once.
+                let scaled: [u8; 256] = std::array::from_fn(|a| (a as f32 * scale).round().min(255.0) as u8);
+                for p in level.as_chunks_mut::<4>().0 {
+                    p[3] = scaled[p[3] as usize];
+                }
+            }
+        }
+        offset += len;
+        w = (w / 2).max(1);
+        h = (h / 2).max(1);
+    }
+}
+
+#[cfg(test)]
+fn preserve_coverage_reference(chain: &mut [u8], width: u32, height: u32, levels: u32, cutoff: f32) {
     let coverage = |px: &[u8], scale: f32| -> f32 {
         let n = px.len() / 4;
         let pass = px.as_chunks::<4>().0.iter().filter(|p| p[3] as f32 / 255.0 * scale > cutoff).count();
@@ -103,7 +290,6 @@ pub fn preserve_coverage(chain: &mut [u8], width: u32, height: u32, levels: u32,
         match target {
             None => target = Some(coverage(level, 1.0)),
             Some(t) => {
-                // Binary search the alpha scale that restores the coverage.
                 let (mut lo, mut hi) = (0.5f32, 8.0f32);
                 for _ in 0..12 {
                     let mid = (lo + hi) * 0.5;
@@ -113,7 +299,6 @@ pub fn preserve_coverage(chain: &mut [u8], width: u32, height: u32, levels: u32,
                         hi = mid;
                     }
                 }
-                // Err towards keeping the foliage rather than losing it.
                 let scale = hi;
                 for p in level.as_chunks_mut::<4>().0 {
                     p[3] = (p[3] as f32 * scale).round().min(255.0) as u8;
@@ -406,5 +591,155 @@ mod tests {
         assert_eq!((w, h), (64, 64));
         assert_eq!(small, build_chain(64, 64, &vec![9u8; 64 * 64 * 4], true).0);
         assert_eq!(l, l256 - 2);
+    }
+
+    // ---- Equivalence with the original (slow) implementations ----------------
+
+    fn noise_image(w: usize, h: usize, seed: u64, with_alpha: bool) -> Vec<u8> {
+        let mut r = crate::sim::rng::Rng::new(seed);
+        let mut px = Vec::with_capacity(w * h * 4);
+        for i in 0..w * h {
+            // Blocks of smooth and of noisy texels, so both flat areas and
+            // hard edges get averaged.
+            let smooth = (i / w / 4 + i % w / 4) % 2 == 0;
+            for c in 0..4 {
+                let v = if smooth { ((i % w) * 255 / w.max(1)) as u8 } else { (r.f32() * 256.0) as u8 };
+                px.push(if c == 3 && !with_alpha { 255 } else { v });
+            }
+        }
+        px
+    }
+
+    #[test]
+    fn the_srgb_table_gives_the_same_byte_as_the_formula_everywhere_we_look() {
+        let table = SrgbTable::get();
+        let check = |l: f32| assert_eq!(table.byte(l), to_srgb(l), "l = {l:e} (bits {:#x})", l.to_bits());
+        // Awkward values.
+        for l in [0.0, -0.0, f32::MIN_POSITIVE, 1e-45, 0.0031308, 0.0031309, 0.5, 1.0, 1.0000001, 2.0, 1e30, f32::MAX, f32::INFINITY, f32::NEG_INFINITY, f32::NAN, -1.0, -1e-30] {
+            check(l);
+        }
+        // Every spot where the byte steps, and 40 floats either side of it.
+        for &e in &table.edge[..255] {
+            let bits = e.to_bits();
+            for d in 0..40u32 {
+                check(f32::from_bits(bits + d));
+                check(f32::from_bits(bits.saturating_sub(d)));
+            }
+        }
+        // Every average of four texels of a smooth ramp, and a million
+        // random floats spread over the bit patterns of 0..1.
+        for a in (0..=255).step_by(3) {
+            for b in (0..=255).step_by(5) {
+                let lin = to_linear_table();
+                check((lin[a] + lin[b] + lin[255 - a] + lin[b / 2]) / 4.0);
+            }
+        }
+        let mut r = crate::sim::rng::Rng::new(5);
+        for _ in 0..1_000_000 {
+            check(f32::from_bits((r.next_u64() % 0x3F80_0001) as u32));
+            check(r.f32());
+        }
+    }
+
+    /// The whole range, one float at a time: about a billion, so it is skipped
+    /// in normal runs (`cargo test -- --ignored srgb_table_is_exact`).
+    #[test]
+    #[ignore]
+    fn srgb_table_is_exact_for_all_billion_floats_between_0_and_1() {
+        let table = SrgbTable::get();
+        let threads = 4u32;
+        let step = 0x3F80_0001u32.div_ceil(threads);
+        std::thread::scope(|s| {
+            for t in 0..threads {
+                s.spawn(move || {
+                    let table = SrgbTable::get();
+                    for bits in (t * step)..((t + 1) * step).min(0x3F80_0001) {
+                        let l = f32::from_bits(bits);
+                        assert_eq!(table.byte(l), to_srgb(l), "bits {bits:#x}");
+                    }
+                });
+            }
+        });
+        let _ = table;
+    }
+
+    #[test]
+    fn the_fast_chain_is_byte_for_byte_the_old_chain() {
+        // Square, odd, tall, wide, thin and tiny pictures; colour and linear data; with and without alpha.
+        let sizes = [(64, 64), (37, 21), (100, 7), (5, 90), (1, 1), (1, 33), (33, 1), (2, 2), (3, 3), (128, 96), (250, 250)];
+        for (n, &(w, h)) in sizes.iter().enumerate() {
+            for srgb in [true, false] {
+                for alpha in [true, false] {
+                    let img = noise_image(w, h, 100 + n as u64, alpha);
+                    let fast = build_chain(w as u32, h as u32, &img, srgb);
+                    let old = build_chain_reference(w as u32, h as u32, &img, srgb);
+                    assert!(fast == old, "{w}x{h} srgb={srgb} alpha={alpha}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_big_photo_sized_chain_matches_too() {
+        let img = noise_image(512, 512, 9, true);
+        assert!(build_chain(512, 512, &img, true) == build_chain_reference(512, 512, &img, true));
+    }
+
+    #[test]
+    fn broken_pictures_still_behave_as_before() {
+        // Empty, and a buffer that is too short: the old code's answers are kept.
+        for (w, h) in [(0u32, 0u32), (4, 0), (0, 4)] {
+            let a = std::panic::catch_unwind(|| build_chain(w, h, &[], true));
+            let b = std::panic::catch_unwind(|| build_chain_reference(w, h, &[], true));
+            assert_eq!(a.is_ok(), b.is_ok(), "{w}x{h}");
+            if let (Ok(a), Ok(b)) = (a, b) {
+                assert!(a == b);
+            }
+        }
+        let short = vec![9u8; 10];
+        let a = std::panic::catch_unwind(|| build_chain(4, 4, &short, true)).is_ok();
+        let b = std::panic::catch_unwind(|| build_chain_reference(4, 4, &short, true)).is_ok();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn the_fast_recolour_is_byte_for_byte_the_old_one() {
+        let old = |rgba: &mut [u8], keep: f32, tint: [f32; 3]| {
+            let lin = to_linear_table();
+            for px in rgba.as_chunks_mut::<4>().0 {
+                let c = [lin[px[0] as usize], lin[px[1] as usize], lin[px[2] as usize]];
+                let y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+                for k in 0..3 {
+                    px[k] = to_srgb((y + (c[k] - y) * keep) * tint[k]);
+                }
+            }
+        };
+        for (n, (keep, tint)) in [(0.0, [1.0, 1.0, 1.0]), (0.3, [0.85, 0.92, 1.05]), (1.0, [1.0; 3]), (2.5, [1.3, 0.2, 1.0]), (-1.0, [0.0, 5.0, 1.0]), (f32::NAN, [1.0; 3])].into_iter().enumerate() {
+            let mut a = noise_image(90, 70, 40 + n as u64, true);
+            let mut b = a.clone();
+            recolour(&mut a, keep, tint);
+            old(&mut b, keep, tint);
+            assert!(a == b, "keep {keep} tint {tint:?}");
+        }
+    }
+
+    #[test]
+    fn the_fast_coverage_fix_is_byte_for_byte_the_old_one() {
+        for (n, &(w, h)) in [(64usize, 64usize), (100, 37), (256, 256), (33, 33)].iter().enumerate() {
+            for cutoff in [0.35f32, 0.5, 0.0, 0.99] {
+                // Thin strokes of mixed opacity, as in a foliage card.
+                let mut img = vec![0u8; w * h * 4];
+                let mut r = crate::sim::rng::Rng::new(70 + n as u64);
+                for px in img.as_chunks_mut::<4>().0 {
+                    px[..3].copy_from_slice(&[200, 220, 200]);
+                    px[3] = if r.chance(0.3) { 100 + (r.f32() * 155.0) as u8 } else { 0 };
+                }
+                let (chain, levels) = build_chain_reference(w as u32, h as u32, &img, true);
+                let (mut a, mut b) = (chain.clone(), chain);
+                preserve_coverage(&mut a, w as u32, h as u32, levels, cutoff);
+                preserve_coverage_reference(&mut b, w as u32, h as u32, levels, cutoff);
+                assert!(a == b, "{w}x{h} cutoff {cutoff}");
+            }
+        }
     }
 }

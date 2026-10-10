@@ -75,19 +75,70 @@ pub fn base_height(x: f32, z: f32) -> f32 {
         + 0.4 * ((x + z) * 0.11).sin()
 }
 
+/// Flat pads for the vault entrance and the shelters: (x, z, radius).
+const PADS: [(f32, f32, f32); 5] = [
+    (VAULT_POS.0, VAULT_POS.1 - 8.0, 16.0),
+    (SHELTERS[0].0, SHELTERS[0].1, 9.0),
+    (SHELTERS[1].0, SHELTERS[1].1, 9.0),
+    (SHELTERS[2].0, SHELTERS[2].1, 9.0),
+    (SHELTERS[3].0, SHELTERS[3].1, 9.0),
+];
+
+/// The ground height each pad is flattened to (the field at its centre).
+/// Worked out once: it never changes, and `height` is the hottest function
+/// in the game (the terrain mesh, the map, every footprint and particle).
+fn pad_floors() -> &'static [f32; 5] {
+    static FLOORS: std::sync::OnceLock<[f32; 5]> = std::sync::OnceLock::new();
+    FLOORS.get_or_init(|| PADS.map(|(px, pz, _)| base_height(px, pz)))
+}
+
+/// Is a point whose squared distance from a centre is `d2` certainly at
+/// least `edge` away? Errs on the side of "no" near the boundary (and for
+/// NaN), so the exact calculation is always used where the answer matters.
+fn certainly_beyond(d2: f32, edge: f32) -> bool {
+    d2 > edge * edge * 1.0001
+}
+
 /// Final ground height (the lake bed under the ice on lakes).
 pub fn height(x: f32, z: f32) -> f32 {
     let mut h = base_height(x, z);
 
-    // Flatten pads for the vault entrance and the shelters.
+    // Flatten pads for the vault entrance and the shelters. A pad has no
+    // effect at all (t is exactly 0) beyond its radius, which is nearly
+    // everywhere: skip the square root and the blend there.
+    let floors = pad_floors();
+    for (&(px, pz, r), &floor) in PADS.iter().zip(floors) {
+        let (dx, dz) = (x - px, z - pz);
+        if certainly_beyond(dx * dx + dz * dz, r) {
+            continue;
+        }
+        let t = smoothstep(r, r * 0.6, dist(x, z, px, pz));
+        h = lerp(h, floor, t);
+    }
+
+    // Carve the lakes (same trick: nothing happens beyond 1.15 radii).
+    for (lx, lz, r) in LAKES {
+        let (dx, dz) = (x - lx, z - lz);
+        if certainly_beyond(dx * dx + dz * dz, r * 1.15) {
+            continue;
+        }
+        let t = smoothstep(r * 1.15, r * 0.85, dist(x, z, lx, lz));
+        h = lerp(h, LAKE_LEVEL - 0.5, t);
+    }
+    h
+}
+
+/// The original, slow `height`, kept as the reference the fast one is
+/// tested against (bit for bit).
+#[cfg(test)]
+fn reference_height(x: f32, z: f32) -> f32 {
+    let mut h = base_height(x, z);
     let mut pads: Vec<(f32, f32, f32)> = vec![(VAULT_POS.0, VAULT_POS.1 - 8.0, 16.0)];
     pads.extend(SHELTERS.iter().map(|&(sx, sz)| (sx, sz, 9.0)));
     for (px, pz, r) in pads {
         let t = smoothstep(r, r * 0.6, dist(x, z, px, pz));
         h = lerp(h, base_height(px, pz), t);
     }
-
-    // Carve the lakes.
     for (lx, lz, r) in LAKES {
         let t = smoothstep(r * 1.15, r * 0.85, dist(x, z, lx, lz));
         h = lerp(h, LAKE_LEVEL - 0.5, t);
@@ -225,6 +276,28 @@ pub fn shore_point(lake: usize, x: f32, z: f32) -> (f32, f32) {
 
 /// Distance from a point to the centre line of the highway.
 pub fn road_distance(x: f32, z: f32) -> f32 {
+    // Compare squared distances and take one square root at the end (the
+    // square root is monotonic, so the nearest segment is the same and the
+    // answer is bit for bit what taking eight roots and a minimum gave).
+    let mut best = f32::MAX;
+    for w in ROAD.windows(2) {
+        let ((ax, az), (bx, bz)) = (w[0], w[1]);
+        let (dx, dz) = (bx - ax, bz - az);
+        let t = (((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)).clamp(0.0, 1.0);
+        let (ex, ez) = (x - (ax + dx * t), z - (az + dz * t));
+        best = best.min(ex * ex + ez * ez);
+    }
+    // Nothing finite to measure (NaN input): the old answer, "very far".
+    if best == f32::MAX {
+        f32::MAX
+    } else {
+        best.sqrt()
+    }
+}
+
+/// The original `road_distance`, kept as the reference for the fast one.
+#[cfg(test)]
+fn reference_road_distance(x: f32, z: f32) -> f32 {
     ROAD.windows(2)
         .map(|w| {
             let ((ax, az), (bx, bz)) = (w[0], w[1]);
@@ -315,6 +388,100 @@ mod tests {
     }
 
     use super::*;
+
+    /// Sample points for the equivalence tests: a fine scatter over (and past
+    /// the edge of) the map, plus rings hugging every pad and lake boundary,
+    /// where the fast paths hand over to the exact calculation.
+    fn probe_points() -> Vec<(f32, f32)> {
+        let mut r = crate::sim::rng::Rng::new(0xFA57);
+        let mut pts: Vec<(f32, f32)> = (0..60_000).map(|_| (r.range(-230.0, 230.0), r.range(-230.0, 230.0))).collect();
+        let mut centres: Vec<(f32, f32, f32)> = PADS.to_vec();
+        centres.extend(LAKES.iter().flat_map(|&(x, z, rad)| [(x, z, rad * 1.15), (x, z, rad * 0.85), (x, z, rad * ICE_FRACTION), (x, z, rad * 1.2 + 2.0)]));
+        centres.extend(ROAD.iter().map(|&(x, z)| (x, z, ROAD_HALF_WIDTH + 2.5)));
+        for (cx, cz, rad) in centres {
+            for k in 0..400 {
+                let a = k as f32 / 400.0 * std::f32::consts::TAU;
+                for scale in [0.999, 0.99999, 1.0, 1.00001, 1.0001, 1.001, 1.01] {
+                    pts.push((cx + a.cos() * rad * scale, cz + a.sin() * rad * scale));
+                }
+            }
+        }
+        pts.extend([(0.0, 0.0), (-0.0, 0.0), (f32::MAX, 0.0), (-1e30, 1e30), (1e20, -3.0)]);
+        pts
+    }
+
+    #[test]
+    fn fast_height_is_bit_for_bit_the_old_height() {
+        let pts = probe_points();
+        assert!(pts.len() > 100_000);
+        for (x, z) in pts {
+            let (fast, old) = (height(x, z), reference_height(x, z));
+            assert!(fast.to_bits() == old.to_bits() || (fast.is_nan() && old.is_nan()), "height({x}, {z}): {fast} vs {old}");
+        }
+    }
+
+    #[test]
+    fn height_of_garbage_is_still_garbage_not_a_panic() {
+        for (x, z) in [(f32::NAN, 0.0), (0.0, f32::NAN), (f32::INFINITY, 0.0), (0.0, f32::NEG_INFINITY)] {
+            assert_eq!(height(x, z).is_nan(), reference_height(x, z).is_nan());
+        }
+    }
+
+    #[test]
+    fn fast_road_distance_is_bit_for_bit_the_old_one() {
+        for (x, z) in probe_points() {
+            let (fast, old) = (road_distance(x, z), reference_road_distance(x, z));
+            assert!(fast.to_bits() == old.to_bits(), "road_distance({x}, {z}): {fast} vs {old}");
+        }
+        for (x, z) in [(f32::NAN, 0.0), (0.0, f32::NAN), (f32::INFINITY, 0.0), (f32::NAN, f32::NAN)] {
+            assert_eq!(road_distance(x, z).to_bits(), reference_road_distance(x, z).to_bits(), "({x}, {z})");
+        }
+    }
+
+    #[test]
+    fn walk_and_mesh_height_and_normals_are_unchanged_by_the_speed_up() {
+        // They are built on `height`, so exact equality with a copy built on
+        // the reference one proves nothing else moved.
+        let ref_mesh = |x: f32, z: f32| {
+            let cell = 2.0 * HALF_SIZE / MESH_RES as f32;
+            let fx = ((x + HALF_SIZE) / cell).clamp(0.0, MESH_RES as f32 - 1e-3);
+            let fz = ((z + HALF_SIZE) / cell).clamp(0.0, MESH_RES as f32 - 1e-3);
+            let (i, j) = (fx.floor(), fz.floor());
+            let (tx, tz) = (fx - i, fz - j);
+            let at = |di: f32, dj: f32| reference_height(-HALF_SIZE + (i + di) * cell, -HALF_SIZE + (j + dj) * cell);
+            let (h00, h11) = (at(0.0, 0.0), at(1.0, 1.0));
+            if tz >= tx {
+                let h01 = at(0.0, 1.0);
+                h00 + tz * (h01 - h00) + tx * (h11 - h01)
+            } else {
+                let h10 = at(1.0, 0.0);
+                h00 + tx * (h10 - h00) + tz * (h11 - h10)
+            }
+        };
+        let ref_normal = |x: f32, z: f32| {
+            let e = 0.5;
+            let nx = reference_height(x - e, z) - reference_height(x + e, z);
+            let nz = reference_height(x, z - e) - reference_height(x, z + e);
+            let ny = 2.0 * e;
+            let len = (nx * nx + ny * ny + nz * nz).sqrt();
+            [nx / len, ny / len, nz / len]
+        };
+        for (x, z) in probe_points().into_iter().step_by(7) {
+            assert_eq!(mesh_height(x, z).to_bits(), ref_mesh(x, z).to_bits(), "mesh_height({x}, {z})");
+            assert_eq!(normal(x, z).map(f32::to_bits), ref_normal(x, z).map(f32::to_bits), "normal({x}, {z})");
+        }
+    }
+
+    #[test]
+    fn the_flat_pads_are_still_flat_and_the_lakes_still_sunk() {
+        for &(px, pz, _) in &PADS {
+            assert!((height(px, pz) - base_height(px, pz)).abs() < 1e-5, "pad centre keeps the natural height");
+            assert!((height(px + 2.0, pz) - height(px, pz)).abs() < 0.2, "level near the middle");
+        }
+        for &(lx, lz, _) in &LAKES {
+            assert!((height(lx, lz) - (LAKE_LEVEL - 0.5)).abs() < 1e-5);
+        }
+    }
 
     #[test]
     fn lakes_have_ice_and_radiation() {
