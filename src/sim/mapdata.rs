@@ -3,7 +3,8 @@
 //! two always agree (lakes, the highway, hills as contour lines, radiation
 //! zones, buildings). Nothing here depends on Bevy.
 
-use super::terrain::{self, HALF_SIZE, ICE_FRACTION, LAKES, RAD_SOURCES, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
+use super::interiors::MART_POS;
+use super::terrain::{self, CAMPS, HALF_SIZE, ICE_FRACTION, LAKES, RAD_SOURCES, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
 
 /// World size in metres.
 pub const WORLD: f32 = HALF_SIZE * 2.0;
@@ -60,8 +61,8 @@ pub fn landmarks() -> Vec<Landmark> {
     }
     v.push(Landmark {
         name: "Bullseye-Mart (ruin)",
-        x: -40.0,
-        z: -110.0,
+        x: MART_POS.0,
+        z: MART_POS.1,
         kind: Kind::Ruin,
         radius: 45.0,
     });
@@ -81,7 +82,7 @@ pub fn landmarks() -> Vec<Landmark> {
         kind: Kind::Hazard,
         radius: 40.0,
     });
-    for (i, &(x, z)) in [(-110.0f32, 15.0f32), (160.0, 55.0)].iter().enumerate() {
+    for (i, &(x, z, _)) in CAMPS.iter().enumerate() {
         v.push(Landmark {
             name: if i == 0 { "Abandoned Camp (west)" } else { "Abandoned Camp (east)" },
             x,
@@ -446,6 +447,32 @@ mod tests {
         let (u_west, _) = to_uv(-100.0, 0.0);
         let (u_east, _) = to_uv(100.0, 0.0);
         assert!(u_west < u_east);
+    }
+
+    /// The old hand-typed list, number for number. The discovery state in a
+    /// save is stored by index, so neither the order nor the values may move.
+    #[test]
+    fn the_landmark_list_is_exactly_what_it_always_was() {
+        let want: [(&str, f32, f32, f32); 13] = [
+            ("Vault 143", 0.0, 159.0, 60.0),
+            ("Lundgren's Fish House", 30.0, 110.0, 40.0),
+            ("Sven's Shanty", -80.0, -40.0, 40.0),
+            ("Olson's Bait & Tackle", 105.0, 60.0, 40.0),
+            ("Ole's Ice Shack", -20.0, -75.0, 40.0),
+            ("Bullseye-Mart (ruin)", -40.0, -110.0, 45.0),
+            ("Golden Atomic Mills", 140.0, -131.0, 45.0),
+            ("Dud Warhead Crater", -120.0, 120.0, 40.0),
+            ("Abandoned Camp (west)", -110.0, 15.0, 35.0),
+            ("Abandoned Camp (east)", 160.0, 55.0, 35.0),
+            ("Mille Lacs West Bay", -60.0, 40.0, 53.0),
+            ("The Big Freeze", 70.0, -30.0, 60.0),
+            ("Black Ice Pond", 10.0, -120.0, 47.0),
+        ];
+        let got = landmarks();
+        assert_eq!(got.len(), 13);
+        for (l, w) in got.iter().zip(want.iter()) {
+            assert_eq!((l.name, l.x, l.z, l.radius), *w);
+        }
     }
 
     #[test]

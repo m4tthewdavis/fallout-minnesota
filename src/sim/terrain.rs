@@ -29,6 +29,36 @@ pub const SHELTER_RADIUS: f32 = 5.0;
 /// Radiation hot spots: (x, z, radius, rads/sec at centre).
 pub const RAD_SOURCES: [(f32, f32, f32, f32); 2] = [(-120.0, 120.0, 18.0, 15.0), (140.0, -140.0, 14.0, 10.0)];
 
+/// Raider camps: (tent x, tent z, yaw in radians). The list is read by the
+/// map, the prop placer and the raiders, and placement draws random numbers in
+/// list order, so never reorder it.
+pub const CAMPS: [(f32, f32, f32); 2] = [(-110.0, 15.0, 0.4), (160.0, 55.0, -0.9)];
+/// A camp's fire pit sits this far (east, south) of its tent, before the
+/// camp's yaw turns it.
+pub const CAMP_FIRE_OFFSET: (f32, f32) = (3.6, 0.8);
+
+/// Where a camp's fire is: the offset turned by the camp's yaw.
+pub fn camp_fire_pit(camp: (f32, f32, f32)) -> (f32, f32) {
+    let (cx, cz, yaw) = camp;
+    let (dx, dz) = CAMP_FIRE_OFFSET;
+    (cx + yaw.cos() * dx + yaw.sin() * dz, cz - yaw.sin() * dx + yaw.cos() * dz)
+}
+
+/// Pre-war landmarks trees and props should stay away from: (x, z, clear
+/// radius). The Bullseye-Mart, then the Golden Atomic Mills.
+pub const RUINS: [(f32, f32, f32); 2] = [(interiors::MART_POS.0, interiors::MART_POS.1, 20.0), (RAD_SOURCES[1].0, RAD_SOURCES[1].1, 18.0)];
+
+/// Rusted cars along the highway: (x, z, yaw in radians). The list order is
+/// the order the car models are dressed in, so never reorder it.
+pub const CARS: [(f32, f32, f32); 6] = [
+    (-150.0, 95.0, 1.62),
+    (-128.0, 92.0, 1.4),
+    (-60.0, 98.0, 4.6),
+    (60.0, 140.0, 2.6),
+    (150.0, 100.0, 1.75),
+    (165.0, 20.0, 1.7),
+];
+
 /// The old US-169 highway: a polyline (x, z) running east-west across the map,
 /// past the abandoned cars.
 pub const ROAD: [(f32, f32); 9] = [
@@ -56,7 +86,7 @@ pub enum Surface {
 
 /// Poured-concrete aprons: (centre x, centre z, half width, half depth).
 /// One in front of the vault door, one under the Bullseye-Mart car park.
-pub const CONCRETE_PADS: [(f32, f32, f32, f32); 2] = [(VAULT_POS.0, VAULT_POS.1 - 6.5, 9.0, 5.5), (-40.0, -108.0, 16.0, 16.0)];
+pub const CONCRETE_PADS: [(f32, f32, f32, f32); 2] = [(VAULT_POS.0, VAULT_POS.1 - 6.5, 9.0, 5.5), (interiors::MART_POS.0, interiors::MART_POS.1 + 2.0, 16.0, 16.0)];
 
 /// Wooden landing around each shelter's fire barrel: (centre x, centre z, half width, half depth).
 pub fn wood_decks() -> impl Iterator<Item = (f32, f32, f32, f32)> {
@@ -73,6 +103,51 @@ pub fn base_height(x: f32, z: f32) -> f32 {
         + 1.6 * (x * 0.053 + 1.3).sin()
         + 1.2 * (z * 0.047 + 0.7).cos()
         + 0.4 * ((x + z) * 0.11).sin()
+}
+
+/// How high the player's eyes (and the camera) are above their feet.
+pub const EYE_HEIGHT: f32 = 1.7;
+
+/// Where a camera at `cam` has its feet (for footprints).
+pub fn feet(cam: [f32; 3]) -> [f32; 3] {
+    [cam[0], cam[1] - EYE_HEIGHT, cam[2]]
+}
+
+/// Where a shot from `origin` along `dir` (a unit vector) that missed every
+/// creature strikes the ground, if that is within `range`. Walks the ray in
+/// 0.75 m steps from 0.5 m out, so a very thin rise can be skipped over.
+pub fn ground_hit(origin: [f32; 3], dir: [f32; 3], range: f32) -> Option<[f32; 3]> {
+    let mut t = 0.5;
+    while t < range {
+        let p = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
+        if p[1] <= walk_height(p[0], p[2]) {
+            return Some(p);
+        }
+        t += 0.75;
+    }
+    None
+}
+
+/// Snow tint for the terrain: bluer in hollows, trampled near shelters, slushy
+/// along the highway and sickly green around the radiation craters. `h` is the
+/// ground height at `(x, z)`; the result is an RGBA vertex colour.
+pub fn terrain_tint(x: f32, z: f32, h: f32) -> [f32; 4] {
+    let mut c = [0.97f32, 0.98, 1.0];
+    let hollow = ((-h - 0.5) / 3.0).clamp(0.0, 1.0);
+    c = [c[0] - 0.08 * hollow, c[1] - 0.05 * hollow, c[2]];
+    let ripple = 0.03 * ((x * 0.31).sin() * (z * 0.27).cos() + (x * 0.07 + z * 0.05).sin());
+    c = [c[0] + ripple, c[1] + ripple, c[2] + ripple * 0.5];
+    for &(sx, sz) in &SHELTERS {
+        let t = (1.0 - (x - sx).hypot(z - sz) / 9.0).clamp(0.0, 1.0);
+        c = [c[0] - 0.18 * t, c[1] - 0.2 * t, c[2] - 0.22 * t];
+    }
+    let road = (1.0 - (road_distance(x, z) - ROAD_HALF_WIDTH) / 4.0).clamp(0.0, 1.0);
+    c = [c[0] - 0.15 * road, c[1] - 0.15 * road, c[2] - 0.13 * road];
+    for &(cx, cz, r, _) in &RAD_SOURCES {
+        let t = (1.0 - (x - cx).hypot(z - cz) / (r * 1.6)).clamp(0.0, 1.0);
+        c = [c[0] - 0.35 * t, c[1] - 0.12 * t, c[2] - 0.4 * t];
+    }
+    [c[0].clamp(0.0, 1.0), c[1].clamp(0.0, 1.0), c[2].clamp(0.0, 1.0), 1.0]
 }
 
 /// Flat pads for the vault entrance and the shelters: (x, z, radius).
@@ -591,5 +666,130 @@ mod tests {
         assert_eq!(cover_at(SHELTERS[0].0, SHELTERS[0].1), Cover::Warm);
         assert_eq!(shelter_at(SHELTERS[2].0, SHELTERS[2].1), Some(2));
         assert!((walk_height(10.0, 20.0) - height(10.0, 20.0)).abs() < 1e-6);
+    }
+
+    /// World layout is data other code walks in order (placement draws random
+    /// numbers per entry), so every number is pinned as it was when the lists
+    /// lived in three different files.
+    #[test]
+    fn world_layout_lists_keep_their_numbers_and_order() {
+        assert_eq!(CAMPS, [(-110.0, 15.0, 0.4), (160.0, 55.0, -0.9)]);
+        assert_eq!(
+            CARS,
+            [(-150.0, 95.0, 1.62), (-128.0, 92.0, 1.4), (-60.0, 98.0, 4.6), (60.0, 140.0, 2.6), (150.0, 100.0, 1.75), (165.0, 20.0, 1.7)]
+        );
+        assert_eq!(RUINS, [(-40.0, -110.0, 20.0), (140.0, -140.0, 18.0)]);
+        assert_eq!(CONCRETE_PADS, [(0.0, 158.5, 9.0, 5.5), (-40.0, -108.0, 16.0, 16.0)]);
+        assert_eq!(interiors::MART_POS, (-40.0, -110.0));
+        assert_eq!(CAMP_FIRE_OFFSET, (3.6, 0.8));
+        // The ruin on the plain is the radiation source's spot.
+        assert_eq!((RUINS[1].0, RUINS[1].1), (RAD_SOURCES[1].0, RAD_SOURCES[1].1));
+    }
+
+    #[test]
+    fn a_camps_fire_is_beside_its_tent_and_turns_with_it() {
+        // The raiders' old private formula, as it was.
+        fn old_fire_pit(camp: (f32, f32, f32)) -> (f32, f32) {
+            let (cx, cz, yaw) = camp;
+            let (dx, dz) = (3.6f32, 0.8f32);
+            (cx + yaw.cos() * dx + yaw.sin() * dz, cz - yaw.sin() * dx + yaw.cos() * dz)
+        }
+        for camp in CAMPS {
+            let (fx, fz) = camp_fire_pit(camp);
+            assert_eq!((fx, fz), old_fire_pit(camp));
+            let d = (fx - camp.0).hypot(fz - camp.1);
+            assert!((d - 3.6f32.hypot(0.8)).abs() < 1e-4, "the fire is the same distance from the tent however it is turned");
+        }
+        // Facing straight ahead (yaw 0) the fire is just east and a little south.
+        let (x, z) = camp_fire_pit((10.0, 20.0, 0.0));
+        assert!((x - 13.6).abs() < 1e-5 && (z - 20.8).abs() < 1e-5);
+        for camp in CAMPS {
+            assert!(is_open_ground(camp.0, camp.1), "camps are on open ground");
+        }
+    }
+
+    /// Cars and ruins keep trees out, so they must be on the map.
+    #[test]
+    fn cars_and_ruins_are_on_the_map() {
+        for (x, z, _) in CARS {
+            assert!(x.abs() < HALF_SIZE && z.abs() < HALF_SIZE, "({x}, {z})");
+        }
+        for (x, z, r) in RUINS {
+            assert!(x.abs() + r < HALF_SIZE && z.abs() + r < HALF_SIZE);
+        }
+    }
+
+    /// The renderer's old tint function, copied as it was, to prove the move
+    /// changed no vertex colour of the ground.
+    fn old_tint(x: f32, z: f32, h: f32) -> [f32; 4] {
+        let mut c = [0.97f32, 0.98, 1.0];
+        let hollow = ((-h - 0.5) / 3.0).clamp(0.0, 1.0);
+        c = [c[0] - 0.08 * hollow, c[1] - 0.05 * hollow, c[2]];
+        let ripple = 0.03 * ((x * 0.31).sin() * (z * 0.27).cos() + (x * 0.07 + z * 0.05).sin());
+        c = [c[0] + ripple, c[1] + ripple, c[2] + ripple * 0.5];
+        for &(sx, sz) in &SHELTERS {
+            let t = (1.0 - (x - sx).hypot(z - sz) / 9.0).clamp(0.0, 1.0);
+            c = [c[0] - 0.18 * t, c[1] - 0.2 * t, c[2] - 0.22 * t];
+        }
+        let road = (1.0 - (road_distance(x, z) - ROAD_HALF_WIDTH) / 4.0).clamp(0.0, 1.0);
+        c = [c[0] - 0.15 * road, c[1] - 0.15 * road, c[2] - 0.13 * road];
+        for &(cx, cz, r, _) in &RAD_SOURCES {
+            let t = (1.0 - (x - cx).hypot(z - cz) / (r * 1.6)).clamp(0.0, 1.0);
+            c = [c[0] - 0.35 * t, c[1] - 0.12 * t, c[2] - 0.4 * t];
+        }
+        [c[0].clamp(0.0, 1.0), c[1].clamp(0.0, 1.0), c[2].clamp(0.0, 1.0), 1.0]
+    }
+
+    #[test]
+    fn the_ground_tint_is_bit_for_bit_what_it_was_and_reads_as_snow_slush_and_sickness() {
+        for i in 0..(MESH_RES + 1) {
+            for j in (0..(MESH_RES + 1)).step_by(7) {
+                let x = -HALF_SIZE + i as f32 * 2.0 * HALF_SIZE / MESH_RES as f32;
+                let z = -HALF_SIZE + j as f32 * 2.0 * HALF_SIZE / MESH_RES as f32;
+                let h = height(x, z);
+                let (new, old) = (terrain_tint(x, z, h), old_tint(x, z, h));
+                for k in 0..4 {
+                    assert_eq!(new[k].to_bits(), old[k].to_bits(), "({x}, {z}) channel {k}");
+                }
+            }
+        }
+        let snow = terrain_tint(0.0, 0.0, 1.0);
+        assert!(snow[0] > 0.85 && snow[1] > 0.85 && snow[2] > 0.9, "open snow is near white: {snow:?}");
+        let road = terrain_tint(0.0, 97.0, 0.0);
+        assert!(road[0] < snow[0] - 0.05, "the highway is slushy");
+        let (rx, rz, _, _) = RAD_SOURCES[0];
+        let crater = terrain_tint(rx, rz, -1.0);
+        assert!(crater[1] > crater[0] + 0.15 && crater[1] > crater[2] + 0.15, "the crater is sickly green: {crater:?}");
+        assert!(terrain_tint(0.0, 0.0, -50.0)[3] == 1.0, "always opaque, however deep");
+        // Garbage in never escapes the 0..1 colour range as a bad number.
+        for v in terrain_tint(f32::NAN, 3.0, f32::INFINITY) {
+            assert!(v.is_nan() || (0.0..=1.0).contains(&v));
+        }
+    }
+
+    #[test]
+    fn a_shot_into_the_snow_leaves_a_mark_where_it_lands() {
+        let ground = walk_height(10.0, 10.0);
+        // Straight down from 3 m up: lands under it, on the ground.
+        let p = ground_hit([10.0, ground + 3.0, 10.0], [0.0, -1.0, 0.0], 20.0).expect("hits the snow");
+        assert!((p[0], p[2]) == (10.0, 10.0));
+        assert!(p[1] <= ground && p[1] > ground - 0.8, "within one step below the surface: {p:?}");
+        // Out of range, or climbing away: no mark.
+        assert_eq!(ground_hit([10.0, ground + 3.0, 10.0], [0.0, -1.0, 0.0], 2.0), None);
+        assert_eq!(ground_hit([10.0, ground + 3.0, 10.0], [0.0, 1.0, 0.0], 100.0), None);
+        // No range, no mark; a bad number never marks anything.
+        assert_eq!(ground_hit([10.0, ground + 3.0, 10.0], [0.0, -1.0, 0.0], 0.0), None);
+        assert_eq!(ground_hit([f32::NAN; 3], [0.0, -1.0, 0.0], 50.0), None);
+        // A ray that starts underground hits at once (0.5 m out).
+        let p = ground_hit([10.0, ground - 5.0, 10.0], [0.0, 0.0, 1.0], 10.0).unwrap();
+        assert!((p[2] - 10.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn footprints_go_under_the_camera_at_eye_height() {
+        assert_eq!(feet([3.0, 1.7, -4.0]), [3.0, 0.0, -4.0]);
+        let f = feet([0.0, 10.0, 0.0]);
+        assert!((10.0 - f[1] - EYE_HEIGHT).abs() < 1e-6);
+        assert_eq!(EYE_HEIGHT, 1.7, "the player's eye height is part of the feel of the game");
     }
 }

@@ -364,6 +364,12 @@ impl Inventory {
         }
     }
 
+    /// Put rounds into the reserve for `ammo`. Never overflows.
+    pub fn add_rounds(&mut self, ammo: Ammo, n: u32) {
+        let slot = self.reserve_mut(ammo);
+        *slot = slot.saturating_add(n);
+    }
+
     /// Reserve ammunition of a kind.
     pub fn reserve(&self, ammo: Ammo) -> u32 {
         match ammo {

@@ -416,6 +416,16 @@ impl Arsenal {
     pub fn tick(&mut self, dt: f32) {
         self.draw = (self.draw - dt).max(0.0);
     }
+
+    /// How many upgrades are fitted across the weapons you own. Each is worth
+    /// XP, so this is what the level is computed from.
+    pub fn upgrades_fitted(&self) -> usize {
+        WeaponKind::ALL
+            .iter()
+            .filter(|k| self.owned[k.slot()])
+            .map(|k| Upgrade::ALL.iter().filter(|u| self.get(*k).has_upgrade(**u)).count())
+            .sum()
+    }
 }
 
 /// Chance a shot jams at this air temperature (0 above -20F, up to 18%).
@@ -447,6 +457,49 @@ pub fn ray_sphere(origin: [f32; 3], dir: [f32; 3], center: [f32; 3], radius: f32
     } else {
         None
     }
+}
+
+/// A creature the player might hit: whatever the caller calls it, the centre
+/// of its hit sphere and the sphere's radius.
+pub type Target<T> = (T, [f32; 3], f32);
+
+/// The melee blow's target: the creature whose hit sphere is nearest the
+/// player, among those within `range` of `origin` (measured to the sphere's
+/// surface) and in front of `dir` (a unit vector, within 60 degrees).
+/// Returns the creature, the reach to its surface, and the point struck (on
+/// the near side of the sphere). A tie keeps the first creature listed.
+///
+/// The arithmetic is done in the same order as the vector maths it replaced,
+/// so a swing lands exactly where it used to.
+pub fn melee_pick<T: Copy>(origin: [f32; 3], dir: [f32; 3], range: f32, targets: impl IntoIterator<Item = Target<T>>) -> Option<(T, f32, [f32; 3])> {
+    let mut best: Option<(T, f32, [f32; 3])> = None;
+    for (id, centre, radius) in targets {
+        let to = [centre[0] - origin[0], centre[1] - origin[1], centre[2] - origin[2]];
+        let len = ((to[0] * to[0]) + (to[1] * to[1]) + (to[2] * to[2])).sqrt();
+        let reach = len - radius;
+        // Normalised, or zero when the creature is on top of you (or not a number).
+        let rcp = len.recip();
+        let unit = if rcp.is_finite() && rcp > 0.0 { [to[0] * rcp, to[1] * rcp, to[2] * rcp] } else { [0.0; 3] };
+        let facing = (unit[0] * dir[0]) + (unit[1] * dir[1]) + (unit[2] * dir[2]);
+        if reach <= range && facing > 0.5 && best.is_none_or(|(_, d, _)| reach < d) {
+            best = Some((id, reach, [centre[0] - dir[0] * radius, centre[1] - dir[1] * radius, centre[2] - dir[2] * radius]));
+        }
+    }
+    best
+}
+
+/// The first creature a bullet's ray reaches within `range`: its id and the
+/// distance along the ray. A tie keeps the first listed.
+pub fn ray_pick<T: Copy>(origin: [f32; 3], dir: [f32; 3], range: f32, targets: impl IntoIterator<Item = Target<T>>) -> Option<(T, f32)> {
+    let mut best: Option<(T, f32)> = None;
+    for (id, centre, radius) in targets {
+        if let Some(t) = ray_sphere(origin, dir, centre, radius) {
+            if t <= range && best.is_none_or(|(_, bt)| t < bt) {
+                best = Some((id, t));
+            }
+        }
+    }
+    best
 }
 
 #[cfg(test)]
@@ -674,5 +727,57 @@ mod tests {
         assert_eq!((w.mag, reserve), (3, 0));
         let mut none = 0;
         assert!(!w.start_reload(&mut none));
+    }
+
+    const AHEAD: [f32; 3] = [0.0, 0.0, -1.0];
+
+    #[test]
+    fn a_swing_hits_the_nearest_creature_in_front_within_reach() {
+        let wolf = |z: f32| ("wolf", [0.0, 0.0, z], 0.5);
+        // Nothing there.
+        assert_eq!(melee_pick::<&str>([0.0; 3], AHEAD, 2.0, []), None);
+        // One in reach: the reach is to its surface, and the point is on the near side.
+        let (who, reach, point) = melee_pick([0.0; 3], AHEAD, 2.0, [wolf(-2.0)]).unwrap();
+        assert_eq!(who, "wolf");
+        assert!((reach - 1.5).abs() < 1e-6);
+        assert!((point[2] - -1.5).abs() < 1e-6 && point[0] == 0.0);
+        // Out of reach by a hair.
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 2.0, [wolf(-2.6)]), None);
+        // Two in reach: the nearer one, whatever order they are listed in.
+        let near = ("near", [0.0, 0.0, -1.0], 0.4);
+        let far = ("far", [0.1, 0.0, -2.0], 0.4);
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 3.0, [far, near]).unwrap().0, "near");
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 3.0, [near, far]).unwrap().0, "near");
+        // A tie goes to the first listed.
+        let twin = ("twin", [0.0, 0.0, -1.0], 0.4);
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 3.0, [near, twin]).unwrap().0, "near");
+    }
+
+    #[test]
+    fn a_swing_ignores_what_is_beside_or_behind_you_and_survives_garbage() {
+        let at = |x: f32, z: f32| ("t", [x, 0.0, z], 0.3);
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 5.0, [at(0.0, 1.5)]), None, "behind");
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 5.0, [at(1.5, 0.0)]), None, "to the side");
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 5.0, [at(2.0, -1.0)]), None, "63 degrees off the line is too far");
+        assert!(melee_pick([0.0; 3], AHEAD, 5.0, [at(1.0, -1.0)]).is_some(), "45 degrees off is inside the 60 degree arc");
+        // Standing inside one, or a creature somewhere that is not a number: no blow lands.
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 5.0, [at(0.0, 0.0)]), None);
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 5.0, [at(f32::NAN, -1.0)]), None);
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 5.0, [at(0.0, f32::NEG_INFINITY)]), None);
+        // A garbage creature does not hide a real one.
+        assert_eq!(melee_pick([0.0; 3], AHEAD, 5.0, [at(f32::NAN, -1.0), at(0.0, -2.0)]).unwrap().1, 1.7);
+    }
+
+    #[test]
+    fn a_bullet_hits_the_first_creature_on_its_line_within_range() {
+        let a = ("a", [0.0, 0.0, -10.0], 1.0);
+        let b = ("b", [0.0, 0.0, -20.0], 1.0);
+        let off = ("off", [5.0, 0.0, -5.0], 1.0);
+        assert_eq!(ray_pick([0.0; 3], AHEAD, 100.0, [b, off, a]), Some(("a", 9.0)));
+        assert_eq!(ray_pick([0.0; 3], AHEAD, 15.0, [b, a]), Some(("a", 9.0)));
+        assert_eq!(ray_pick([0.0; 3], AHEAD, 5.0, [a, b]), None, "out of range");
+        assert_eq!(ray_pick::<&str>([0.0; 3], AHEAD, 100.0, []), None);
+        let twin = ("twin", [0.0, 0.0, -10.0], 1.0);
+        assert_eq!(ray_pick([0.0; 3], AHEAD, 100.0, [a, twin]).unwrap().0, "a", "a tie keeps the first listed");
     }
 }

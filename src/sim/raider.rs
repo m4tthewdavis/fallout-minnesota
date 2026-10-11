@@ -5,8 +5,9 @@
 //! more at range and when you're running, and when badly hurt they fall back
 //! to the fire. Pure rules (no Bevy), driven by `raiders.rs`.
 
-use super::combat::jam_chance;
+use super::combat::{jam_chance, Ammo};
 use super::rng::Rng;
+use super::survival::Inventory;
 
 /// What a raider carries.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -83,6 +84,53 @@ impl Gun {
             Gun::Shotgun => 4,
             Gun::Revolver => 8,
         }
+    }
+    /// The ammunition this gun's rounds go into in your pack.
+    pub fn ammo(self) -> Ammo {
+        match self {
+            Gun::Rifle => Ammo::PipeRounds,
+            Gun::Shotgun => Ammo::Shells,
+            Gun::Revolver => Ammo::RevolverRounds,
+        }
+    }
+    /// What the rounds are called in the pickup message.
+    pub fn loot_noun(self) -> &'static str {
+        match self {
+            Gun::Rifle => "pipe rounds",
+            Gun::Shotgun => "shells",
+            Gun::Revolver => "revolver rounds",
+        }
+    }
+    /// A dead raider's pockets: rounds for its gun (the usual count plus 0 to
+    /// 3) and 2 to 4 scrap. Draws from `rng` in a fixed order (rounds, then
+    /// scrap) because the world's random stream is shared.
+    pub fn loot(self, rng: &mut Rng) -> Loot {
+        let rounds = self.loot_rounds() + (rng.f32() * 4.0) as u32;
+        let scrap = 2 + (rng.f32() * 3.0) as u32;
+        Loot { ammo: self.ammo(), noun: self.loot_noun(), rounds, scrap }
+    }
+}
+
+/// What a fallen raider had on it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Loot {
+    pub ammo: Ammo,
+    /// "pipe rounds", "shells" or "revolver rounds", for the message.
+    pub noun: &'static str,
+    pub rounds: u32,
+    pub scrap: u32,
+}
+
+impl Loot {
+    /// The line shown when you take it.
+    pub fn message(&self) -> String {
+        format!("Frozen Raider down: +{} {}, +{} scrap", self.rounds, self.noun, self.scrap)
+    }
+
+    /// Put it in the pack.
+    pub fn give(&self, inv: &mut Inventory) {
+        inv.add_rounds(self.ammo, self.rounds);
+        inv.scrap = inv.scrap.saturating_add(self.scrap);
     }
 }
 
@@ -724,5 +772,82 @@ mod tests {
         }
         assert!(!within_sight([0.0; 2], [f32::NAN, 0.0], false, false));
         assert!(within_sight([0.0; 2], [65.0, 0.0], false, false) && !within_sight([0.0; 2], [65.1, 0.0], false, false));
+    }
+
+    /// The Bevy system's loot code before it moved here, on a plain pack.
+    fn old_loot(gun: Gun, inv: &mut Inventory, rng: &mut Rng) -> String {
+        let rounds = gun.loot_rounds() + (rng.f32() * 4.0) as u32;
+        let scrap = 2 + (rng.f32() * 3.0) as u32;
+        let what = match gun {
+            Gun::Rifle => {
+                inv.ammo_reserve += rounds;
+                "pipe rounds"
+            }
+            Gun::Shotgun => {
+                inv.shells += rounds;
+                "shells"
+            }
+            Gun::Revolver => {
+                inv.revolver_rounds += rounds;
+                "revolver rounds"
+            }
+        };
+        inv.scrap += scrap;
+        format!("Frozen Raider down: +{rounds} {what}, +{scrap} scrap")
+    }
+
+    #[test]
+    fn a_dead_raiders_pockets_are_what_they_always_were() {
+        for seed in 0..50u64 {
+            for gun in [Gun::Rifle, Gun::Shotgun, Gun::Revolver] {
+                let (mut a, mut b) = (Rng::new(seed), Rng::new(seed));
+                let (mut new_inv, mut old_inv) = (Inventory::starting_kit(), Inventory::starting_kit());
+                for _ in 0..5 {
+                    let loot = gun.loot(&mut a);
+                    loot.give(&mut new_inv);
+                    let msg = old_loot(gun, &mut old_inv, &mut b);
+                    assert_eq!(loot.message(), msg);
+                    assert_eq!(a.next_u64(), b.next_u64(), "same number of draws");
+                }
+                assert_eq!(
+                    (new_inv.ammo_reserve, new_inv.shells, new_inv.revolver_rounds, new_inv.scrap),
+                    (old_inv.ammo_reserve, old_inv.shells, old_inv.revolver_rounds, old_inv.scrap)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn loot_is_worth_having_but_bounded_and_goes_into_the_right_pocket() {
+        let mut rng = Rng::new(3);
+        for gun in [Gun::Rifle, Gun::Shotgun, Gun::Revolver] {
+            let (mut min_r, mut max_r, mut min_s, mut max_s) = (u32::MAX, 0, u32::MAX, 0);
+            for _ in 0..2_000 {
+                let l = gun.loot(&mut rng);
+                min_r = min_r.min(l.rounds);
+                max_r = max_r.max(l.rounds);
+                min_s = min_s.min(l.scrap);
+                max_s = max_s.max(l.scrap);
+            }
+            assert_eq!((min_r, max_r), (gun.loot_rounds(), gun.loot_rounds() + 3), "{gun:?}");
+            assert_eq!((min_s, max_s), (2, 4));
+            let mut inv = Inventory::starting_kit();
+            let before = (inv.ammo_reserve, inv.shells, inv.revolver_rounds);
+            Loot { ammo: gun.ammo(), noun: gun.loot_noun(), rounds: 5, scrap: 0 }.give(&mut inv);
+            let after = (inv.ammo_reserve, inv.shells, inv.revolver_rounds);
+            let diff = (after.0 - before.0, after.1 - before.1, after.2 - before.2);
+            assert_eq!(diff, match gun { Gun::Rifle => (5, 0, 0), Gun::Shotgun => (0, 5, 0), Gun::Revolver => (0, 0, 5) });
+        }
+    }
+
+    #[test]
+    fn a_full_pack_cannot_overflow() {
+        let mut inv = Inventory::starting_kit();
+        inv.revolver_rounds = u32::MAX - 1;
+        inv.scrap = u32::MAX;
+        Loot { ammo: Ammo::RevolverRounds, noun: "revolver rounds", rounds: 10, scrap: 4 }.give(&mut inv);
+        assert_eq!((inv.revolver_rounds, inv.scrap), (u32::MAX, u32::MAX));
+        inv.add_rounds(Ammo::Shells, 0);
+        assert_eq!(inv.shells, Inventory::starting_kit().shells, "adding nothing changes nothing");
     }
 }

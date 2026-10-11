@@ -5,6 +5,8 @@
 //! passes smoothly through dusk into night. Pure maths (no Bevy), so the
 //! colours are unit-tested.
 
+use super::mathx::dot3 as dot;
+
 const EARTH_R: f32 = 6_360_000.0;
 const ATMO_R: f32 = 6_420_000.0;
 /// Where the observer stands above the ground.
@@ -32,10 +34,6 @@ pub struct Conditions {
 }
 
 type V3 = [f32; 3];
-
-fn dot(a: V3, b: V3) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
 
 fn norm(a: V3) -> V3 {
     let l = dot(a, a).sqrt();

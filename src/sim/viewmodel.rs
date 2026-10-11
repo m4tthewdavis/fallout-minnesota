@@ -5,7 +5,7 @@
 use std::f32::consts::TAU;
 
 use super::combat::WeaponKind;
-use super::mathx::lerp;
+use super::mathx::{lerp, smoothstep};
 
 /// Scale the weapon models are drawn at.
 pub const SCALE: f32 = 0.8;
@@ -269,8 +269,7 @@ fn pocket() -> Hand {
 }
 
 fn smooth(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+    smoothstep(0.0, 1.0, t)
 }
 
 /// 0 -> 1 over [a, b].

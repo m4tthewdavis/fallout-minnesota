@@ -6,6 +6,7 @@
 
 use super::combat::WeaponKind;
 use super::interiors::Interior;
+use super::mathx::smoothstep;
 use super::sfx::step_sound;
 use super::synth::Sound;
 use super::terrain::Surface;
@@ -146,11 +147,6 @@ pub struct WindMix {
     pub mid: f32,
     pub high: f32,
     pub howl: f32,
-}
-
-fn smoothstep(lo: f32, hi: f32, x: f32) -> f32 {
-    let t = ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 /// The wind layers for a wind strength `w` (0 calm, 1 full blizzard): a soft

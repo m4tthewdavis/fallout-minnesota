@@ -7,6 +7,7 @@
 pub mod atmosphere;
 pub mod collision;
 pub mod combat;
+pub mod compass;
 pub mod crow;
 pub mod daynight;
 pub mod dialogue;
@@ -24,8 +25,10 @@ pub mod menu;
 pub mod meshgen;
 pub mod mipmaps;
 pub mod outfit;
+pub mod placement;
 pub mod moose;
 pub mod perf;
+pub mod pipboy_text;
 pub mod pipnav;
 pub mod progress;
 pub mod raider;

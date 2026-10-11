@@ -7,6 +7,11 @@ pub fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Dot product of two 3-vectors.
+pub fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
@@ -74,6 +79,38 @@ mod tests {
         assert!(smoothstep(0.0, 2.0, 0.5) < 0.25, "slow start");
         assert_eq!(smoothstep(10.0, 4.0, 12.0), 0.0);
         assert_eq!(smoothstep(10.0, 4.0, 2.0), 1.0);
+    }
+
+    #[test]
+    fn dot_products_add_up() {
+        assert_eq!(dot3([1.0, 2.0, 3.0], [4.0, -5.0, 6.0]), 12.0);
+        assert_eq!(dot3([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]), 0.0, "perpendicular");
+    }
+
+    /// The private copies that were folded into `smoothstep`, as they were.
+    #[test]
+    fn the_folded_in_easing_copies_gave_the_same_bits() {
+        let soundscape = |lo: f32, hi: f32, x: f32| {
+            let t = ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let viewmodel = |t: f32| {
+            let t = t.clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let mut v = vec![0.0, -0.0, 1.0, -1.0, 0.5, 2.0, 1e-30, f32::NAN, f32::INFINITY, f32::NEG_INFINITY, f32::MAX, f32::MIN_POSITIVE];
+        let mut r = crate::sim::rng::Rng::new(8);
+        for _ in 0..100_000 {
+            v.push(r.range(-3.0, 3.0));
+            v.push(f32::from_bits(r.next_u64() as u32));
+        }
+        let same = |a: f32, b: f32| a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan());
+        for &x in &v {
+            assert!(same(smoothstep(0.0, 1.0, x), viewmodel(x)), "{x:e}");
+            for (lo, hi) in [(0.1, 0.6), (0.5, 1.0), (0.0, 1.0)] {
+                assert!(same(smoothstep(lo, hi, x), soundscape(lo, hi, x)), "{x:e}");
+            }
+        }
     }
 
     #[test]
