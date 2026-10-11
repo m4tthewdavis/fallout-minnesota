@@ -17,16 +17,9 @@ use crate::state::{Colliders, RngRes};
 use crate::sim::weather::WIND_DIR;
 use crate::world::{glow, ground, mat, prop, spawn_contact_shadow, spawn_drift, Blinker};
 
-/// Pre-war landmarks trees should stay away from: (x, z, clear radius).
-pub const RUINS: [(f32, f32, f32); 2] = [(crate::sim::interiors::MART_POS.0, crate::sim::interiors::MART_POS.1, 20.0), (140.0, -140.0, 18.0)];
-pub const CARS: [(f32, f32, f32); 6] = [
-    (-150.0, 95.0, 1.62),
-    (-128.0, 92.0, 1.4),
-    (-60.0, 98.0, 4.6),
-    (60.0, 140.0, 2.6),
-    (150.0, 100.0, 1.75),
-    (165.0, 20.0, 1.7),
-];
+/// Pre-war landmarks trees should stay away from, and the highway's wrecks
+/// (the layout lives with the terrain).
+pub use crate::sim::terrain::{CARS, RUINS};
 
 /// A flat sign showing `image`, facing +Z, with a plain backing board.
 pub fn sign(

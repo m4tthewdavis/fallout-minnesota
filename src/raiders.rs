@@ -24,9 +24,6 @@ use crate::sim::terrain;
 use crate::sim::weather::Phase;
 use crate::state::{alive, outdoors, ClockRes, Colliders, Fx, FxQueue, Game, Gunshot, Hostile, Lifetime, Messages, RngRes, SfxQueue, SfxReq, WeatherRes};
 
-/// Where the camps' fires are, and who's there. A camp's fire pit is 3.6 m
-/// east and 0.8 m south of its tent, turned by the camp's yaw (see `props.rs`).
-pub(crate) const CAMPS: [(f32, f32, f32); 2] = [(-110.0, 15.0, 0.4), (160.0, 55.0, -0.9)];
 /// Hit sphere: torso height and size.
 const BODY_CENTER: f32 = 1.1;
 const BODY_RADIUS: f32 = 0.5;
@@ -106,19 +103,19 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
     });
 }
 
-/// Fire pit position for a camp.
+/// Fire pit position for a camp (`terrain::CAMPS`): `CAMP_FIRE_OFFSET` from
+/// its tent, turned by the camp's yaw.
 fn fire_pit(camp: (f32, f32, f32)) -> Vec2 {
-    let (cx, cz, yaw) = camp;
-    let (dx, dz) = (3.6f32, 0.8f32);
-    Vec2::new(cx + yaw.cos() * dx + yaw.sin() * dz, cz - yaw.sin() * dx + yaw.cos() * dz)
+    let (x, z) = terrain::camp_fire_pit(camp);
+    Vec2::new(x, z)
 }
 
 pub(crate) fn spawn_initial(mut commands: Commands, assets: Res<RaiderAssets>, kit: Res<PersonKit>, mut rng: ResMut<RngRes>) {
     let convoy = Vec2::new(crate::quest::CONVOY_AT.0 + 1.0, crate::quest::CONVOY_AT.1 - 3.4);
     // (where the fire is, who stands round it)
     for (fire, guns) in [
-        (fire_pit(CAMPS[0]), &[Gun::Rifle, Gun::Revolver, Gun::Shotgun][..]),
-        (fire_pit(CAMPS[1]), &[Gun::Revolver, Gun::Rifle][..]),
+        (fire_pit(terrain::CAMPS[0]), &[Gun::Rifle, Gun::Revolver, Gun::Shotgun][..]),
+        (fire_pit(terrain::CAMPS[1]), &[Gun::Revolver, Gun::Rifle][..]),
         (convoy, &[Gun::Shotgun, Gun::Revolver][..]),
     ] {
         for (i, gun) in guns.iter().enumerate() {
@@ -399,25 +396,9 @@ fn animate_raiders(
 /// A dead raider's pockets: rounds for its gun and some scrap.
 fn raider_loot(mut game: ResMut<Game>, mut msgs: ResMut<Messages>, mut sfx: ResMut<SfxQueue>, mut rng: ResMut<RngRes>, fallen: Query<&RaiderAi, Added<Dying>>) {
     for r in &fallen {
-        let rounds = r.brain.gun.loot_rounds() + (rng.0.f32() * 4.0) as u32;
-        let scrap = 2 + (rng.0.f32() * 3.0) as u32;
-        let inv = &mut game.inv;
-        let what = match r.brain.gun {
-            Gun::Rifle => {
-                inv.ammo_reserve += rounds;
-                "pipe rounds"
-            }
-            Gun::Shotgun => {
-                inv.shells += rounds;
-                "shells"
-            }
-            Gun::Revolver => {
-                inv.revolver_rounds += rounds;
-                "revolver rounds"
-            }
-        };
-        inv.scrap += scrap;
-        msgs.show(format!("Frozen Raider down: +{rounds} {what}, +{scrap} scrap"), 3.5);
+        let loot = r.brain.gun.loot(&mut rng.0);
+        loot.give(&mut game.inv);
+        msgs.show(loot.message(), 3.5);
         sfx.play(Sound::PickupAmmo);
     }
 }

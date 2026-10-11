@@ -176,7 +176,7 @@ fn dress_world(
     }
 
     // ---- The raider camps: a ring of jersey barriers and a generator ----
-    for &(cx, cz, _) in &crate::raiders::CAMPS {
+    for &(cx, cz, _) in &crate::sim::terrain::CAMPS {
         for k in 0..5 {
             let a = k as f32 / 5.0 * TAU + rng.0.range(-0.2, 0.2);
             let d = rng.0.range(9.0, 11.0);

@@ -15,7 +15,7 @@ use crate::theme::{ACCENT, ACCENT_DIM, MENU_PANEL, SELECTED_FILL};
 use crate::assets::GameAssets;
 use crate::enemy::{Body, Dying, Species};
 use crate::moose::{spawn_moose, MooseAssets};
-use crate::pipboy::{total_upgrades, PipState};
+use crate::pipboy::PipState;
 use crate::player::Player;
 use crate::saves::{AutosaveRequest, StoryFlags};
 use crate::sim::collision::Shape;
@@ -352,8 +352,7 @@ fn apply_pump(
 // ---------------------------------------------------------------------------
 
 fn current_level(game: &Game, pip: &PipState, flags: &rules::Flags) -> u32 {
-    let places = pip.fog.landmarks_found.iter().filter(|f| **f).count();
-    progress::level(progress::experience(game.kills, places, total_upgrades(game), game.inv.has_frostfang_coat, rules::quest_xp(flags))).0
+    progress::breakdown(game.kills, &pip.fog.landmarks_found, game.arsenal.upgrades_fitted(), game.inv.has_frostfang_coat, flags).level().0
 }
 
 /// When a perk pick is waiting, and nothing dangerous is near, show the choice.

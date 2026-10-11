@@ -14,7 +14,7 @@ use crate::sim::collision::{self, SpatialGrid};
 use crate::sim::meshgen::{self, MeshData};
 use crate::sim::survival::Item;
 use crate::sim::sfx;
-use crate::sim::terrain::{self, HALF_SIZE, ICE_FRACTION, ICE_LEVEL, LAKES, RAD_SOURCES, SHELTERS, VAULT_POS};
+use crate::sim::terrain::{self, HALF_SIZE, ICE_FRACTION, ICE_LEVEL, LAKES, RAD_SOURCES, VAULT_POS};
 use crate::state::{alive, Colliders, Game, RngRes, SfxQueue};
 
 /// The directional "sun" light, dimmed by the weather.
@@ -32,39 +32,12 @@ pub struct Pickup {
     pub base_y: f32,
 }
 
-/// Where [`open_spot`] may put things: how far in from the map edge, how many
-/// tries, and how far to stay from the vault, ruins and cars.
-pub struct SpotRules {
-    pub edge: f32,
-    pub tries: usize,
-    pub vault_clear: f32,
-    pub ruin_pad: f32,
-    pub car_clear: f32,
-}
+pub use crate::sim::placement::{SpotRules, PLACED, SCATTER};
 
-/// Trees, rocks and drifts: anywhere on open ground not in a ruin or on a car.
-pub const SCATTER: SpotRules = SpotRules { edge: 0.0, tries: 40, vault_clear: 0.0, ruin_pad: 0.0, car_clear: 5.0 };
-/// Loot and camps: well inside the map and clear of the vault, with margins round landmarks.
-pub const PLACED: SpotRules = SpotRules { edge: 12.0, tries: 60, vault_clear: 30.0, ruin_pad: 4.0, car_clear: 6.0 };
-
-/// A random point on open ground that obeys `rules` and is clear of `solid`.
+/// A random point on open ground that obeys `rules` and is clear of `solid`
+/// (see [`crate::sim::placement::open_spot`]).
 pub fn open_spot(rng: &mut RngRes, solid: &SpatialGrid, clearance: f32, rules: &SpotRules) -> Option<(f32, f32)> {
-    use crate::landmarks::{CARS, RUINS};
-    for _ in 0..rules.tries {
-        let x = rng.0.range(-HALF_SIZE + rules.edge, HALF_SIZE - rules.edge);
-        let z = rng.0.range(-HALF_SIZE + rules.edge, HALF_SIZE - rules.edge);
-        if !terrain::is_open_ground(x, z) || terrain::dist_to_vault(x, z) < rules.vault_clear {
-            continue;
-        }
-        if RUINS.iter().any(|&(rx, rz, r)| (x - rx).hypot(z - rz) < r + rules.ruin_pad)
-            || CARS.iter().any(|&(cx, cz, _)| (x - cx).hypot(z - cz) < rules.car_clear)
-            || solid.blocked(x, z, clearance)
-        {
-            continue;
-        }
-        return Some((x, z));
-    }
-    None
+    crate::sim::placement::open_spot(&mut rng.0, solid, clearance, rules)
 }
 
 /// A fire light that casts shadows when the shadow quality is high enough.
@@ -198,7 +171,7 @@ pub fn spawn_drift(
     let mut m = meshgen::drift_patch(x, z, length, width, peak, along, seed, 4.0, &terrain::mesh_height);
     for i in 0..m.positions.len() {
         let p = m.positions[i];
-        m.colors[i] = terrain_tint(p[0], p[2], p[1]);
+        m.colors[i] = terrain::terrain_tint(p[0], p[2], p[1]);
     }
     commands.spawn((Mesh3d(meshes.add(to_mesh_tangents(&m))), MeshMaterial3d(assets.snow_ground.clone())));
 }
@@ -247,27 +220,6 @@ pub fn prop(commands: &mut Commands, scene: &Handle<Scene>, pos: Vec3, yaw: f32,
         .id()
 }
 
-/// Snow tint for the terrain: bluer in hollows, trampled near shelters, slushy
-/// along the highway and sickly green around the radiation craters.
-pub fn terrain_tint(x: f32, z: f32, h: f32) -> [f32; 4] {
-    let mut c = [0.97f32, 0.98, 1.0];
-    let hollow = ((-h - 0.5) / 3.0).clamp(0.0, 1.0);
-    c = [c[0] - 0.08 * hollow, c[1] - 0.05 * hollow, c[2]];
-    let ripple = 0.03 * ((x * 0.31).sin() * (z * 0.27).cos() + (x * 0.07 + z * 0.05).sin());
-    c = [c[0] + ripple, c[1] + ripple, c[2] + ripple * 0.5];
-    for &(sx, sz) in &SHELTERS {
-        let t = (1.0 - (x - sx).hypot(z - sz) / 9.0).clamp(0.0, 1.0);
-        c = [c[0] - 0.18 * t, c[1] - 0.2 * t, c[2] - 0.22 * t];
-    }
-    let road = (1.0 - (terrain::road_distance(x, z) - terrain::ROAD_HALF_WIDTH) / 4.0).clamp(0.0, 1.0);
-    c = [c[0] - 0.15 * road, c[1] - 0.15 * road, c[2] - 0.13 * road];
-    for &(cx, cz, r, _) in &RAD_SOURCES {
-        let t = (1.0 - (x - cx).hypot(z - cz) / (r * 1.6)).clamp(0.0, 1.0);
-        c = [c[0] - 0.35 * t, c[1] - 0.12 * t, c[2] - 0.4 * t];
-    }
-    [c[0].clamp(0.0, 1.0), c[1].clamp(0.0, 1.0), c[2].clamp(0.0, 1.0), 1.0]
-}
-
 fn build_world(
     mut commands: Commands,
     assets: Res<GameAssets>,
@@ -288,7 +240,7 @@ fn build_world(
         ..terrain_data
     };
     for (i, p) in terrain_data.positions.iter().enumerate() {
-        terrain_data.colors[i] = terrain_tint(p[0], p[2], p[1]);
+        terrain_data.colors[i] = terrain::terrain_tint(p[0], p[2], p[1]);
     }
     commands.spawn((
         Mesh3d(meshes.add(to_mesh_tangents(&terrain_data))),

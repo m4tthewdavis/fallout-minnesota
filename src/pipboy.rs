@@ -31,18 +31,17 @@ use bevy::window::PrimaryWindow;
 
 use crate::assets::GameAssets;
 use crate::player::{set_grab, use_aid, Player};
-use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::sim::mapdata::{self, Fog, Kind};
 use crate::menu::{SaveRequest, SlotSummaries};
-use crate::sim::menu::{slot_name, AUTOSAVE, QUICKSAVE, SLOTS};
+use crate::sim::menu::{AUTOSAVE, SLOTS};
 use crate::sim::pipnav::{Layout, Main, Nav, Page};
+use crate::sim::pipboy_text;
 use crate::sim::progress;
 use crate::sim::quest;
 use crate::saves::StoryFlags;
 use crate::sim::survival::{Aid, Exposure, Inventory, Survival};
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
-use crate::sim::weather::Phase;
 use crate::state::{ClockRes, Game, Messages, PipOpen, SfxQueue, TreePositions, WeatherRes};
 
 
@@ -861,7 +860,7 @@ fn pipboy_input(
     }
 
     if st.nav.page.layout() == Layout::List {
-        let count = list_items(st.nav.page, &game, &slots).len();
+        let count = pipboy_text::list_items(st.nav.page, &game.inv, &game.arsenal, &slots.0).len();
         let up = keys.just_pressed(KeyCode::KeyW) || keys.just_pressed(KeyCode::ArrowUp);
         let down = keys.just_pressed(KeyCode::KeyS) || keys.just_pressed(KeyCode::ArrowDown);
         if (up && st.nav.move_selection(count, -1)) || (down && st.nav.move_selection(count, 1)) {
@@ -961,7 +960,7 @@ fn buttons(
     }
     for (interaction, row) in &rows {
         if matches!(interaction, Interaction::Hovered | Interaction::Pressed) && st.nav.page.layout() == Layout::List {
-            let count = list_items(st.nav.page, &game, &slots).len();
+            let count = pipboy_text::list_items(st.nav.page, &game.inv, &game.arsenal, &slots.0).len();
             if st.nav.select_row(row.0, count) {
                 sfx.play(Sound::PipScroll);
             }
@@ -1013,34 +1012,11 @@ fn show_layout(
     }
 }
 
-fn bar(v: f32, width: usize) -> String {
-    let n = (v.clamp(0.0, 1.0) * width as f32).round() as usize;
-    format!("[{}{}]", "#".repeat(n), "-".repeat(width - n))
-}
-
-pub(crate) fn total_upgrades(game: &Game) -> usize {
-    WeaponKind::ALL.iter().filter(|k| game.arsenal.owned[k.slot()]).map(|k| Upgrade::ALL.iter().filter(|u| game.arsenal.get(*k).has_upgrade(**u)).count()).sum()
-}
-
 /// Header: level and XP, vitals, scrap and the date.
 fn update_header(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, clock: Res<ClockRes>, mut q: Query<&mut Text, With<HeaderInfo>>) {
     let Ok(mut t) = q.single_mut() else { return };
-    let s = &game.survival;
-    let places = st.fog.landmarks_found.iter().filter(|f| **f).count();
-    let xp = progress::experience(game.kills, places, total_upgrades(&game), game.inv.has_frostfang_coat, quest::quest_xp(&flags.0));
-    let (lvl, into, span) = progress::level(xp);
-    t.set_if_neq(Text(format!(
-        "LVL {}   HP {:.0}/{:.0}   HEAT {:.0}%   RAD {:.0}   XP {}/{}   DAY {} {}",
-        lvl,
-        s.health,
-        s.max_health(),
-        s.body_heat,
-        s.rads,
-        into,
-        span,
-        clock.0.day,
-        clock.0.label()
-    )));
+    let level = progress::breakdown(game.kills, &st.fog.landmarks_found, game.arsenal.upgrades_fitted(), game.inv.has_frostfang_coat, &flags.0).level();
+    t.set_if_neq(Text(pipboy_text::header(&game.survival, level, &clock.0)));
 }
 
 /// STATUS: the mascot shows how you're doing; bars and conditions beside it.
@@ -1063,10 +1039,8 @@ fn update_status(
     }
     let t = real.elapsed_secs();
     let s = &game.survival;
-    let hp = s.health / s.max_health().max(1.0);
-    let cold = s.body_heat < 40.0;
-    let hurt = hp < 0.35;
-    let irradiated = s.rads > 100.0;
+    let mood = pipboy_text::Condition::of(s);
+    let (hp, cold, hurt, irradiated) = (mood.hp, mood.cold, mood.hurt, mood.irradiated);
     if let Ok((mut img, mut node)) = mascot.single_mut() {
         set_image(&mut img, if hurt { &art.hurt } else if cold { &art.cold } else { &art.idle });
         // Idle: a cheerful bob. Cold: a fast shiver.
@@ -1094,142 +1068,12 @@ fn update_status(
     let cond = weather.weather.conditions();
     let air = cond.air_temp_f + clock.0.temp_offset_f();
     let feels = Survival::effective_temp(&Exposure { air_temp_f: air, wind_chill_f: cond.wind_chill_f, sheltered, ..Default::default() });
-    let mut effects = Vec::new();
-    if cold {
-        effects.push("COLD  heat draining fast");
-    }
-    if s.frostbite {
-        effects.push("FROSTBITE  -HP over time");
-    }
-    if irradiated {
-        effects.push("IRRADIATED  max HP reduced");
-    }
-    if hurt {
-        effects.push("BADLY HURT  use a Stimpak (H)");
-    }
-    if game.inv.has_frostfang_coat {
-        effects.push("FROSTFANG COAT  +insulation");
-    }
-    if sheltered {
-        effects.push("SHELTERED  warming up");
-    }
-    if effects.is_empty() {
-        effects.push("None. Feeling Minnesota fine.");
-    }
-    let weather_line = match weather.weather.phase {
-        Phase::Calm => "Calm".to_string(),
-        Phase::Warning => format!("SIREN: blizzard in {:.0}s", weather.weather.timer.max(0.0)),
-        Phase::Blizzard => format!("RAD-BLIZZARD {:.0}s", weather.weather.timer.max(0.0)),
-    };
+    let effects = pipboy_text::status_effects(s, &mood, game.inv.has_frostfang_coat, sheltered);
     if let Ok(mut tx) = text.single_mut() {
-        tx.set_if_neq(Text(format!(
-            "CONDITIONS\n{}\n\nWEATHER\n  {}\n  Air {:.0}F, feels {:.0}F\n\nRADIATION\n  {:.0} rads\n  {}",
-            effects.iter().map(|e| format!("  {e}")).collect::<Vec<_>>().join("\n"),
-            weather_line,
-            air,
-            feels,
-            s.rads,
-            match Survival::BASE_MAX_HEALTH - s.max_health() {
-                lost if lost >= 0.5 => format!("Max HP -{lost:.0}"),
-                _ => "Max HP unaffected".to_string(),
-            },
-        )));
+        tx.set_if_neq(Text(pipboy_text::status_text(s, &effects, weather.weather.phase, weather.weather.timer, air, feels)));
     }
     if let Ok(mut tx) = side.single_mut() {
-        tx.set_if_neq(Text(format!(
-            "THAWBORN\nVault 143\n\nHP    {:.0}/{:.0}\nHEAT  {:.0}%\nRADS  {:.0}\n\nKILLS {}\nPELTS {}\nSCRAP {}",
-            s.health,
-            s.max_health(),
-            s.body_heat,
-            s.rads,
-            game.kills,
-            game.inv.pelts,
-            game.inv.scrap
-        )));
-    }
-}
-
-/// The rows and details for a list page.
-fn list_items(page: Page, game: &Game, slots: &SlotSummaries) -> Vec<(String, String)> {
-    let inv = &game.inv;
-    match page {
-        Page::Special => [
-            ("STRENGTH", 5, "Hauling hotdish and ice augers. Affects how hard you swing the ice axe."),
-            ("PERCEPTION", 6, "Spotting a Frostfang against fresh snow, or a cache under a drift."),
-            ("ENDURANCE", 6, "Mille Lacs winters are long. So is the Long Winter."),
-            ("CHARISMA", 4, "Minnesota Nice. Mostly wasted on wolves."),
-            ("INTELLIGENCE", 6, "Enough to fit a choke to a scrap shotgun at a bait shop bench."),
-            ("AGILITY", 5, "How fast you get that magazine in with numb fingers."),
-            ("LUCK", 5, "The vault opened. The bomb in the crater didn't. You're doing okay."),
-        ]
-        .into_iter()
-        .map(|(n, v, d)| (format!("{n:<14}{v:>2}"), format!("{n}  {v}\n\n{d}")))
-        .collect(),
-        Page::Weapons => WeaponKind::ALL
-            .iter()
-            .filter(|k| game.arsenal.owned[k.slot()])
-            .map(|&k| {
-                let w = game.arsenal.get(k);
-                let held = if game.arsenal.current == k.slot() { "*" } else { " " };
-                let label = format!("{held}{}", k.name());
-                let ammo = match k.ammo() {
-                    Some(a) => format!("{}/{}  +{} {}", w.mag, w.mag_size, inv.reserve(a), a.name()),
-                    None => "melee".to_string(),
-                };
-                let fitted: Vec<&str> = Upgrade::ALL.iter().filter(|u| w.has_upgrade(**u)).map(|u| u.name()).collect();
-                let next = match w.next_upgrade() {
-                    Some(up) if k.ammo().is_some() => format!("NEXT MOD  {} ({} scrap)\n  {}", up.name(), up.scrap_cost(), up.describe()),
-                    _ => "Fully modded.".to_string(),
-                };
-                let detail = format!(
-                    "{}\n\nDAM   {:.0}{}\nAMMO  {}\nRATE  {:.1}/s\nRANGE {:.0} m\nCND   {}\n\nMODS  {}\n\n{}",
-                    k.name().to_uppercase(),
-                    w.damage,
-                    if w.pellets > 1 { format!(" x{}", w.pellets) } else { String::new() },
-                    ammo,
-                    1.0 / w.fire_interval.max(0.01),
-                    w.range,
-                    bar(if w.jammed { 0.4 } else { 0.9 }, 10),
-                    if fitted.is_empty() { "none".to_string() } else { fitted.join(", ") },
-                    next
-                );
-                (label, detail)
-            })
-            .collect(),
-        Page::Apparel => {
-            let mut v = vec![
-                ("*Vault 143 Jumpsuit".to_string(), "VAULT 143 JUMPSUIT\n\nDT 1   WARMTH +5\n\nBlue and gold, freshly pressed in 2077.\nNot rated for minus forty.".to_string()),
-                ("*Toque and Scarf".to_string(), "TOQUE AND SCARF\n\nDT 0   WARMTH +5\n\nKnitted by the Overseer's aunt.\nThe pom-pom is regulation.".to_string()),
-                ("*Pip-Boy 3000".to_string(), "PIP-BOY 3000\n\nYour wrist computer: map, stats,\nGeiger counter. Battery: 197 years.".to_string()),
-            ];
-            if inv.has_frostfang_coat {
-                v.insert(0, ("*Frostfang Coat".to_string(), "FROSTFANG COAT\n\nDT 3   WARMTH +40\n\nStitched from Frostfang pelts at a fish\nhouse workbench. Smells like wet wolf.".to_string()));
-            } else {
-                v.push((
-                    " Frostfang Coat (not made)".to_string(),
-                    format!("FROSTFANG COAT\n\nNot crafted yet: {} of {} pelts.\nPress C at a fish house.", inv.pelts, Inventory::PELTS_FOR_COAT),
-                ));
-            }
-            v
-        }
-        Page::Aid => vec![
-            (format!("Stimpak ({})", inv.stimpaks), "STIMPAK\n\n+40 HP\n\nENTER to use (or H any time).".to_string()),
-            (format!("RadAway ({})", inv.radaway), "RADAWAY\n\n-150 rads\n\nENTER to use (or X any time).".to_string()),
-            (format!("Vault 143 Hotdish ({})", inv.hotdish), "VAULT 143 HOTDISH\n\n+35 HEAT  +5 HP\n\nTater tots, cream of mushroom and\nsomething that glows. ENTER or F.".to_string()),
-        ],
-        Page::Saves => (0..SLOTS)
-            .map(|slot| {
-                let name = slot_name(slot);
-                let summary = slots.0[slot].clone().unwrap_or_else(|| "- empty -".to_string());
-                let how = match slot {
-                    AUTOSAVE => "Written for you when you sleep or take\nshelter. L loads it.".to_string(),
-                    QUICKSAVE => "F4 saves here from anywhere in the game.\nENTER saves now, L loads it.".to_string(),
-                    _ => "ENTER saves here, L loads it.".to_string(),
-                };
-                (format!("{name:<10}"), format!("{}\n\n{}\n\n{}", name.to_uppercase(), summary, how))
-            })
-            .collect(),
-        _ => Vec::new(),
+        tx.set_if_neq(Text(pipboy_text::status_side(s, game.kills, game.inv.pelts, game.inv.scrap)));
     }
 }
 
@@ -1246,7 +1090,7 @@ fn update_list(
     if st.nav.page.layout() != Layout::List {
         return;
     }
-    let items = list_items(st.nav.page, &game, &slots);
+    let items = pipboy_text::list_items(st.nav.page, &game.inv, &game.arsenal, &slots.0);
     let sel = st.nav.selected[st.nav.page.index()].min(items.len().saturating_sub(1));
     for (row, mut node, mut border, mut bg, children) in &mut rows {
         let Some((label, _)) = items.get(row.0) else {
@@ -1303,7 +1147,7 @@ fn update_notes(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, mut 
         tick(true),
         tick(owned > 1),
         owned,
-        tick(total_upgrades(&game) > 0),
+        tick(game.arsenal.upgrades_fitted() > 0),
         tick(game.inv.has_frostfang_coat),
         game.inv.pelts.min(Inventory::PELTS_FOR_COAT),
         Inventory::PELTS_FOR_COAT,

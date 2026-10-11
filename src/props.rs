@@ -223,7 +223,7 @@ pub fn spawn_props(
     let rope_mat = mat(&mut materials, Color::srgb(0.55, 0.45, 0.3));
     let ash = meshes.add(Circle::new(0.75));
     let ash_mat = mat(&mut materials, Color::srgb(0.14, 0.13, 0.13));
-    let camps = [(-110.0f32, 15.0f32, 0.4f32), (160.0, 55.0, -0.9)];
+    let camps = terrain::CAMPS;
     for (ci, &(cx, cz, yaw)) in camps.iter().enumerate() {
         if !terrain::is_open_ground(cx, cz) {
             continue;
@@ -252,7 +252,7 @@ pub fn spawn_props(
             solid.push(Shape::Circle { x, z, r: 1.15 });
         }
         // Cold fire pit with charred logs.
-        let (fx, fz) = at(3.6, 0.8);
+        let (fx, fz) = at(terrain::CAMP_FIRE_OFFSET.0, terrain::CAMP_FIRE_OFFSET.1);
         let fgy = ground(fx, fz);
         prop(&mut commands, &assets.fire_pit, Vec3::new(fx, fgy, fz), yaw, 1.0);
         commands.spawn((

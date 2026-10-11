@@ -11,7 +11,7 @@ use crate::changed::set_display;
 
 use crate::assets::GameAssets;
 use crate::interact::{Container, LootMenu};
-use crate::pipboy::{total_upgrades, PipState};
+use crate::pipboy::PipState;
 use crate::saves::{Loaded, StoryFlags};
 use crate::sim::lootmenu::{self, ROWS};
 use crate::sim::progress::{self, Breakdown};
@@ -229,8 +229,7 @@ fn build_ui(mut commands: Commands, assets: Res<GameAssets>) {
 
 /// What each level's XP is made of, right now.
 pub(crate) fn breakdown(game: &Game, pip: &PipState, flags: &rules::Flags) -> Breakdown {
-    let places = pip.fog.landmarks_found.iter().filter(|f| **f).count();
-    Breakdown::new(game.kills, places, total_upgrades(game), game.inv.has_frostfang_coat, rules::quest_xp(flags))
+    progress::breakdown(game.kills, &pip.fog.landmarks_found, game.arsenal.upgrades_fitted(), game.inv.has_frostfang_coat, flags)
 }
 
 /// Notice XP coming in: slide the bar up, and announce a new level.

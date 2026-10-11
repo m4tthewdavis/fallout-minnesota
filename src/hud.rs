@@ -11,7 +11,8 @@ use crate::assets::{GameAssets, MissingAssets};
 use crate::player::Player;
 use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::sim::survival::{Exposure, Inventory, Survival};
-use crate::sim::terrain::{self, SHELTERS, VAULT_POS};
+use crate::sim::compass;
+use crate::sim::terrain;
 use crate::sim::weather::Phase;
 use crate::state::{ClockRes, Game, Messages, WeatherRes};
 
@@ -503,50 +504,6 @@ fn missing_banner(
     bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.7);
 }
 
-/// Compass bearing from north (-Z), clockwise, in degrees 0..360.
-fn bearing(dx: f32, dz: f32) -> f32 {
-    dx.atan2(-dz).to_degrees().rem_euclid(360.0)
-}
-
-/// A strip of compass ticks centred on `heading`, 2 degrees per character,
-/// with markers for points of interest.
-fn compass_strip(heading: f32, markers: &[(f32, char)]) -> String {
-    const HALF: i32 = 30;
-    let mut out = String::with_capacity(64);
-    for i in -HALF..=HALF {
-        let a = (heading + i as f32 * 2.0).rem_euclid(360.0);
-        let near = |target: f32| {
-            let d = (a - target + 540.0).rem_euclid(360.0) - 180.0;
-            d.abs() < 1.0
-        };
-        let mut c = if near(0.0) {
-            'N'
-        } else if near(90.0) {
-            'E'
-        } else if near(180.0) {
-            'S'
-        } else if near(270.0) {
-            'W'
-        } else if [45.0, 135.0, 225.0, 315.0].iter().any(|&t| near(t)) {
-            '+'
-        } else if (a.round() as i32) % 10 == 0 {
-            '|'
-        } else {
-            '.'
-        };
-        for &(target, m) in markers {
-            if near(target) {
-                c = m;
-            }
-        }
-        if i == 0 && !"NESWVH".contains(c) {
-            c = '^';
-        }
-        out.push(c);
-    }
-    out
-}
-
 /// Set a node's width in percent, but only touch it when it changes (a write
 /// marks the node changed and makes Bevy redo its layout).
 fn set_width(node: &mut Mut<Node>, percent: f32) {
@@ -757,21 +714,13 @@ fn update_hud(
     }
 
     // ---- Compass ----
-    let heading = (-yaw).to_degrees().rem_euclid(360.0);
-    let mut markers = vec![(bearing(VAULT_POS.0 - pos.x, VAULT_POS.1 - pos.z), 'V')];
-    if let Some(&(sx, sz)) = SHELTERS.iter().min_by(|a, b| {
-        let da = (a.0 - pos.x).hypot(a.1 - pos.z);
-        let db = (b.0 - pos.x).hypot(b.1 - pos.z);
-        da.total_cmp(&db)
-    }) {
-        markers.push((bearing(sx - pos.x, sz - pos.z), 'H'));
-    }
+    let heading = compass::heading(yaw);
+    let markers = compass::markers(pos.x, pos.z);
     if let Ok(mut text) = texts.p6().single_mut() {
-        text.set_if_neq(Text::new(compass_strip(heading, &markers)));
+        text.set_if_neq(Text::new(compass::compass_strip(heading, &markers)));
     }
     if let Ok(mut text) = texts.p7().single_mut() {
-        let deg = (heading.round() as i32).rem_euclid(360);
-        text.set_if_neq(Text::new(format!("{deg:03}   V vault   H shelter")));
+        text.set_if_neq(Text::new(compass::readout(heading)));
     }
 
 
@@ -794,29 +743,5 @@ fn update_hud(
     };
     if let Ok(mut bg) = overlays.p2().single_mut() {
         bg.set_if_neq(BackgroundColor(Color::srgba(0.2, 1.0, 0.2, rad_alpha)));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bearings_follow_the_map() {
-        assert!((bearing(0.0, -1.0) - 0.0).abs() < 1e-3, "north is -Z");
-        assert!((bearing(1.0, 0.0) - 90.0).abs() < 1e-3, "east is +X");
-        assert!((bearing(0.0, 1.0) - 180.0).abs() < 1e-3);
-        assert!((bearing(-1.0, 0.0) - 270.0).abs() < 1e-3);
-    }
-
-    #[test]
-    fn compass_centres_on_heading() {
-        let strip = compass_strip(0.0, &[]);
-        assert_eq!(strip.chars().count(), 61);
-        assert_eq!(strip.chars().nth(30), Some('N'));
-        assert_eq!(strip.chars().nth(30 + 45), None);
-        let east = compass_strip(90.0, &[(100.0, 'V')]);
-        assert_eq!(east.chars().nth(30), Some('E'));
-        assert_eq!(east.chars().nth(35), Some('V'), "a marker 10 degrees right sits 5 chars right");
     }
 }
