@@ -136,7 +136,7 @@ the four Frostfang looks, the Glowmoose and its antlers, the 1950s sedans and sn
 sleeves, sleds, tents, shopping carts, mailboxes, fish houses, silos, the vault gear door, rocks and
 snowdrifts, all four weapons (pipe rifle, scrap shotgun, frontier revolver, ice axe), the sky dome, the
 snow shader (`src/shaders/snow.wgsl`), the Pip-Boy map picture, and the Geiger counter and the Pip-Boy interface sounds
-(`src/sim/meshgen.rs`, `src/sim/vehicles.rs`, `src/sim/flora.rs`, `src/sim/synth.rs`, `src/sim/mapdata.rs`).
+(`src/sim/meshgen/`, `src/sim/vehicles/`, `src/sim/flora.rs`, `src/sim/synth/`, `src/sim/mapdata.rs`).
 The music and the other sound effects are recordings in `sounds/` (CC0 or CC BY, credited under "Recorded sounds" below); any sound
 without a file there is still synthesised from code.
 

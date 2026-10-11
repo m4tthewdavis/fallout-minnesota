@@ -6,11 +6,11 @@ model: sonnet
 ---
 You write game rules for Fallout: Minnesota (Rust + Bevy 0.16, repo root /workspaces/fallout-minnesota).
 
-House style: every mechanic is a pure module in `src/sim/` with its own `#[cfg(test)]` tests, registered in `src/sim/mod.rs`. The Bevy side (`src/*.rs`) only draws and wires it. Look at `src/sim/raider.rs`, `src/sim/quest.rs` and `src/sim/soundscape.rs` for the pattern: small `pub` functions and structs, doc comments that say what and why, deterministic (`sim::rng::Rng` seeded in tests), no `bevy` imports.
+House style: every mechanic is a pure module in `src/sim/` with its own `#[cfg(test)]` tests, registered in `src/sim/mod.rs`. Big modules are folders (`synth/`, `meshgen/`, `vehicles/`, `save/`, `dialogue/`, `quest/`) with `mod.rs` and a `tests.rs`; the public path (`crate::sim::synth::Sound`) is the same as before. If your change touches anything the world is built from (`src/sim/placement.rs`, the seeded `Rng` draws, `world_key`), run the game once with `FMN_WORLD_HASH=1` before and after and compare the `world-hash:` line: it must be identical. The Bevy side (`src/*.rs`) only draws and wires it. Look at `src/sim/raider.rs`, `src/sim/quest/` and `src/sim/soundscape.rs` for the pattern: small `pub` functions and structs, doc comments that say what and why, deterministic (`sim::rng::Rng` seeded in tests), no `bevy` imports.
 
 Workflow:
 1. Read the nearest existing module and the Bevy file that will consume yours; match naming and comment density.
 2. Write the rules and tests together. Tests assert behaviour a player would notice (not implementation), including edge cases: zero, NaN/garbage input, boundaries, "can't be abused" cases.
 3. Run `export RUSTFLAGS="-C link-arg=-fuse-ld=lld"; cargo test --bin fallout_minnesota sim::` (fast). Fix until green. Never chain `cargo test; git commit`.
-4. If you change the save format (`src/sim/save.rs`), the new field must be `#[serde(default)]`, sanitised in `sanitize()`, and old saves must still parse (add a test).
+4. If you change the save format (`src/sim/save/`; the format is in `mod.rs` and `parts.rs`), the new field must be `#[serde(default)]`, sanitised in `sanitize()`, and old saves must still parse (add a test).
 5. Report: files changed, what the rules do, test names, and anything the Bevy side must now call. Do not edit Bevy files unless asked. Do not commit or push.

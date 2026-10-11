@@ -130,7 +130,7 @@ Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.j
 - **Sky lighting.** The world is lit by image-based lighting baked from CC0 Poly Haven winter HDRIs (`assets/environment/*.ktx2`, made by `tools/bake_ibl.py`): an overcast/night map and a clear-sky map, with a fade between them, which gives real reflections on ice, metal and the gun. The colour grade is applied once, on the last camera.
 - **Lighter models.** The heavy scanned models are cut to game budgets by `tools/decimate_models.py` (meshoptimizer's gltfpack); outdoors that's about 0.8M triangles instead of 4.8M.
 - **Recorded sounds.** Clips in `assets/sounds/` (`<sound>_<n>.ogg`, plus `_muffled` copies) replace the synthesised versions. The three music moods are CC0 loops from OpenGameArt. Any sound without a file, such as the Geiger counter and the Pip-Boy, stays synthesised. They are built by `tools/fetch_sounds.py` and credited in `assets/CREDITS.md`.
-- **Developer variable.** `FMN_DUMP_SYNTH=<folder>` writes every synthesised clip there as a WAV and quits; it is used to match the loudness of the recordings.
+- **Developer variable.** `FMN_DUMP_SYNTH=<folder>` writes every synthesised clip there as a WAV and quits; it is used to match the loudness of the recordings. More developer variables are under "Developer notes" below.
 
 ## What's in Milestone 1
 
@@ -216,8 +216,8 @@ src/
   dressing.rs    Outdoor set dressing: boulders, logs, outcrops, camp and shelter props
   sim/           Pure game rules, no Bevy (unit-tested)
     collision.rs Circles and rectangles that push movers out
-    meshgen.rs   Procedural geometry (wolves, moose, gloves, drifts, sheds, gear door...)
-    vehicles.rs  Sedans and snowmobiles, and fitting a vehicle to the ground
+    meshgen/     Procedural geometry (wolves, moose, gloves, drifts, sheds, gear door...): primitives, hands, wolf, moose, scenery
+    vehicles/    Sedans and snowmobiles, and fitting a vehicle to the ground (sedan, snowmobile, settle)
     flora.rs     Minnesota trees and undergrowth, and where each grows
     progress.rs  XP and level
     sfx.rs       Sound rules: variants, cooldowns, mixer, music director, Geiger
@@ -227,7 +227,7 @@ src/
     mapdata.rs   Pip-Boy map picture, landmarks and fog of war
     mipmaps.rs   Mipmap chains for loaded textures
     daynight.rs  Clock, sun/moon position, night chill
-    synth.rs     Procedural sound effects and WAV encoding
+    synth/       Procedural sound effects and WAV encoding; `mod.rs` has the `Sound` list and its profiles, the rest are generators by kind (steps, weapons, creatures, world, music, ui) plus the DSP helpers
     recorded.rs  Recorded clips in assets/sounds/ that replace synthesised ones
     grade.rs     Colour grade from light, room and the player's state
     envlight.rs  Which sky lighting map to use and how bright, from weather and time
@@ -237,7 +237,7 @@ src/
     interiors.rs Rooms (incl. the reactor level down a stair): layout, sleeping, cooking, door fade timing
     keys.rs      Key bindings data
     settings.rs  Settings data and JSON
-    save.rs      Save format and validation
+    save/        Save format, validation and old-save upgrades
     menu.rs      Menu rules
     pipnav.rs    Pip-Boy navigation
     lod.rs       Level-of-detail rules
@@ -247,13 +247,18 @@ src/
     soundscape.rs  Occlusion, echoes, footsteps, wind layers, room murmurs
     outfit.rs    Winter clothing meshes for people
     lootmenu.rs  Loot list entries, highlight and scrolling
-    quest.rs     Two quests (Why Did the Overseer Open the Door?, The Last Pump): stages, flags, XP, perks
-    dialogue.rs  Conversation graphs and the replies you can pick
+    quest/       Two quests (Why Did the Overseer Open the Door?, The Last Pump): stages, flags, XP, perks
+    dialogue/    Conversation graphs and the replies you can pick
+    compass.rs   HUD compass strip: bearings to places
+    placement.rs Where scatter and loot may go (draw counts are part of the map)
+    pipboy_text.rs The words on the Pip-Boy pages and header
     combat.rs    Pipe rifle, jams, ray-sphere hits
     wolf.rs      Frostfang behaviour decisions
     crow.rs      Rad-crow flocks: circling, scattering, diving
     raider.rs    Frozen Raider guns, sight, jams and fighting
     rng.rs       Small deterministic RNG
+  changed.rs     Writes to materials and UI that only happen when a value changed
+  worldhash.rs   FMN_WORLD_HASH=1: a fingerprint of the generated world
   state.rs       Shared resources (Game, weather, messages, effect queue)
   assets.rs      Loads models, textures, font; builds materials and mipmaps
   meshes.rs      Turns sim::meshgen geometry into Bevy meshes
@@ -282,6 +287,16 @@ src/
 assets/          Models, textures, font, HUD images (see assets/CREDITS.md)
 tools/           Scripts that download and generate the assets
 ```
+
+## Developer notes
+
+Environment variables for testing (not needed to play):
+
+- `FMN_WORLD_HASH=1` logs one `world-hash:` line at start-up: the random-number state and a count and hash for the colliders, trees, pickups, containers, wolves, moose, crows, raiders and snowflakes, plus the entity total. The world is built from one seed, so this line must be identical before and after a refactor; if a part changes, the part named in the line is where the world moved. It does nothing unless set (`src/worldhash.rs`).
+- `FMN_DUMP_SYNTH=<folder>` writes every synthesised clip as a WAV and quits (`src/audio.rs`).
+- `FMN_SHOT="x,z,yaw,pitch,hour[,...]"` takes one headless screenshot (`src/devshot.rs`). Yaw and pitch are in degrees: yaw 0 looks north (-z), 90 west, 180 south, 270 east.
+- `FMN_SHADOWS=off|low|medium|high` sets shadow quality in shot mode only (anything else means high). Software rendering draws shadow maps very slowly, so use `off` unless testing shadows. `FMN_AO=on`, `FMN_VOL=on` or `FMN_FX=on` (both) turn ambient occlusion and volumetric fog back on in shot mode.
+- `FMN_GOD=1` starts with god mode; `FMN_DATA_DIR` moves the save and settings folder; `FMN_PROFILE=1` and `FMN_BENCH=<seconds>` are the same as `--profile` and `--benchmark`.
 
 ## Possible next milestones
 

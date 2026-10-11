@@ -22,9 +22,9 @@ What it does
   (RMS over the active part, see TARGET_DB), with peaks held under -1 dBFS.
 * Loops (wind, fire, siren, room hum) are cut to an exact length and the tail is cross-faded into
   the head, so they join seamlessly.
-* Sounds the game muffles behind walls and trees (Sound::muffleable in src/sim/synth.rs) also get
+* Sounds the game muffles behind walls and trees (Sound::muffleable in src/sim/synth/mod.rs) also get
   a `<stem>_<take>_muffled.ogg`, made with the same two one-pole 900 Hz low-passes as
-  synth.rs `muffled()`, so the loader doesn't fall back to a bright copy through a wall.
+  src/sim/synth/mod.rs `muffled()`, so the loader doesn't fall back to a bright copy through a wall.
 * Files are named `<snake_case_sound>_<take>.ogg` (src/sim/recorded.rs). Sounds with no files stay
   synthesised (Geiger, Pip-Boy).
 * The music (`music_calm_0`, `music_danger_0`; tense stays synthesised) comes from two CC0 OpenGameArt tracks listed in
@@ -81,7 +81,7 @@ TARGET_DB = {
     "wind_mid": -22.1, "yelp": -17.0,
 }
 
-# Sounds that get a muffled copy (mirror of Sound::muffleable in src/sim/synth.rs, in snake case).
+# Sounds that get a muffled copy (mirror of Sound::muffleable in src/sim/synth/mod.rs, in snake case).
 MUFFLEABLE = {
     "rifle_shot", "shotgun_shot", "revolver_shot", "shot_tail_outdoor", "shot_tail_indoor", "bolt_clack",
     "hammer_cock", "snarl", "yelp", "growl", "howl_near", "howl_far", "moose_bellow", "moose_grunt", "caw",
@@ -578,7 +578,7 @@ def one_pole_lp(x, cutoff, sr=SR):
 
 
 def muffled(x):
-    """synth.rs `muffled()`: two one-pole 900 Hz low-passes, keeping the peak (gain capped at 2.5)."""
+    """src/sim/synth/mod.rs `muffled()`: two one-pole 900 Hz low-passes, keeping the peak (gain capped at 2.5)."""
     peak = np.abs(x).max()
     y = one_pole_lp(one_pole_lp(x, 900.0), 900.0)
     after = np.abs(y).max()
