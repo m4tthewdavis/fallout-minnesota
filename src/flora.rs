@@ -12,7 +12,7 @@ use bevy::prelude::*;
 
 use crate::assets::{tiled, GameAssets};
 use crate::meshes::{to_mesh, to_mesh_tangents};
-use crate::sim::collision::{self, Shape};
+use crate::sim::collision::{Shape, SpatialGrid};
 use crate::sim::flora::{self, Bark, Card, Species};
 use crate::sim::meshgen::MeshData;
 use crate::sim::rng::Rng;
@@ -215,8 +215,8 @@ fn near_water(x: f32, z: f32) -> f32 {
 }
 
 /// Is (x, z) somewhere a plant can go?
-fn free(x: f32, z: f32, clearance: f32, solid: &[Shape], avoid: &dyn Fn(f32, f32) -> bool) -> bool {
-    terrain::is_open_ground(x, z) && !avoid(x, z) && !collision::blocked(x, z, clearance, solid)
+fn free(x: f32, z: f32, clearance: f32, solid: &SpatialGrid, avoid: &dyn Fn(f32, f32) -> bool) -> bool {
+    terrain::is_open_ground(x, z) && !avoid(x, z) && !solid.blocked(x, z, clearance)
 }
 
 pub fn plant_forest(
@@ -225,7 +225,7 @@ pub fn plant_forest(
     materials: &mut Assets<StandardMaterial>,
     server: &AssetServer,
     assets: &GameAssets,
-    solid: &mut Vec<Shape>,
+    solid: &mut SpatialGrid,
     trees_out: &mut Vec<(f32, f32)>,
     avoid: &dyn Fn(f32, f32) -> bool,
     seed: u64,
@@ -257,7 +257,7 @@ pub fn plant_forest(
     }
     commands.insert_resource(FloraKit { models: models.clone(), mats: mats.clone() });
 
-    let plant = |commands: &mut Commands, meshes: &mut Assets<Mesh>, rng: &mut Rng, solid: &mut Vec<Shape>, trees_out: &mut Vec<(f32, f32)>, species: Species, x: f32, z: f32| {
+    let plant = |commands: &mut Commands, meshes: &mut Assets<Mesh>, rng: &mut Rng, solid: &mut SpatialGrid, trees_out: &mut Vec<(f32, f32)>, species: Species, x: f32, z: f32| {
         let list = &models[&species];
         let model = &list[(rng.f32() * list.len() as f32) as usize % list.len()];
         let (lo, hi) = species.heights();
@@ -330,7 +330,7 @@ pub fn plant_forest(
     }
 
     // ---- Undergrowth ----
-    let spot = |rng: &mut Rng, solid: &[Shape]| -> Option<(f32, f32)> {
+    let spot = |rng: &mut Rng, solid: &SpatialGrid| -> Option<(f32, f32)> {
         for _ in 0..30 {
             let (x, z) = (rng.range(-HALF_SIZE, HALF_SIZE), rng.range(-HALF_SIZE, HALF_SIZE));
             if free(x, z, 0.6, solid, avoid) {
@@ -434,7 +434,7 @@ pub fn plant_forest(
             let a = k as f32 / count as f32 * std::f32::consts::TAU + rng.range(-0.05, 0.05);
             let d = shore + rng.range(0.2, 1.4);
             let (x, z) = (lx + a.cos() * d, lz - a.sin() * d);
-            if collision::blocked(x, z, 0.5, solid) || avoid(x, z) {
+            if solid.blocked(x, z, 0.5) || avoid(x, z) {
                 continue;
             }
             let y = terrain::mesh_height(x, z).max(ICE_LEVEL);

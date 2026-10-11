@@ -57,7 +57,7 @@ impl Plugin for CrowPlugin {
     fn build(&self, app: &mut App) {
         // spawn_initial runs in the PostWorldGen chain (world.rs).
         app.add_systems(Startup, setup_assets.after(crate::state::WorldGen).before(crate::state::PostWorldGen))
-            .add_systems(Update, (crow_ai.run_if(alive.and(outdoors)), animate_crows).chain());
+            .add_systems(Update, (crow_ai.run_if(alive.and(outdoors)), animate_crows.run_if(outdoors)).chain());
     }
 }
 
@@ -142,15 +142,17 @@ fn crow_ai(
     mut sfx: ResMut<SfxQueue>,
     player: Query<&Transform, With<Player>>,
     mut crows: Query<(&mut Transform, &mut CrowAi), (Without<Player>, Without<Dying>, Without<Frozen>)>,
+    mut heard: Local<Vec<Gunshot>>,
 ) {
     let dt = time.delta_secs();
     let Ok(ptf) = player.single() else { return };
     let head = ptf.translation.to_array();
-    let heard: Vec<Gunshot> = shots.read().copied().collect();
+    heard.clear();
+    heard.extend(shots.read().copied());
     for (mut tf, mut crow) in &mut crows {
         let pos = tf.translation.to_array();
         let before = crow.brain.mode;
-        for s in &heard {
+        for s in heard.iter() {
             crow.brain.hear_shot(pos, s.pos.to_array(), &mut rng.0);
         }
         let step = crow.brain.update(dt, pos, head, &mut rng.0);

@@ -2,7 +2,6 @@
 
 use bevy::prelude::*;
 
-use crate::sim::collision::Shape;
 use crate::sim::combat::{Arsenal, Weapon};
 use crate::sim::daynight::Clock;
 use crate::sim::interiors::Interior;
@@ -63,7 +62,7 @@ pub struct ClockRes(pub Clock);
 
 /// Solid obstacles (trees, walls, buildings) for players and wolves.
 #[derive(Resource, Default)]
-pub struct Colliders(pub Vec<Shape>);
+pub struct Colliders(pub crate::sim::collision::SpatialGrid);
 
 /// One sound requested by gameplay code.
 #[derive(Clone, Copy, Debug)]

@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use crate::assets::{tiled, GameAssets};
 use crate::landmarks::{CARS, RUINS};
 use crate::meshes::{to_mesh, to_mesh_tangents};
-use crate::sim::collision::{self, Shape};
+use crate::sim::collision::{Shape, SpatialGrid};
 use crate::sim::meshgen;
 use crate::sim::terrain;
 use crate::sim::vehicles::{self as v, Window};
@@ -367,7 +367,7 @@ fn spawn_car(commands: &mut Commands, meshes: &mut Assets<Mesh>, assets: &GameAs
     });
 }
 
-fn spawn_snowmobiles(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, assets: &GameAssets, solid: &mut Vec<Shape>) {
+fn spawn_snowmobiles(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, assets: &GameAssets, solid: &mut SpatialGrid) {
     let mut m = |d: meshgen::MeshData| meshes.add(to_mesh_tangents(&d));
     let body = m(v::snowmobile_body());
     let black = m(v::snowmobile_black());
@@ -425,7 +425,7 @@ fn spawn_snowmobiles(commands: &mut Commands, meshes: &mut Assets<Mesh>, materia
     let spots = [(118.0f32, 68.0f32, 0.8f32), (-70.0, -28.0, -0.6), (165.0, 62.0, 2.2)];
     let contacts: Vec<(f32, f32, f32)> = v::snowmobile_contacts().iter().map(|&(x, z)| (x, z, 0.0)).collect();
     for (i, &(x, z, yaw)) in spots.iter().enumerate() {
-        if terrain::lake_at(x, z).is_some() || collision::blocked(x, z, 1.0, solid) {
+        if terrain::lake_at(x, z).is_some() || solid.blocked(x, z, 1.0) {
             continue;
         }
         let rest = v::settle(x, z, yaw, &contacts, 0.04 + 0.03 * i as f32, &terrain::mesh_height);

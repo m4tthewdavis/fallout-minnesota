@@ -16,8 +16,7 @@ use crate::assets::GameAssets;
 use crate::characters::PersonKit;
 use crate::enemy::{Body, Dying, Frozen, Species};
 use crate::player::Player;
-use crate::sim::collision::{self, segment_blocked};
-use crate::sim::raider::{Gun, Mode, Raider, Senses};
+use crate::sim::raider::{self, Gun, Mode, Raider, Senses};
 use crate::sim::survival::DeathCause;
 use crate::sim::synth::Sound;
 use crate::sim::soundscape;
@@ -93,7 +92,7 @@ impl Plugin for RaiderPlugin {
     fn build(&self, app: &mut App) {
         // spawn_initial runs in the PostWorldGen chain (world.rs).
         app.add_systems(Startup, setup_assets.after(crate::state::WorldGen).before(crate::state::PostWorldGen))
-            .add_systems(Update, (raider_ai.run_if(alive.and(outdoors)), animate_raiders, raider_loot).chain());
+            .add_systems(Update, (raider_ai.run_if(alive.and(outdoors)), animate_raiders.run_if(outdoors), raider_loot).chain());
     }
 }
 
@@ -211,23 +210,29 @@ fn raider_ai(
     mut rng: ResMut<RngRes>,
     mut sfx: ResMut<SfxQueue>,
     mut fxq: ResMut<FxQueue>,
-    mut warned: Local<bool>,
+    // Whether you've been warned of this fight, and buffers kept from frame
+    // to frame: gunshots heard, raiders who see you.
+    mut local: Local<(bool, Vec<Vec3>, Vec<Vec2>)>,
     player: Query<(&Transform, &Player)>,
     mut raiders: Query<(&mut Transform, &mut RaiderAi, &Body), (Without<Player>, Without<Dying>, Without<Frozen>)>,
 ) {
     let dt = time.delta_secs();
     let Ok((ptf, p)) = player.single() else { return };
-    let shots: Vec<Vec3> = cursor.read(&gunshots).filter(|s| s.by_player).map(|s| s.pos).collect();
+    let (warned, shots, seers) = &mut *local;
+    shots.clear();
+    shots.extend(cursor.read(&gunshots).filter(|s| s.by_player).map(|s| s.pos));
     let player_xz = Vec2::new(ptf.translation.x, ptf.translation.z);
     let temp = weather.weather.conditions().air_temp_f + clock.0.temp_offset_f();
     let blizzard = weather.weather.phase == Phase::Blizzard;
     let night = clock.0.is_night();
-    let mut seers: Vec<Vec2> = Vec::new();
+    seers.clear();
     let mut any_fighting = false;
 
     for (mut tf, mut r, body) in &mut raiders {
         let pos = Vec2::new(tf.translation.x, tf.translation.z);
-        let los = !segment_blocked((pos.x, pos.y), (player_xz.x, player_xz.y), &colliders.0);
+        // The ray test only matters within sight range (`Senses::los` is never read past it).
+        let los = raider::within_sight(pos.to_array(), player_xz.to_array(), night, blizzard)
+            && !colliders.0.segment_blocked((pos.x, pos.y), (player_xz.x, player_xz.y));
         let nearest_shot = shots.iter().map(|s| Vec2::new(s.x, s.z)).min_by(|a, b| a.distance(pos).total_cmp(&b.distance(pos)));
         let senses = Senses {
             pos: pos.to_array(),
@@ -249,7 +254,7 @@ fn raider_ai(
 
         // Walk, around trees and walls.
         let step = Vec2::from_array(act.dir) * act.speed * dt;
-        let (nx, nz) = collision::push_out(pos.x + step.x, pos.y + step.y, 0.45, &colliders.0);
+        let (nx, nz) = colliders.0.push_out(pos.x + step.x, pos.y + step.y, 0.45);
         tf.translation = Vec3::new(nx, terrain::walk_height(nx, nz), nz);
         let moved = Vec2::new(nx, nz).distance(pos);
         r.gait = if dt > 0.0 { moved / dt } else { 0.0 };

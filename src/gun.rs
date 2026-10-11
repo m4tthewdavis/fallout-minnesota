@@ -20,7 +20,6 @@ use bevy::window::PrimaryWindow;
 use crate::assets::GameAssets;
 use crate::meshes::to_mesh_tangents;
 use crate::player::{cursor_locked, Player};
-use crate::sim::collision;
 use crate::sim::meshgen::{self, sec, MeshData};
 use crate::sim::combat::{Upgrade, WeaponKind};
 use crate::sim::viewmodel::{self, Held, Inputs, Pose, SCALE};
@@ -938,12 +937,9 @@ fn update_gun_frost(
     if game.recoil > 0.9 {
         *amount = (*amount - 0.02).max(0.0);
     }
-    if let Some(m) = materials.get_mut(&frost.0) {
-        let a = (*amount).clamp(0.0, 1.0);
-        if (m.base_color.alpha() - a).abs() > 0.004 {
-            m.base_color = Color::srgba(0.9, 0.96, 1.0, a);
-        }
-    }
+    // Test the threshold before taking the material mutably (that alone marks it changed).
+    let a = (*amount).clamp(0.0, 1.0);
+    crate::changed::write_if(&mut materials, &frost.0, |m| (m.base_color.alpha() - a).abs() > 0.004, |m| m.base_color = Color::srgba(0.9, 0.96, 1.0, a));
 }
 
 /// Show only the weapon in hand.
@@ -1003,7 +999,7 @@ fn aim_down_sights(
     let pos = Vec2::new(tf.translation.x, tf.translation.z);
     let blocked_at = |d: f32| {
         let q = pos + fwd * d;
-        collision::blocked(q.x, q.y, 0.12, &colliders.0)
+        colliders.0.blocked(q.x, q.y, 0.12)
     };
     let blocked = if blocked_at(0.55) {
         1.0

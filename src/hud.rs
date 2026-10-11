@@ -394,10 +394,11 @@ fn spawn_hud(mut commands: Commands, assets: Res<GameAssets>) {
 
 /// The HUD is laid out for a 1280x720 window; scale it up on bigger screens
 /// so it stays readable (1.6x on a 2461x1154 display).
-fn scale_ui(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, settings: Res<crate::menu::GameSettings>, mut scale: ResMut<UiScale>) {
+fn scale_ui(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, settings: Res<crate::menu::GameSettings>, mut scale: ResMut<UiScale>, mut forced: Local<Option<Option<f32>>>) {
     let Ok(window) = windows.single() else { return };
-    // FMN_UI_SCALE lets screenshot mode render small windows with a matching UI.
-    let forced = std::env::var("FMN_UI_SCALE").ok().and_then(|v| v.parse::<f32>().ok());
+    // FMN_UI_SCALE lets screenshot mode render small windows with a matching UI
+    // (read once: the environment doesn't change while the game runs).
+    let forced = *forced.get_or_insert_with(|| std::env::var("FMN_UI_SCALE").ok().and_then(|v| v.parse::<f32>().ok()));
     // Fit both ways so a wide-but-short or narrow window never crowds the panels.
     let fit = (window.height() / 720.0).min(window.width() / 1280.0);
     let s = forced.unwrap_or_else(|| fit.clamp(1.0, 2.5) * settings.0.ui_scale);

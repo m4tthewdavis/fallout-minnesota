@@ -9,7 +9,6 @@ use bevy::prelude::*;
 use crate::sim::keys::Bind;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 
-use crate::sim::collision;
 use crate::sim::daynight::Clock;
 use crate::sim::survival::{self, Aid, Exposure, Survival};
 use crate::sim::synth::Sound;
@@ -97,6 +96,12 @@ fn spawn_player(
             // HDR so emissive glows (eyes, fires, the warhead) can bloom.
             Camera {
                 hdr: true,
+                // The view-model camera (drawn next, into the same HDR frame)
+                // tonemaps the whole frame and writes it to the window, which
+                // covers every pixel: writing this camera's untonemapped picture
+                // to the window first would be wasted. (So that camera must
+                // never be switched off.)
+                output_mode: bevy::render::camera::CameraOutputMode::Skip,
                 ..default()
             },
             Bloom::NATURAL,
@@ -228,7 +233,7 @@ fn move_player(
     }
 
     // Slide around trees, walls and buildings.
-    let (cx, cz) = collision::push_out(tf.translation.x, tf.translation.z, BODY_RADIUS, &colliders.0);
+    let (cx, cz) = colliders.0.push_out(tf.translation.x, tf.translation.z, BODY_RADIUS);
     tf.translation.x = cx;
     tf.translation.z = cz;
 

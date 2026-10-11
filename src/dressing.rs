@@ -13,7 +13,7 @@ use crate::assets::GameAssets;
 use crate::interiors::Fixture;
 use crate::library::{Library, Weathered};
 use crate::perf::Lod;
-use crate::sim::collision::{self, Shape};
+use crate::sim::collision::{Shape, SpatialGrid};
 use crate::sim::rng::Rng;
 use crate::sim::terrain::{self, SHELTERS, VAULT_POS};
 use crate::state::{Colliders, RngRes, TreePositions};
@@ -57,13 +57,13 @@ fn place(commands: &mut Commands, lib: &Library, id: &str, pos: Vec3, rot: Quat,
 /// A random spot within `r0..r1` of (x, z) where `ok` allows it and clear of
 /// everything solid and of `keep_clear` (pickups and quest fixtures).
 #[allow(clippy::too_many_arguments)]
-fn near(rng: &mut RngRes, solid: &[Shape], keep_clear: &[Vec2], x: f32, z: f32, r0: f32, r1: f32, clearance: f32, ok: impl Fn(f32, f32) -> bool) -> Option<(f32, f32)> {
+fn near(rng: &mut RngRes, solid: &SpatialGrid, keep_clear: &[Vec2], x: f32, z: f32, r0: f32, r1: f32, clearance: f32, ok: impl Fn(f32, f32) -> bool) -> Option<(f32, f32)> {
     for _ in 0..20 {
         let a = rng.0.range(0.0, TAU);
         let d = rng.0.range(r0, r1);
         let (px, pz) = (x + a.cos() * d, z + a.sin() * d);
         let by_fixture = keep_clear.iter().any(|p| p.distance(Vec2::new(px, pz)) < FIXTURE_CLEAR + clearance);
-        if ok(px, pz) && !by_fixture && !collision::blocked(px, pz, clearance, solid) {
+        if ok(px, pz) && !by_fixture && !solid.blocked(px, pz, clearance) {
             return Some((px, pz));
         }
     }
@@ -182,7 +182,7 @@ fn dress_world(
             let d = rng.0.range(9.0, 11.0);
             let (x, z) = (cx + a.cos() * d, cz + a.sin() * d);
             let by_fixture = kc.iter().any(|p| p.distance(Vec2::new(x, z)) < FIXTURE_CLEAR + 1.2);
-            if !terrain::is_open_ground(x, z) || by_fixture || collision::blocked(x, z, 1.2, solid) {
+            if !terrain::is_open_ground(x, z) || by_fixture || solid.blocked(x, z, 1.2) {
                 continue;
             }
             // Side-on to the camp, as cover.

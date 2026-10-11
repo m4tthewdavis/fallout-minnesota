@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use crate::assets::GameAssets;
 use crate::meshes::{to_mesh, to_mesh_tangents};
 use crate::particles::{Emitter, EmitterKind};
-use crate::sim::collision::{self, Shape};
+use crate::sim::collision::Shape;
 use crate::sim::meshgen;
 use crate::sim::terrain::{self, RAD_SOURCES, ROAD, ROAD_HALF_WIDTH, SHELTERS, VAULT_POS};
 use crate::state::{Colliders, RngRes};
@@ -656,7 +656,7 @@ pub fn spawn_landmarks(
     let mut k = 0;
     while x < 195.0 {
         let z = terrain::road_z(x) + ROAD_HALF_WIDTH + 5.5;
-        let blocked = collision::blocked(x, z, 0.8, solid) || terrain::lake_at(x, z).is_some();
+        let blocked = solid.blocked(x, z, 0.8) || terrain::lake_at(x, z).is_some();
         if blocked {
             prev = None;
             x += 30.0;

@@ -103,10 +103,10 @@ fn log_world_hash(
 
     // Collider order is kept: it's built in a fixed order and the grid reads it so.
     let mut h = Fnv::new();
-    for s in &colliders.0 {
+    for s in colliders.0.shapes() {
         shape_hash(&mut h, s);
     }
-    let colliders = format!("{}:{:016x}", colliders.0.len(), h.finish());
+    let colliders = format!("{}:{:016x}", colliders.0.shapes().len(), h.finish());
 
     let mut h = Fnv::new();
     for &(x, z) in &trees.0 {

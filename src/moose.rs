@@ -10,7 +10,6 @@ use bevy::prelude::*;
 use crate::enemy::{Body, Dying, Frozen, Species};
 use crate::meshes::{to_mesh, to_mesh_tangents};
 use crate::player::{Player, EYE_HEIGHT};
-use crate::sim::collision;
 use crate::sim::meshgen;
 use crate::sim::moose::{self as brain, Event, Mode, Moose};
 use crate::sim::synth::Sound;
@@ -191,7 +190,7 @@ pub(crate) fn spawn_initial(mut commands: Commands, assets: Res<MooseAssets>, mu
             break;
         }
         let (x, z) = (rng.0.range(-HALF_SIZE + 25.0, HALF_SIZE - 25.0), rng.0.range(-HALF_SIZE + 25.0, HALF_SIZE - 25.0));
-        if !terrain::is_open_ground(x, z) || terrain::dist_to_vault(x, z) < 85.0 || collision::blocked(x, z, 2.0, &colliders.0) {
+        if !terrain::is_open_ground(x, z) || terrain::dist_to_vault(x, z) < 85.0 || colliders.0.blocked(x, z, 2.0) {
             continue;
         }
         spawn_moose(&mut commands, &assets, Vec2::new(x, z), &mut rng);
@@ -233,7 +232,7 @@ fn moose_ai(
         // Move, sliding around (or crashing into) trees and buildings.
         let dir = Vec2::from_array(step.dir);
         let wanted = pos + dir * step.speed * dt;
-        let (cx, cz) = collision::push_out(wanted.x, wanted.y, BODY_RADIUS, &colliders.0);
+        let (cx, cz) = colliders.0.push_out(wanted.x, wanted.y, BODY_RADIUS);
         let mut new_pos = Vec2::new(cx, cz).clamp(Vec2::splat(-HALF_SIZE + 3.0), Vec2::splat(HALF_SIZE - 3.0));
         if m.brain.mode == Mode::Charge && step.speed > 0.0 && new_pos.distance(wanted) > 0.12 {
             m.crashed = true;
@@ -259,7 +258,7 @@ fn moose_ai(
             game.hurt_flash = 1.0;
             let push = if dir.length_squared() > 0.0 { dir.normalize() } else { Vec2::X };
             let knock = ppos + push * 3.5;
-            let (kx, kz) = collision::push_out(knock.x, knock.y, 0.4, &colliders.0);
+            let (kx, kz) = colliders.0.push_out(knock.x, knock.y, 0.4);
             ptf.translation.x = kx;
             ptf.translation.z = kz;
             ptf.translation.y = terrain::walk_height(kx, kz) + EYE_HEIGHT;
@@ -295,25 +294,28 @@ fn moose_ai(
     }
 }
 
+/// What the animation needs from each moose.
+struct MooseAnim {
+    stride: f32,
+    gait: f32,
+    windup: f32,
+    mode: Mode,
+    flinch: f32,
+    dead: bool,
+    head: f32,
+}
+
 fn animate_moose(
     time: Res<Time>,
     mut moose: Query<(Entity, &mut MooseAi, &Body, Has<Dying>)>,
     mut limbs: Query<(&mut Transform, &MooseLimb), (Without<MooseAi>, Without<MooseRig>, Without<MooseHead>)>,
     mut rigs: Query<(&mut Transform, &MooseRig), (Without<MooseAi>, Without<MooseLimb>, Without<MooseHead>)>,
     mut heads: Query<(&mut Transform, &MooseHead), (Without<MooseAi>, Without<MooseLimb>, Without<MooseRig>)>,
+    mut state: Local<std::collections::HashMap<Entity, MooseAnim>>,
 ) {
     let t = time.elapsed_secs();
     let dt = time.delta_secs();
-    struct S {
-        stride: f32,
-        gait: f32,
-        windup: f32,
-        mode: Mode,
-        flinch: f32,
-        dead: bool,
-        head: f32,
-    }
-    let mut state = std::collections::HashMap::new();
+    state.clear();
     for (e, mut m, body, dead) in &mut moose {
         // Head target: up and watching, down pawing, locked low charging, hanging when stunned.
         let target = match m.brain.mode {
@@ -333,7 +335,7 @@ fn animate_moose(
         m.head += (target - m.head) * (dt * 5.0).min(1.0);
         state.insert(
             e,
-            S {
+            MooseAnim {
                 stride: m.stride,
                 gait: if dead { 0.0 } else { m.gait },
                 windup: m.brain.windup_progress(),

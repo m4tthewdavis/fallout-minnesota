@@ -19,6 +19,8 @@ use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 
+use crate::changed::{set_display, set_image, set_val};
+
 use crate::sim::keys::Bind;
 use crate::theme::{self, ACCENT, ACCENT_DIM, ACCENT_FAINT, BEAM, HINT, LAMP_OFF, SCREEN_BG, SCREEN_WELL, SELECTED, SELECTED_FILL, STATIC_TINT};
 use bevy::render::render_asset::RenderAssetUsages;
@@ -749,9 +751,11 @@ fn animate_device(
     mut noise: Query<&mut ImageNode, With<StaticOverlay>>,
     mut flicker: Query<&mut BackgroundColor, (With<Flicker>, Without<PipRoot>, Without<ScreenCover>)>,
     mut seed: Local<u32>,
+    mut shot_mode: Local<Option<bool>>,
 ) {
     // Screenshot mode renders a frame every second or so: skip straight to the end.
-    let dt = if std::env::var("FMN_SHOT").is_ok() { 1.0 } else { real.delta_secs().min(0.1) };
+    let shot = *shot_mode.get_or_insert_with(|| std::env::var("FMN_SHOT").is_ok());
+    let dt = if shot { 1.0 } else { real.delta_secs().min(0.1) };
     let t = real.elapsed_secs();
     // Raise or lower.
     let target = if st.raising { 1.0 } else { 0.0 };
@@ -764,13 +768,16 @@ fn animate_device(
         }
         return;
     }
-    *vis = Visibility::Visible;
+    vis.set_if_neq(Visibility::Visible);
     let r = ease_out(st.raise);
-    dim.0 = Color::srgba(0.0, 0.0, 0.0, 0.62 * r);
+    dim.set_if_neq(BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.62 * r)));
     if let Ok((mut node, mut tf)) = device.single_mut() {
         // Up from below the screen, tilting level as it comes.
-        node.top = Val::Px((1.0 - r) * DEVICE_H * 1.1);
-        tf.rotation = Quat::from_rotation_z((1.0 - r) * 0.12);
+        set_val(&mut node, |n| &mut n.top, Val::Px((1.0 - r) * DEVICE_H * 1.1));
+        let rot = Quat::from_rotation_z((1.0 - r) * 0.12);
+        if tf.rotation != rot {
+            tf.rotation = rot;
+        }
     }
 
     // Power-on: 0.1 s dark, a bright line that opens over 0.12 s, then the picture
@@ -789,37 +796,40 @@ fn animate_device(
             let stutter = if k < 1.0 && ((t * 37.0).sin() > 0.6) { 0.25 } else { 0.0 };
             ((1.0 - k) + stutter).clamp(0.0, 1.0)
         };
-        c.0 = Color::srgba(0.0, 0.0, 0.0, a);
+        c.set_if_neq(BackgroundColor(Color::srgba(0.0, 0.0, 0.0, a)));
     }
     if let Ok((mut n, mut v)) = beam.single_mut() {
         if st.raising && (0.0..0.12).contains(&p) {
-            *v = Visibility::Inherited;
+            v.set_if_neq(Visibility::Inherited);
             let k = p / 0.12;
-            n.height = Val::Px(2.0 + k * SCREEN_H * 0.9);
-            n.top = Val::Px(SCREEN_H * 0.5 - (1.0 + k * SCREEN_H * 0.45));
+            set_val(&mut n, |n| &mut n.height, Val::Px(2.0 + k * SCREEN_H * 0.9));
+            set_val(&mut n, |n| &mut n.top, Val::Px(SCREEN_H * 0.5 - (1.0 + k * SCREEN_H * 0.45)));
         } else {
-            *v = Visibility::Hidden;
+            v.set_if_neq(Visibility::Hidden);
         }
     }
     // A soft bright band rolls down the screen every few seconds.
     if let Ok(mut n) = scan.single_mut() {
         let y = (t * 0.25).fract() * (SCREEN_H + 120.0) - 60.0;
-        n.top = Val::Px(y);
+        set_val(&mut n, |n| &mut n.top, Val::Px(y));
     }
     // Static: always a faint crawl, a burst after page changes.
     st.burst = (st.burst - dt).max(0.0);
     *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
     if let Ok(mut img) = noise.single_mut() {
         let frame = ((t * 24.0) as usize + (*seed >> 30) as usize) % 4;
-        img.image = st.static_frames[frame].clone();
+        set_image(&mut img, &st.static_frames[frame]);
         let a = 0.045 + st.burst / 0.22 * 0.55;
-        img.color = STATIC_TINT.with_alpha(a);
+        let c = STATIC_TINT.with_alpha(a);
+        if img.color != c {
+            img.color = c;
+        }
     }
     // Faint brightness flicker.
     if let Ok(mut f) = flicker.single_mut() {
         let jitter = ((*seed >> 8) & 0xFF) as f32 / 255.0;
         let a = if jitter > 0.93 { 0.08 } else { 0.015 * (t * 60.0).sin().abs() };
-        f.0 = Color::srgba(0.0, 0.0, 0.0, a);
+        f.set_if_neq(BackgroundColor(Color::srgba(0.0, 0.0, 0.0, a)));
     }
 }
 
@@ -976,18 +986,18 @@ fn show_layout(
         }
     }
     for (lamp, mut bg) in &mut lamps {
-        bg.0 = if lamp.0 == st.nav.page.main() { SELECTED } else { LAMP_OFF };
+        bg.set_if_neq(BackgroundColor(if lamp.0 == st.nav.page.main() { SELECTED } else { LAMP_OFF }));
     }
     let pages = st.nav.page.main().pages();
     for (tab, mut node, mut border, mut bg, children) in &mut subs {
         let Some(page) = pages.get(tab.0) else {
-            node.display = Display::None;
+            set_display(&mut node, false);
             continue;
         };
-        node.display = Display::Flex;
+        set_display(&mut node, true);
         let active = *page == st.nav.page;
-        border.0 = if active { SELECTED } else { Color::NONE };
-        bg.0 = if active { SELECTED_FILL } else { Color::NONE };
+        border.set_if_neq(BorderColor(if active { SELECTED } else { Color::NONE }));
+        bg.set_if_neq(BackgroundColor(if active { SELECTED_FILL } else { Color::NONE }));
         if let Some(&child) = children.first() {
             if let Ok(mut t) = texts.get_mut(child) {
                 if t.0 != page.label() {
@@ -997,7 +1007,9 @@ fn show_layout(
         }
     }
     if let Ok(mut t) = title.single_mut() {
-        t.0 = st.nav.page.main().label().to_string();
+        if t.0 != st.nav.page.main().label() {
+            t.0 = st.nav.page.main().label().to_string();
+        }
     }
 }
 
@@ -1017,7 +1029,7 @@ fn update_header(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, clo
     let places = st.fog.landmarks_found.iter().filter(|f| **f).count();
     let xp = progress::experience(game.kills, places, total_upgrades(&game), game.inv.has_frostfang_coat, quest::quest_xp(&flags.0));
     let (lvl, into, span) = progress::level(xp);
-    t.0 = format!(
+    t.set_if_neq(Text(format!(
         "LVL {}   HP {:.0}/{:.0}   HEAT {:.0}%   RAD {:.0}   XP {}/{}   DAY {} {}",
         lvl,
         s.health,
@@ -1028,7 +1040,7 @@ fn update_header(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, clo
         span,
         clock.0.day,
         clock.0.label()
-    );
+    )));
 }
 
 /// STATUS: the mascot shows how you're doing; bars and conditions beside it.
@@ -1056,15 +1068,18 @@ fn update_status(
     let hurt = hp < 0.35;
     let irradiated = s.rads > 100.0;
     if let Ok((mut img, mut node)) = mascot.single_mut() {
-        img.image = if hurt { art.hurt.clone() } else if cold { art.cold.clone() } else { art.idle.clone() };
+        set_image(&mut img, if hurt { &art.hurt } else if cold { &art.cold } else { &art.idle });
         // Idle: a cheerful bob. Cold: a fast shiver.
         let (dx, dy) = if cold { ((t * 47.0).sin() * 2.5, 0.0) } else { (0.0, (t * 3.0).sin().abs() * -4.0) };
-        node.left = Val::Px(dx);
-        node.top = Val::Px(dy);
+        set_val(&mut node, |n| &mut n.left, Val::Px(dx));
+        set_val(&mut node, |n| &mut n.top, Val::Px(dy));
     }
     if let Ok(mut g) = glow.single_mut() {
         let a = if irradiated { (0.35 + 0.3 * (t * 4.0).sin()) * (s.rads / 400.0).clamp(0.4, 1.0) } else { 0.0 };
-        g.color = ACCENT.with_alpha(a);
+        let c = ACCENT.with_alpha(a);
+        if g.color != c {
+            g.color = c;
+        }
     }
     for (mut node, b) in &mut bars {
         let v = match b.0 {
@@ -1072,7 +1087,7 @@ fn update_status(
             1 => s.body_heat / 100.0,
             _ => s.rads / Survival::MAX_RADS,
         };
-        node.width = Val::Percent(v.clamp(0.0, 1.0) * 100.0);
+        set_val(&mut node, |n| &mut n.width, Val::Percent(v.clamp(0.0, 1.0) * 100.0));
     }
     let pos = player.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
     let sheltered = terrain::cover_at(pos.x, pos.z).sheltered();
@@ -1107,7 +1122,7 @@ fn update_status(
         Phase::Blizzard => format!("RAD-BLIZZARD {:.0}s", weather.weather.timer.max(0.0)),
     };
     if let Ok(mut tx) = text.single_mut() {
-        tx.0 = format!(
+        tx.set_if_neq(Text(format!(
             "CONDITIONS\n{}\n\nWEATHER\n  {}\n  Air {:.0}F, feels {:.0}F\n\nRADIATION\n  {:.0} rads\n  {}",
             effects.iter().map(|e| format!("  {e}")).collect::<Vec<_>>().join("\n"),
             weather_line,
@@ -1118,10 +1133,10 @@ fn update_status(
                 lost if lost >= 0.5 => format!("Max HP -{lost:.0}"),
                 _ => "Max HP unaffected".to_string(),
             },
-        );
+        )));
     }
     if let Ok(mut tx) = side.single_mut() {
-        tx.0 = format!(
+        tx.set_if_neq(Text(format!(
             "THAWBORN\nVault 143\n\nHP    {:.0}/{:.0}\nHEAT  {:.0}%\nRADS  {:.0}\n\nKILLS {}\nPELTS {}\nSCRAP {}",
             s.health,
             s.max_health(),
@@ -1130,7 +1145,7 @@ fn update_status(
             game.kills,
             game.inv.pelts,
             game.inv.scrap
-        );
+        )));
     }
 }
 
@@ -1235,13 +1250,13 @@ fn update_list(
     let sel = st.nav.selected[st.nav.page.index()].min(items.len().saturating_sub(1));
     for (row, mut node, mut border, mut bg, children) in &mut rows {
         let Some((label, _)) = items.get(row.0) else {
-            node.display = Display::None;
+            set_display(&mut node, false);
             continue;
         };
-        node.display = Display::Flex;
+        set_display(&mut node, true);
         let active = row.0 == sel;
-        border.0 = if active { SELECTED } else { Color::NONE };
-        bg.0 = if active { SELECTED_FILL } else { Color::NONE };
+        border.set_if_neq(BorderColor(if active { SELECTED } else { Color::NONE }));
+        bg.set_if_neq(BackgroundColor(if active { SELECTED_FILL } else { Color::NONE }));
         if let Some(&child) = children.first() {
             if let Ok(mut t) = texts.get_mut(child) {
                 if &t.0 != label {
@@ -1251,12 +1266,14 @@ fn update_list(
         }
     }
     if let Ok(mut t) = detail.single_mut() {
-        t.0 = items.get(sel).map(|i| i.1.clone()).unwrap_or_else(|| "Nothing here yet.".to_string());
+        let want = items.get(sel).map(|i| i.1.as_str()).unwrap_or("Nothing here yet.");
+        if t.0 != want {
+            t.0 = want.to_string();
+        }
     }
     if let Ok((mut img, mut node)) = mascot.single_mut() {
-        let show = st.nav.page == Page::Special;
-        node.display = if show { Display::Flex } else { Display::None };
-        img.image = art.idle.clone();
+        set_display(&mut node, st.nav.page == Page::Special);
+        set_image(&mut img, &art.idle);
     }
 }
 
@@ -1279,7 +1296,7 @@ fn update_notes(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, mut 
     }
     let perks = quest::perks_taken(&flags.0);
     let perk_text = if perks.is_empty() { "none yet (one pick per level)".to_string() } else { perks.iter().map(|p| p.name()).collect::<Vec<_>>().join(", ") };
-    t.0 = format!(
+    t.set_if_neq(Text(format!(
         "{quest_text}\nPERKS  {perk_text}\n\nOBJECTIVES\n  {} Leave Vault 143\n  {} Find a better gun than the pipe rifle ({}/4 weapons)\n  {} Mod a weapon at a fish house workbench\n  {} Craft a Frostfang coat ({}/{} pelts)\n  {} Explore Mille Lacs ({}/{} places, {:.0}% of the map)\n\n\
          PLACES FOUND\n  {}\n\n\
          Settings and volume: Esc menu.",
@@ -1295,7 +1312,7 @@ fn update_notes(st: Res<PipState>, game: Res<Game>, flags: Res<StoryFlags>, mut 
         marks.len(),
         st.fog.fraction() * 100.0,
         if found.is_empty() { "none yet".to_string() } else { found.join(", ") },
-    );
+    )));
 }
 
 /// Place the map, markers, player arrow and cursor for the current zoom and centre.
@@ -1318,27 +1335,30 @@ fn update_map(
     let size = VIEW * st.zoom;
     if let Ok(mut n) = world.single_mut() {
         let (u, v) = mapdata::to_uv(st.center.x, st.center.y);
-        n.width = Val::Px(size);
-        n.height = Val::Px(size);
-        n.left = Val::Px(VIEW * 0.5 - u * size);
-        n.top = Val::Px(VIEW * 0.5 - v * size);
+        set_val(&mut n, |n| &mut n.width, Val::Px(size));
+        set_val(&mut n, |n| &mut n.height, Val::Px(size));
+        set_val(&mut n, |n| &mut n.left, Val::Px(VIEW * 0.5 - u * size));
+        set_val(&mut n, |n| &mut n.top, Val::Px(VIEW * 0.5 - v * size));
     }
     let found = &st.fog.landmarks_found;
     for (mut vis, m) in &mut markers {
-        *vis = if found[m.0] { Visibility::Inherited } else { Visibility::Hidden };
+        vis.set_if_neq(if found[m.0] { Visibility::Inherited } else { Visibility::Hidden });
     }
     for (mut vis, l) in &mut labels {
         // Names clutter the whole-map view, so show them as you zoom in (and always for the vault).
         let show = found[l.0] && (st.zoom >= 1.8 || mapdata::landmarks()[l.0].kind == Kind::Vault);
-        *vis = if show { Visibility::Inherited } else { Visibility::Hidden };
+        vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     }
     let Ok((ptf, p)) = player.single() else { return };
     let (u, v) = mapdata::to_uv(ptf.translation.x, ptf.translation.z);
     if let Ok((mut tf, mut n)) = arrow.single_mut() {
-        n.left = Val::Percent(u * 100.0);
-        n.top = Val::Percent(v * 100.0);
+        set_val(&mut n, |n| &mut n.left, Val::Percent(u * 100.0));
+        set_val(&mut n, |n| &mut n.top, Val::Percent(v * 100.0));
         // The arrow points up at rotation 0; heading is clockwise from north.
-        tf.rotation = Quat::from_rotation_z(-p.yaw * ARROW_SIGN);
+        let rot = Quat::from_rotation_z(-p.yaw * ARROW_SIGN);
+        if tf.rotation != rot {
+            tf.rotation = rot;
+        }
     }
 
     // The cursor: crosshair lines through the mouse, and the place under it.
@@ -1347,15 +1367,15 @@ fn update_map(
     let rel = view.single().ok().and_then(|r| r.normalized).filter(|r| (0.0..=1.0).contains(&r.x) && (0.0..=1.0).contains(&r.y));
     for (mut n, mut vis, computed) in &mut cursor {
         let Some(r) = rel else {
-            *vis = Visibility::Hidden;
+            vis.set_if_neq(Visibility::Hidden);
             continue;
         };
-        *vis = Visibility::Inherited;
+        vis.set_if_neq(Visibility::Inherited);
         let horizontal = computed.size().x > computed.size().y;
         if horizontal {
-            n.top = Val::Px(r.y * VIEW);
+            set_val(&mut n, |n| &mut n.top, Val::Px(r.y * VIEW));
         } else {
-            n.left = Val::Px(r.x * VIEW);
+            set_val(&mut n, |n| &mut n.left, Val::Px(r.x * VIEW));
         }
     }
     let world_at = rel.map(|r| {
@@ -1371,14 +1391,18 @@ fn update_map(
     if let Ok((mut t, mut n)) = cursor_label.single_mut() {
         match (rel, world_at) {
             (Some(r), Some(w)) => {
-                t.0 = match hovered {
+                t.set_if_neq(Text(match hovered {
                     Some(l) => l.name.to_string(),
                     None => format!("{:.0}, {:.0}", w.x, w.y),
-                };
-                n.left = Val::Px((r.x * VIEW + 8.0).min(VIEW - 120.0));
-                n.top = Val::Px((r.y * VIEW + 6.0).min(VIEW - 16.0));
+                }));
+                set_val(&mut n, |n| &mut n.left, Val::Px((r.x * VIEW + 8.0).min(VIEW - 120.0)));
+                set_val(&mut n, |n| &mut n.top, Val::Px((r.y * VIEW + 6.0).min(VIEW - 16.0)));
             }
-            _ => t.0.clear(),
+            _ => {
+                if !t.0.is_empty() {
+                    t.0.clear();
+                }
+            }
         }
     }
     if let Ok(mut t) = info.single_mut() {
@@ -1397,6 +1421,6 @@ fn update_map(
         }
         s += &format!("EXPLORED  {:.0}%\nPLACES  {}/{}\n\n", st.fog.fraction() * 100.0, places, marks.len());
         s += "<> filled  Vault 143\n<> hollow  found places\n\nWheel zoom, drag/WASD pan,\nC centre on you";
-        t.0 = s;
+        t.set_if_neq(Text(s));
     }
 }

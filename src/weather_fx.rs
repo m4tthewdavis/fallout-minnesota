@@ -268,6 +268,8 @@ fn apply_atmosphere(
     mut sun: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
     mut ambient: ResMut<AmbientLight>,
     mut clear: ResMut<ClearColor>,
+    mut clear_sky: Local<Option<([u32; 5], [Vec3; 3])>>,
+    settings: Res<crate::menu::GameSettings>,
 ) {
     let sky = clock.0.sky();
     // 0 at deepest night, 1 in full day.
@@ -276,8 +278,21 @@ fn apply_atmosphere(
 
     // The sky itself: scattering through winter air, hazier in a storm.
     let conditions = Conditions { sun: sky.sun_pos, haze: 1.0 + 2.5 * overcast + 0.6 * vis.snow, moon: sky.moon * (1.0 - sky.sun) };
-    let clear_horizon = v3(atmosphere::horizon_color(&conditions, SKY_EXPOSURE));
-    let clear_zenith = v3(atmosphere::zenith_color(&conditions, SKY_EXPOSURE));
+    // The scattering model is costly and depends on nothing else: reuse the
+    // last answer while the conditions are bit for bit the same (paused, the title screen).
+    let key = conditions_key(&conditions);
+    let [clear_horizon, clear_zenith, sun_light] = match *clear_sky {
+        Some((k, colors)) if k == key => colors,
+        _ => {
+            let colors = [
+                v3(atmosphere::horizon_color(&conditions, SKY_EXPOSURE)),
+                v3(atmosphere::zenith_color(&conditions, SKY_EXPOSURE)),
+                v3(atmosphere::sun_transmittance(sky.sun_pos, conditions.haze)),
+            ];
+            *clear_sky = Some((key, colors));
+            colors
+        }
+    };
     // A storm flattens it to a dull grey, lit from above; the blizzard adds a sick green.
     let flat = |c: Vec3| Vec3::splat(luma(c)) * Vec3::new(0.93, 0.97, 1.0) * (0.45 + 0.55 * vis.light);
     let green = Vec3::new(0.45, 0.62, 0.42);
@@ -285,7 +300,6 @@ fn apply_atmosphere(
     let mut zenith = clear_zenith.lerp(flat(clear_horizon) * 0.8, overcast * 0.85);
     horizon = horizon.lerp(green * luma(horizon) / luma(green), vis.sick * 0.55);
     zenith = zenith.lerp(green * luma(zenith) / luma(green), vis.sick * 0.4);
-    let sun_light = v3(atmosphere::sun_transmittance(sky.sun_pos, conditions.haze));
     *look = SkyLook { conditions, horizon, zenith, sun_light, overcast, sick: vis.sick };
 
     let color = Color::linear_rgb(horizon.x, horizon.y, horizon.z);
@@ -309,6 +323,10 @@ fn apply_atmosphere(
         clear.0 = Color::BLACK;
         for (mut light, _) in &mut sun {
             light.illuminance = 0.0;
+            // A dark sun casts nothing: switch its shadows off with it.
+            if light.shadows_enabled {
+                light.shadows_enabled = false;
+            }
         }
         let (c, brightness) = room.ambient();
         ambient.color = Color::srgb(c[0], c[1], c[2]);
@@ -326,6 +344,10 @@ fn apply_atmosphere(
     };
     for (mut light, mut tf) in &mut sun {
         light.illuminance = strength * vis.light;
+        let shadows = settings.0.shadows.sun_shadows();
+        if light.shadows_enabled != shadows {
+            light.shadows_enabled = shadows;
+        }
         let m = light_color / light_color.max_element().max(1e-4);
         light.color = Color::linear_rgb(m.x, m.y, m.z);
         *tf = Transform::from_translation(Vec3::ZERO).looking_at(-dir, Vec3::Y);
@@ -337,6 +359,11 @@ fn apply_atmosphere(
     ambient.color = Color::linear_rgb(m.x, m.y, m.z);
     // Less fill than sun so snow drifts, ripples and trees keep their shape.
     ambient.brightness = ((170.0 + 230.0 * vis.light) * sky.daylight).max(60.0) * (0.75 + 0.5 * day);
+}
+
+/// The sky conditions as raw bits (a cache key that never mistakes -0 for 0).
+fn conditions_key(c: &Conditions) -> [u32; 5] {
+    [c.sun[0].to_bits(), c.sun[1].to_bits(), c.sun[2].to_bits(), c.haze.to_bits(), c.moon.to_bits()]
 }
 
 fn move_flakes(
@@ -353,12 +380,13 @@ fn move_flakes(
     let Ok(ptf) = player.single() else { return };
     let cam = ptf.translation;
     let facing = ptf.rotation;
-    if let Some(m) = materials.get_mut(&flake_mat.0) {
+    {
         // Radioactive snow glows faintly green.
-        // Unlit, so dim them by hand at night.
+        // Unlit, so dim them by hand at night. (Written only when it changes:
+        // a touched material re-queues all 900 flakes.)
         let light = 0.2 + 0.8 * clock.0.sky().daylight.clamp(0.0, 1.0);
         let c = Vec3::new(0.95, 0.97, 1.0).lerp(Vec3::new(0.7, 1.3, 0.7), vis.sick) * light;
-        m.base_color = Color::LinearRgba(LinearRgba::new(c.x, c.y, c.z, 0.9));
+        crate::changed::set_base_color(&mut materials, &flake_mat.0, Color::LinearRgba(LinearRgba::new(c.x, c.y, c.z, 0.9)));
     }
     let dt = time.delta_secs();
     let active = if interior.0.is_some() { 0 } else { (vis.snow * FLAKES as f32) as usize };

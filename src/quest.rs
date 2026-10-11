@@ -18,7 +18,7 @@ use crate::moose::{spawn_moose, MooseAssets};
 use crate::pipboy::{total_upgrades, PipState};
 use crate::player::Player;
 use crate::saves::{AutosaveRequest, StoryFlags};
-use crate::sim::collision::{self, Shape};
+use crate::sim::collision::Shape;
 use crate::sim::dialogue::{Gift, Npc, Session};
 use crate::sim::loot;
 use crate::sim::progress;
@@ -219,7 +219,7 @@ fn ensure_quest_moose(
     let Some((x, z)) = [(15.0f32, -10.0f32), (18.0, 6.0), (12.0, 14.0), (-14.0, 12.0), (20.0, -18.0)]
         .into_iter()
         .map(|(dx, dz)| (sx + dx, sz + dz))
-        .find(|&(x, z)| terrain::is_open_ground(x, z) && !collision::blocked(x, z, 2.0, &colliders.0))
+        .find(|&(x, z)| terrain::is_open_ground(x, z) && !colliders.0.blocked(x, z, 2.0))
     else {
         return;
     };

@@ -7,7 +7,7 @@ use crate::assets::GameAssets;
 use crate::landmarks::{CARS, RUINS};
 use crate::meshes::to_mesh_tangents;
 use crate::perf::Lod;
-use crate::sim::collision::{self, Shape};
+use crate::sim::collision::{Shape, SpatialGrid};
 use crate::sim::meshgen;
 use crate::sim::terrain;
 use crate::state::{Colliders, RngRes};
@@ -86,8 +86,8 @@ pub fn spawn_nature(
 
     // ---------- Pre-war junk ----------
     // Clusters by the cars and shelters, then a sprinkle over open ground.
-    let junk_at = |commands: &mut Commands, rng: &mut RngRes, solid: &mut Vec<Shape>, x: f32, z: f32| {
-        if collision::blocked(x, z, 0.6, solid) || terrain::lake_at(x, z).is_some() {
+    let junk_at = |commands: &mut Commands, rng: &mut RngRes, solid: &mut SpatialGrid, x: f32, z: f32| {
+        if solid.blocked(x, z, 0.6) || terrain::lake_at(x, z).is_some() {
             return;
         }
         let gy = ground(x, z);

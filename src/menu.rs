@@ -112,6 +112,7 @@ impl Plugin for MenuPlugin {
                     title_camera,
                     render_menu,
                     apply_settings.run_if(resource_changed::<GameSettings>),
+                    sun_through_doors.run_if(resource_changed::<crate::state::CurrentInterior>),
                     sync_audio_back,
                     persist_settings,
                 )
@@ -523,6 +524,7 @@ fn apply_settings(
     mut cameras: Query<&mut Projection, With<Player>>,
     main_camera: Query<Entity, With<Player>>,
     all_cameras: Query<(Entity, Has<crate::gun::ViewModelCamera>), With<Camera3d>>,
+    interior: Res<crate::state::CurrentInterior>,
 ) {
     let s = &settings.0;
     info!("settings applied: {s:?}");
@@ -536,8 +538,9 @@ fn apply_settings(
     if shadow_map.size != q.map_size() {
         shadow_map.size = q.map_size();
     }
+    let (sun_shadows, sun_volumetric) = sun_effects(s, interior.0.is_none());
     for (sun, mut light) in &mut suns {
-        light.shadows_enabled = q.sun_shadows();
+        light.shadows_enabled = sun_shadows;
         commands.entity(sun).insert(
             CascadeShadowConfigBuilder {
                 num_cascades: q.cascades(),
@@ -554,7 +557,7 @@ fn apply_settings(
     // Atmosphere: light shafts and fog banks, and ambient occlusion (which
     // can't share a camera with MSAA, so SMAA smooths the edges instead).
     for sun in suns.iter().map(|(e, _)| e) {
-        if s.volumetrics && q.sun_shadows() {
+        if sun_volumetric {
             commands.entity(sun).insert(VolumetricLight);
         } else {
             commands.entity(sun).remove::<VolumetricLight>();
@@ -597,6 +600,29 @@ fn apply_settings(
     }
 }
 
+/// The sun's shadows and light shafts: as the settings say outdoors, and off
+/// in a room, where the sun is dark (its shadow maps and shafts would cost
+/// time and add nothing). Returns (shadows, volumetric light).
+pub(crate) fn sun_effects(s: &Settings, outdoors: bool) -> (bool, bool) {
+    let shadows = s.shadows.sun_shadows() && outdoors;
+    (shadows, s.volumetrics && shadows)
+}
+
+/// Going through a door switches the sun's light shafts. (The sun's shadows
+/// are switched in `weather_fx::apply_atmosphere`, in the same step that
+/// darkens the sun, so the two can never disagree for a frame, even when a
+/// save is loaded straight into a room.)
+fn sun_through_doors(mut commands: Commands, settings: Res<GameSettings>, interior: Res<crate::state::CurrentInterior>, suns: Query<Entity, With<Sun>>) {
+    let (_, volumetric) = sun_effects(&settings.0, interior.0.is_none());
+    for sun in &suns {
+        if volumetric {
+            commands.entity(sun).insert(VolumetricLight);
+        } else {
+            commands.entity(sun).remove::<VolumetricLight>();
+        }
+    }
+}
+
 /// F5-F11 change the volume directly; keep the saved settings in step.
 fn sync_audio_back(audio: Res<AudioSettings>, mut settings: ResMut<GameSettings>, mut state: ResMut<MenuState>, time: Res<Time<Real>>) {
     if !audio.is_changed() {
@@ -635,5 +661,24 @@ pub fn close_menu(paused: &mut Paused, vtime: &mut Time<Virtual>, windows: &mut 
     vtime.unpause();
     if let Ok(mut w) = windows.single_mut() {
         set_grab(&mut w, true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sim::settings::ShadowQuality;
+
+    #[test]
+    fn the_sun_casts_shadows_and_shafts_only_outdoors_and_as_set() {
+        let mut s = Settings::default();
+        s.shadows = ShadowQuality::Off;
+        s.volumetrics = true;
+        assert_eq!(sun_effects(&s, true), (false, false));
+        s.shadows = ShadowQuality::Low;
+        assert_eq!(sun_effects(&s, true), (true, true));
+        assert_eq!(sun_effects(&s, false), (false, false));
+        s.volumetrics = false;
+        assert_eq!(sun_effects(&s, true), (true, false));
     }
 }

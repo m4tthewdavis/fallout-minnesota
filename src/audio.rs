@@ -22,7 +22,6 @@ use bevy::prelude::*;
 use crate::sim::keys::Bind;
 
 use crate::player::Player;
-use crate::sim::collision::segment_cover;
 use crate::sim::interiors::{self, Interior};
 use crate::sim::rng::Rng;
 use crate::sim::sfx::{self, approach, Mix, Mood, MusicContext, MusicDirector};
@@ -197,44 +196,62 @@ fn start_generators(mut commands: Commands) {
     // Recordings in assets/sounds stand in for the synthesised clips.
     let recorded = Arc::new(find_recordings());
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 3);
-    for t in 0..threads {
+    // Every (sound, variant) slot, the slowest to synthesise first; the threads
+    // take the next one off the list as they finish, so the long music pieces
+    // start at once instead of queueing behind whatever shares their thread.
+    let jobs = Arc::new(synth_jobs());
+    let next = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for _ in 0..threads {
         let tx = tx.clone();
         let recorded = recorded.clone();
-        std::thread::spawn(move || {
-            let mut i = 0;
-            for &s in Sound::ALL {
-                let takes = recorded.iter().find(|(r, _)| *r == s).map(|(_, t)| t);
-                for v in 0..s.variants() {
-                    if i % threads == t {
-                        // The recorded takes for this variant, or the synthesised clip.
-                        let clips = |muffled: bool| -> Vec<Vec<u8>> {
-                            let read: Vec<Vec<u8>> = takes.map(|t| t.for_slot(v, s.variants(), muffled)).unwrap_or_default().iter().filter_map(|p| std::fs::read(p).ok()).filter(|b| recorded::playable(b)).collect();
-                            if read.is_empty() {
-                                vec![if muffled { s.wav_muffled(v) } else { s.wav(v) }]
-                            } else {
-                                read
-                            }
-                        };
-                        for clip in clips(false) {
-                            if tx.send((s, v, false, clip)).is_err() {
-                                return;
-                            }
-                        }
-                        // The same clip as heard through a wall or a thicket.
-                        if s.muffleable() {
-                            for clip in clips(true) {
-                                if tx.send((s, v, true, clip)).is_err() {
-                                    return;
-                                }
-                            }
-                        }
+        let jobs = jobs.clone();
+        let next = next.clone();
+        std::thread::spawn(move || loop {
+            let Some(&(s, v)) = jobs.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) else { return };
+            let takes = recorded.iter().find(|(r, _)| *r == s).map(|(_, t)| t);
+            // The recorded takes for this variant, if any.
+            let read = |muffled: bool| -> Vec<Vec<u8>> { takes.map(|t| t.for_slot(v, s.variants(), muffled)).unwrap_or_default().iter().filter_map(|p| std::fs::read(p).ok()).filter(|b| recorded::playable(b)).collect() };
+            let plain = read(false);
+            // The same clip as heard through a wall or a thicket.
+            let muffled = if s.muffleable() { Some(read(true)) } else { None };
+            // Synthesise what has no recording; one run of the synthesiser makes both versions.
+            let (plain, muffled) = match (plain.is_empty(), muffled.as_ref().is_some_and(|m| m.is_empty())) {
+                (true, true) => {
+                    let (p, m) = s.wav_pair(v);
+                    (vec![p], m.map(|m| vec![m]))
+                }
+                (true, false) => (vec![s.wav(v)], muffled),
+                (false, true) => (plain, Some(vec![s.wav_muffled(v)])),
+                (false, false) => (plain, muffled),
+            };
+            for (clips, is_muffled) in [(plain, false), (muffled.unwrap_or_default(), true)] {
+                for clip in clips {
+                    if tx.send((s, v, is_muffled, clip)).is_err() {
+                        return;
                     }
-                    i += 1;
                 }
             }
         });
     }
     commands.insert_resource(BankLoader(Mutex::new(rx)));
+}
+
+/// Every (sound, variant) slot once, in the order to make them: the music
+/// takes ~60-130 ms a piece and nearly everything else under 5 ms, so the
+/// music goes first (the rest keep their usual order).
+fn synth_jobs() -> Vec<(Sound, usize)> {
+    let mut jobs: Vec<(Sound, usize)> = Sound::ALL.iter().flat_map(|&s| (0..s.variants()).map(move |v| (s, v))).collect();
+    jobs.sort_by_key(|&(s, _)| synth_cost_rank(s));
+    jobs
+}
+
+fn synth_cost_rank(s: Sound) -> u8 {
+    match s {
+        Sound::MusicCalm => 0,
+        Sound::MusicDanger => 1,
+        Sound::MusicTense => 2,
+        _ => 3,
+    }
 }
 
 /// The recorded clips in `assets/sounds`, by sound.
@@ -256,9 +273,11 @@ pub fn dump_synth_if_asked() -> bool {
     let _ = std::fs::create_dir_all(&dir);
     for &s in Sound::ALL {
         for v in 0..s.variants() {
-            let _ = std::fs::write(dir.join(format!("{}_{v}.wav", recorded::stem(s))), s.wav(v));
-            if s.muffleable() {
-                let _ = std::fs::write(dir.join(format!("{}_{v}_muffled.wav", recorded::stem(s))), s.wav_muffled(v));
+            // The same pair the game makes at start-up.
+            let (plain, muffled) = s.wav_pair(v);
+            let _ = std::fs::write(dir.join(format!("{}_{v}.wav", recorded::stem(s))), plain);
+            if let Some(muffled) = muffled {
+                let _ = std::fs::write(dir.join(format!("{}_{v}_muffled.wav", recorded::stem(s))), muffled);
             }
         }
     }
@@ -362,7 +381,7 @@ fn play_queued(
         let source_room = req.pos.and_then(|p| interiors::zone_at(p.x, p.z));
         let (heard, muffled) = match req.pos {
             Some(p) if p.distance(here) < 160.0 || source_room != listener_room => {
-                let (trees, walls) = segment_cover((here.x, here.z), (p.x, p.z), &colliders.0);
+                let (trees, walls) = colliders.0.segment_cover((here.x, here.z), (p.x, p.z));
                 let h = soundscape::heard(soundscape::occlusion(source_room, listener_room, trees, walls));
                 (h.gain, h.muffled)
             }
@@ -589,5 +608,23 @@ fn geiger(
     let p = 1.0 - (-cps * real.delta_secs()).exp();
     if state.rng.chance(p) {
         sfx.play(Sound::Geiger);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn synth_jobs_cover_every_slot_once_music_first() {
+        let jobs = synth_jobs();
+        let total: usize = Sound::ALL.iter().map(|s| s.variants()).sum();
+        assert_eq!(jobs.len(), total);
+        let unique: std::collections::HashSet<(usize, usize)> = jobs.iter().map(|&(s, v)| (s as usize, v)).collect();
+        assert_eq!(unique.len(), total);
+        assert_eq!(jobs[0].0, Sound::MusicCalm);
+        assert_eq!(jobs[1].0, Sound::MusicDanger);
+        // Ranks never go back down.
+        assert!(jobs.windows(2).all(|w| synth_cost_rank(w[0].0) <= synth_cost_rank(w[1].0)));
     }
 }

@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use crate::sim::keys::Bind;
 
 use crate::player::Player;
-use crate::sim::collision::Shape;
+use crate::sim::collision::{Shape, SpatialGrid};
 use crate::sim::loot::{self, Loot};
 use crate::sim::lootmenu;
 use crate::sim::synth::Sound;
@@ -117,7 +117,7 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
 pub fn spawn_container(
     commands: &mut Commands,
     assets: &ContainerAssets,
-    solid: &mut Vec<Shape>,
+    solid: &mut SpatialGrid,
     scene: Handle<Scene>,
     pos: Vec3,
     yaw: f32,

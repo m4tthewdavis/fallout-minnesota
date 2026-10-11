@@ -16,7 +16,8 @@ use crate::assets::GameAssets;
 use crate::player::{Player, EYE_HEIGHT};
 use crate::sim::synth::Sound;
 use crate::sim::terrain;
-use crate::state::{alive, ClockRes, Fx, FxQueue, Game, Lifetime, RngRes, SfxQueue, WeatherRes};
+use crate::sim::interiors::Interior;
+use crate::state::{alive, ClockRes, CurrentInterior, Fx, FxQueue, Game, Lifetime, RngRes, SfxQueue, WeatherRes};
 
 const FADE_STEPS: usize = 6;
 /// Emitters further than this from the camera don't spawn anything.
@@ -108,6 +109,11 @@ pub struct Flame {
     pub size: Vec2,
 }
 
+/// A stove fire's tongues and light belong to this room: they're hidden (and
+/// not animated) unless you're in it, like the room itself.
+#[derive(Component)]
+pub struct InRoom(pub Interior);
+
 /// The warm patch of light a fire throws on the snow round it.
 #[derive(Component)]
 pub struct FireGlow {
@@ -134,25 +140,31 @@ struct FlameSheet {
 /// sparks, smoke, a flickering light and a glow on the ground. `scale` 1 is
 /// a fire-barrel fire.
 pub fn spawn_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool) {
-    spawn_fire_in(commands, meshes, materials, soft, at, scale, seed, shadows, false);
+    spawn_fire_in(commands, meshes, materials, soft, at, scale, seed, shadows, None);
 }
 
 /// A fire in a stove inside a room: no smoke into the rafters and no glow
 /// patch on the snow (there isn't any).
-pub fn spawn_indoor_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32) {
-    spawn_fire_in(commands, meshes, materials, soft, at, scale, seed, false, true);
+pub fn spawn_indoor_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, room: Interior) {
+    spawn_fire_in(commands, meshes, materials, soft, at, scale, seed, false, Some(room));
 }
 
 #[allow(clippy::too_many_arguments)]
-fn spawn_fire_in(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool, indoors: bool) {
+fn spawn_fire_in(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool, room: Option<Interior>) {
+    let indoors = room.is_some();
     // A big central tongue and smaller ones round it.
     let tongues = [(0.0f32, 0.0f32, 0.55f32, 1.05f32), (0.14, 0.05, 0.38, 0.75), (-0.13, -0.04, 0.36, 0.7), (0.03, -0.13, 0.32, 0.62), (-0.04, 0.13, 0.3, 0.55)];
     for (k, (dx, dz, w, h)) in tongues.into_iter().enumerate() {
-        commands.spawn((
-            Transform::from_translation(at + Vec3::new(dx, 0.0, dz) * scale),
-            Visibility::default(),
-            Flame { seed: seed + k as f32 * 1.7, size: Vec2::new(w, h) * scale },
-        ));
+        let tongue = commands
+            .spawn((
+                Transform::from_translation(at + Vec3::new(dx, 0.0, dz) * scale),
+                Visibility::default(),
+                Flame { seed: seed + k as f32 * 1.7, size: Vec2::new(w, h) * scale },
+            ))
+            .id();
+        if let Some(room) = room {
+            commands.entity(tongue).insert((InRoom(room), Visibility::Hidden));
+        }
     }
     commands.spawn((Transform::from_translation(at + Vec3::Y * 0.15 * scale), Emitter::new(EmitterKind::Embers, 0.12 / scale)));
     commands.spawn((Transform::from_translation(at + Vec3::Y * 0.3 * scale), Emitter::new(EmitterKind::Sparks, 0.09 / scale)));
@@ -168,6 +180,9 @@ fn spawn_fire_in(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: 
         .id();
     if shadows {
         commands.entity(light).insert(crate::world::PointShadows);
+    }
+    if let Some(room) = room {
+        commands.entity(light).insert((InRoom(room), Visibility::Hidden));
     }
     if indoors {
         return;
@@ -199,8 +214,10 @@ impl Plugin for ParticlePlugin {
                     run_emitters,
                     breath.run_if(alive),
                     init_flames,
+                    show_room_fires,
                     animate_flames,
-                    pulse_glows,
+                    // Glows lie on the snow outside: none can be seen from a room.
+                    pulse_glows.run_if(crate::state::outdoors),
                     update_particles,
                     update_casings,
                 ),
@@ -612,15 +629,21 @@ fn animate_flames(
     time: Res<Time>,
     sheet: Res<FlameSheet>,
     weather: Res<WeatherRes>,
+    interior: Res<CurrentInterior>,
     cam: Query<&GlobalTransform, With<Player>>,
-    mut flames: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>, &Flame)>,
+    mut flames: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>, &Flame, Option<&InRoom>)>,
 ) {
     let Ok(cam) = cam.single() else { return };
     let eye = cam.translation();
     let t = time.elapsed_secs();
     let wind_dir = Vec3::new(crate::sim::weather::WIND_DIR[0], 0.0, crate::sim::weather::WIND_DIR[1]);
     let wind = (weather.weather.conditions().wind / 14.0).clamp(0.0, 1.0);
-    for (mut tf, mut mat, f) in &mut flames {
+    for (mut tf, mut mat, f, room) in &mut flames {
+        // Only the fires where you are can be seen (each is a pure function of
+        // the time, so one skipped while you were elsewhere is right again at once).
+        if room.map(|r| r.0) != interior.0 {
+            continue;
+        }
         let to_eye = eye - tf.translation;
         let yaw = to_eye.x.atan2(to_eye.z);
         let right = Quat::from_rotation_y(yaw) * Vec3::X;
@@ -636,14 +659,19 @@ fn animate_flames(
     }
 }
 
+/// A stove fire shows only while you're in its room.
+fn show_room_fires(interior: Res<CurrentInterior>, mut q: Query<(&InRoom, &mut Visibility)>) {
+    for (room, mut vis) in &mut q {
+        vis.set_if_neq(if interior.0 == Some(room.0) { Visibility::Inherited } else { Visibility::Hidden });
+    }
+}
+
 /// The glow on the snow pulses with its fire.
 fn pulse_glows(time: Res<Time>, glows: Query<(&FireGlow, &MeshMaterial3d<StandardMaterial>)>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let t = time.elapsed_secs();
     for (g, mat) in &glows {
-        if let Some(m) = materials.get_mut(&mat.0) {
-            let k = fire_flicker(t, g.seed);
-            m.base_color = Color::LinearRgba(LinearRgba::new(1.6 * k, 0.6 * k, 0.15 * k, g.strength * k));
-        }
+        let k = fire_flicker(t, g.seed);
+        crate::changed::set_base_color(&mut materials, &mat.0, Color::LinearRgba(LinearRgba::new(1.6 * k, 0.6 * k, 0.15 * k, g.strength * k)));
     }
 }
 

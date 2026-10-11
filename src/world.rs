@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use crate::assets::GameAssets;
 use crate::meshes::{to_mesh, to_mesh_tangents};
 use crate::player::Player;
-use crate::sim::collision;
+use crate::sim::collision::{self, SpatialGrid};
 use crate::sim::meshgen::{self, MeshData};
 use crate::sim::survival::Item;
 use crate::sim::sfx;
@@ -48,7 +48,7 @@ pub const SCATTER: SpotRules = SpotRules { edge: 0.0, tries: 40, vault_clear: 0.
 pub const PLACED: SpotRules = SpotRules { edge: 12.0, tries: 60, vault_clear: 30.0, ruin_pad: 4.0, car_clear: 6.0 };
 
 /// A random point on open ground that obeys `rules` and is clear of `solid`.
-pub fn open_spot(rng: &mut RngRes, solid: &[collision::Shape], clearance: f32, rules: &SpotRules) -> Option<(f32, f32)> {
+pub fn open_spot(rng: &mut RngRes, solid: &SpatialGrid, clearance: f32, rules: &SpotRules) -> Option<(f32, f32)> {
     use crate::landmarks::{CARS, RUINS};
     for _ in 0..rules.tries {
         let x = rng.0.range(-HALF_SIZE + rules.edge, HALF_SIZE - rules.edge);
@@ -58,7 +58,7 @@ pub fn open_spot(rng: &mut RngRes, solid: &[collision::Shape], clearance: f32, r
         }
         if RUINS.iter().any(|&(rx, rz, r)| (x - rx).hypot(z - rz) < r + rules.ruin_pad)
             || CARS.iter().any(|&(cx, cz, _)| (x - cx).hypot(z - cz) < rules.car_clear)
-            || collision::blocked(x, z, clearance, solid)
+            || solid.blocked(x, z, clearance)
         {
             continue;
         }
@@ -145,7 +145,7 @@ impl Plugin for WorldPlugin {
                 flicker_fires,
                 pulse_lights,
                 blink,
-                pulse_ice,
+                pulse_ice.run_if(crate::state::outdoors),
             ),
         );
     }
@@ -587,7 +587,7 @@ fn spawn_loot(
         attempts += 1;
         let x = rng.0.range(-HALF_SIZE + 10.0, HALF_SIZE - 10.0);
         let z = rng.0.range(-HALF_SIZE + 10.0, HALF_SIZE - 10.0);
-        if terrain::lake_at(x, z).is_some() || collision::blocked(x, z, 0.6, &colliders.0) {
+        if terrain::lake_at(x, z).is_some() || colliders.0.blocked(x, z, 0.6) {
             continue;
         }
         let item = loot_table[(rng.0.f32() * loot_table.len() as f32) as usize % loot_table.len()];
@@ -604,7 +604,7 @@ fn spawn_loot(
 #[derive(Component)]
 pub(crate) struct LootRing(pub Entity);
 
-fn animate_pickups(time: Res<Time>, mut q: Query<(&mut Transform, &Pickup)>) {
+fn animate_pickups(time: Res<Time>, mut q: Query<(&mut Transform, &Pickup), Without<Collected>>) {
     let t = time.elapsed_secs();
     for (mut tf, pickup) in &mut q {
         tf.rotation = Quat::from_rotation_y(t * 1.5);
@@ -674,8 +674,8 @@ fn blink(time: Res<Time>, mut q: Query<(&mut Visibility, &Blinker)>) {
 fn pulse_ice(time: Res<Time>, ice: Option<Res<IceGlow>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let Some(ice) = ice else { return };
     let t = time.elapsed_secs();
-    if let Some(m) = materials.get_mut(&ice.0) {
-        let k = 0.8 + 0.2 * (t * 0.7).sin() + 0.08 * (t * 2.3).sin();
-        m.emissive = LinearRgba::rgb(0.6 * k, 1.6 * k, 0.8 * k);
-    }
+    let k = 0.8 + 0.2 * (t * 0.7).sin() + 0.08 * (t * 2.3).sin();
+    // Exactly as before; `set_emissive` writes only when the value differs, so
+    // a paused game (time stands still) queues nothing.
+    crate::changed::set_emissive(&mut materials, &ice.0, LinearRgba::rgb(0.6 * k, 1.6 * k, 0.8 * k));
 }

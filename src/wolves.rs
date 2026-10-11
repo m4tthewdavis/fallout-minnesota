@@ -13,7 +13,6 @@ use crate::enemy::{Body, Dying, Frozen, Species};
 use crate::meshes::to_mesh;
 use crate::player::Player;
 use crate::sim::meshgen;
-use crate::sim::collision;
 use crate::sim::synth::Sound;
 use crate::sim::terrain::{self, HALF_SIZE};
 use crate::sim::weather::Phase;
@@ -92,7 +91,8 @@ impl Plugin for WolfPlugin {
                 Update,
                 (
                     (blizzard_packs, wolf_ai, distant_howls).chain().run_if(alive.and(outdoors)),
-                    animate_wolves,
+                    // Nothing outside can be seen from a room.
+                    animate_wolves.run_if(outdoors),
                 ),
             );
     }
@@ -310,17 +310,16 @@ fn wolf_ai(
     mut fxq: ResMut<FxQueue>,
     player: Query<&Transform, With<Player>>,
     mut wolves: Query<(Entity, &mut Transform, &mut Wolf, &Body), (Without<Player>, Without<Dying>, Without<Frozen>)>,
+    mut positions: Local<Vec<(Entity, Vec2)>>,
 ) {
     let dt = time.delta_secs();
     let Ok(ptf) = player.single() else { return };
     let player_xz = Vec2::new(ptf.translation.x, ptf.translation.z);
     let hunting = weather.weather.wolves_hunting();
 
-    // Snapshot positions for pack separation.
-    let positions: Vec<(Entity, Vec2)> = wolves
-        .iter()
-        .map(|(e, tf, _, _)| (e, Vec2::new(tf.translation.x, tf.translation.z)))
-        .collect();
+    // Snapshot positions for pack separation (a buffer kept from frame to frame).
+    positions.clear();
+    positions.extend(wolves.iter().map(|(e, tf, _, _)| (e, Vec2::new(tf.translation.x, tf.translation.z))));
 
     for (entity, mut tf, mut w, body) in &mut wolves {
         let pos = Vec2::new(tf.translation.x, tf.translation.z);
@@ -355,7 +354,7 @@ fn wolf_ai(
         };
 
         // Keep a little space between pack members.
-        for (other, opos) in &positions {
+        for (other, opos) in positions.iter() {
             if *other == entity {
                 continue;
             }
@@ -374,7 +373,7 @@ fn wolf_ai(
 
         let step = dir.normalize_or_zero() * speed * dt;
         let mut new_pos = (pos + step).clamp(Vec2::splat(-HALF_SIZE + 2.0), Vec2::splat(HALF_SIZE - 2.0));
-        let (cx, cz) = collision::push_out(new_pos.x, new_pos.y, 0.45 * w.size, &colliders.0);
+        let (cx, cz) = colliders.0.push_out(new_pos.x, new_pos.y, 0.45 * w.size);
         new_pos = Vec2::new(cx, cz);
         tf.translation.x = new_pos.x;
         tf.translation.z = new_pos.y;
@@ -478,25 +477,24 @@ fn animate_wolves(
     wolves: Query<(Entity, &Wolf, &Body, &Transform, Has<Dying>)>,
     mut limbs: Query<(&mut Transform, &WolfLimb), (Without<Wolf>, Without<WolfRig>)>,
     mut rigs: Query<(&mut Transform, &WolfRig), (Without<Wolf>, Without<WolfLimb>)>,
+    mut state: Local<HashMap<Entity, Pose>>,
 ) {
-    let state: HashMap<Entity, Pose> = wolves
-        .iter()
-        .map(|(e, w, body, tf, dead)| {
-            let right = tf.rotation * Vec3::X;
-            (
-                e,
-                Pose {
-                    stride: w.stride,
-                    gait: if dead { 0.0 } else { w.gait },
-                    gallop: if dead { 0.0 } else { w.gallop },
-                    lunge: w.lunge,
-                    flinch: body.flinch,
-                    hit_side: if body.hit_dir.dot(right) >= 0.0 { 1.0 } else { -1.0 },
-                    dead,
-                },
-            )
-        })
-        .collect();
+    state.clear();
+    state.extend(wolves.iter().map(|(e, w, body, tf, dead)| {
+        let right = tf.rotation * Vec3::X;
+        (
+            e,
+            Pose {
+                stride: w.stride,
+                gait: if dead { 0.0 } else { w.gait },
+                gallop: if dead { 0.0 } else { w.gallop },
+                lunge: w.lunge,
+                flinch: body.flinch,
+                hit_side: if body.hit_dir.dot(right) >= 0.0 { 1.0 } else { -1.0 },
+                dead,
+            },
+        )
+    }));
     let t = time.elapsed_secs();
     for (mut tf, limb) in &mut limbs {
         let Some(p) = state.get(&limb.owner) else { continue };

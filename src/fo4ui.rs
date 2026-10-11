@@ -7,6 +7,8 @@
 
 use bevy::prelude::*;
 
+use crate::changed::set_display;
+
 use crate::assets::GameAssets;
 use crate::interact::{Container, LootMenu};
 use crate::pipboy::{total_upgrades, PipState};
@@ -291,8 +293,9 @@ fn render_xp(
     mut banner_text: Query<&mut Text, (With<BannerLevel>, Without<XpGain>, Without<XpLevelFrom>, Without<XpLevelTo>)>,
 ) {
     let (Ok(mut root), Ok(mut banner)) = (root.single_mut(), banner.single_mut()) else { return };
-    root.display = if popup.timer > 0.0 { Display::Flex } else { Display::None };
-    banner.display = if popup.banner > 0.0 { Display::Flex } else { Display::None };
+    // (Written only on change: a touched node is laid out again.)
+    set_display(&mut root, popup.timer > 0.0);
+    set_display(&mut banner, popup.banner > 0.0);
     if popup.timer <= 0.0 && popup.banner <= 0.0 {
         return;
     }
@@ -337,12 +340,12 @@ fn render_loot(
     let (Ok(mut root), Ok(mut bracket)) = (root.single_mut(), bracket.single_mut()) else { return };
     let container = menu.target.and_then(|e| containers.get(e).ok());
     let Some(c) = container else {
-        root.display = Display::None;
-        bracket.display = Display::None;
+        set_display(&mut root, false);
+        set_display(&mut bracket, false);
         return;
     };
-    root.display = Display::Flex;
-    bracket.display = Display::Flex;
+    set_display(&mut root, true);
+    set_display(&mut bracket, true);
     let left = c.remaining();
     let (from, to) = lootmenu::window(menu.selected, left.len());
     if let Ok(mut t) = title.single_mut() {

@@ -150,9 +150,10 @@ fn creature_prints(
     mut prints: ResMut<Prints>,
     creatures: Query<(Entity, &Transform, &Body), Without<Dying>>,
     mut last: Local<HashMap<Entity, (Vec2, bool)>>,
+    mut seen: Local<Vec<Entity>>,
 ) {
     let Some(kit) = kit else { return };
-    let mut seen = Vec::new();
+    seen.clear();
     for (e, tf, body) in &creatures {
         seen.push(e);
         let here = Vec2::new(tf.translation.x, tf.translation.z);

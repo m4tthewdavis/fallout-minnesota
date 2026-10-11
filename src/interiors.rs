@@ -27,7 +27,7 @@ use crate::quest::{Perks, StartTalk, UseSpot};
 use crate::saves::{AutosaveRequest, StoryFlags};
 use crate::sim::dialogue::Npc;
 use crate::sim::quest::{self, Spot, Stage};
-use crate::sim::collision::Shape;
+use crate::sim::collision::{Shape, SpatialGrid};
 use crate::sim::combat::WeaponKind;
 use crate::sim::interiors::{self, Fade, Interior};
 use crate::sim::loot;
@@ -240,7 +240,7 @@ fn wainscot(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, room: Inter
 fn shell(
     r: &mut ChildSpawnerCommands,
     meshes: &mut Assets<Mesh>,
-    solid: &mut Vec<Shape>,
+    solid: &mut SpatialGrid,
     room: Interior,
     floor: &Handle<StandardMaterial>,
     walls: &Handle<StandardMaterial>,
@@ -308,7 +308,7 @@ pub fn spawn_interiors(
 
 // ---- Fish houses ----
 
-fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, people: &PersonKit, assets: &GameAssets, solid: &mut Vec<Shape>, i: u8) {
+fn fish_house(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, people: &PersonKit, assets: &GameAssets, solid: &mut SpatialGrid, i: u8) {
     let room = Interior::FishHouse(i);
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
@@ -408,7 +408,7 @@ fn fish_house_extras(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     rng: &mut RngRes,
-    solid: &mut Vec<Shape>,
+    solid: &mut SpatialGrid,
     i: u8,
 ) {
     let room = Interior::FishHouse(i);
@@ -417,12 +417,12 @@ fn fish_house_extras(
     spawn_container(commands, containers, solid, assets.crate_wood.clone(), Vec3::new(cx, interiors::FLOOR_Y + 0.05, cz), 0.1, 1.0, "stash", stash);
     // A small flame in the stove's mouth.
     let (sx, sz) = room.at(room.half().0 - 0.75, -room.half().1 + 0.8);
-    crate::particles::spawn_indoor_fire(commands, meshes, materials, &assets.soft, Vec3::new(sx, interiors::FLOOR_Y + 0.95, sz), 0.28, 20.0 + i as f32);
+    crate::particles::spawn_indoor_fire(commands, meshes, materials, &assets.soft, Vec3::new(sx, interiors::FLOOR_Y + 0.95, sz), 0.28, 20.0 + i as f32, room);
 }
 
 // ---- The Vault 143 lobby ----
 
-fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, k: &Kit, assets: &GameAssets, solid: &mut Vec<Shape>) {
+fn vault_lobby(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, k: &Kit, assets: &GameAssets, solid: &mut SpatialGrid) {
     let room = Interior::VaultLobby;
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
@@ -544,7 +544,7 @@ fn cylinder_x(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, material:
     r.spawn((Mesh3d(meshes.add(with_tangents(Cylinder::new(0.07, 0.1)))), MeshMaterial3d(material.clone()), Transform::from_xyz(at[0], at[1], at[2]).with_rotation(Quat::from_rotation_z(FRAC_PI_2))));
 }
 
-fn vault_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut Vec<Shape>) {
+fn vault_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut SpatialGrid) {
     let room = Interior::VaultLobby;
     let (hw, hd) = room.half();
     let (x, z) = room.at(hw - 1.5, -hd + 1.0);
@@ -554,7 +554,7 @@ fn vault_extras(commands: &mut Commands, assets: &GameAssets, containers: &Conta
 
 // ---- The Bullseye-Mart stockroom ----
 
-fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets: &GameAssets, solid: &mut Vec<Shape>) {
+fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets: &GameAssets, solid: &mut SpatialGrid) {
     let room = Interior::Mart;
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
@@ -645,7 +645,7 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
     }
 }
 
-fn mart_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut Vec<Shape>) {
+fn mart_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut SpatialGrid) {
     let room = Interior::Mart;
     let (hw, hd) = room.half();
     // The shotgun, which used to sit out in the ruin.
@@ -692,7 +692,7 @@ pub(crate) struct PumpDead;
 #[derive(Component)]
 pub(crate) struct PumpRunning;
 
-fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets: &GameAssets, solid: &mut Vec<Shape>) {
+fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets: &GameAssets, solid: &mut SpatialGrid) {
     let room = Interior::Reactor;
     let (ox, oz) = room.origin();
     let (hw, hd) = room.half();
@@ -829,7 +829,7 @@ fn reactor(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, ass
     }
 }
 
-fn reactor_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut Vec<Shape>) {
+fn reactor_extras(commands: &mut Commands, assets: &GameAssets, containers: &ContainerAssets, rng: &mut RngRes, solid: &mut SpatialGrid) {
     let room = Interior::Reactor;
     let (hw, hd) = room.half();
     // A maintenance locker by the stair.

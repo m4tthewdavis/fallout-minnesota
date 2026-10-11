@@ -15,6 +15,7 @@
 
 mod assets;
 mod audio;
+mod changed;
 mod characters;
 mod combat;
 mod crows;

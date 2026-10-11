@@ -14,7 +14,7 @@ use crate::snow::{RockSnowExt, RockSnowMaterial, ROCK_SNOW};
 use crate::interact::{spawn_container, ContainerAssets, Workbench};
 use crate::landmarks::{sign, RUINS};
 use crate::meshes::{to_mesh, to_mesh_tangents};
-use crate::sim::collision::{self, Shape};
+use crate::sim::collision::{Shape, SpatialGrid};
 use crate::sim::combat::WeaponKind;
 use crate::sim::loot;
 use crate::sim::meshgen::{self, sec, MeshData};
@@ -32,7 +32,7 @@ fn fence(
     assets: &GameAssets,
     post_mat: &Handle<StandardMaterial>,
     wire_mat: &Handle<StandardMaterial>,
-    solid: &mut Vec<Shape>,
+    solid: &mut SpatialGrid,
     from: Vec2,
     to: Vec2,
 ) {
@@ -343,7 +343,7 @@ pub fn spawn_props(
     let wheel = meshes.add(Cylinder::new(0.045, 0.03));
     let cart_spots = [(bx + 2.0f32, bz + 15.0f32, 0.3f32, 0.0f32), (bx + 7.0, bz + 17.0, 2.0, 0.0), (bx - 6.0, bz + 13.0, 1.2, 1.35), (bx + 12.5, bz + 14.0, -0.4, 0.0), (bx - 14.0, bz + 4.0, 0.8, 0.0)];
     for &(x, z, yaw, tip) in &cart_spots {
-        if collision::blocked(x, z, 0.8, solid) {
+        if solid.blocked(x, z, 0.8) {
             continue;
         }
         let gy = ground(x, z);
@@ -365,7 +365,7 @@ pub fn spawn_props(
     // Dumpsters and bins by the Mart, shelving inside it.
     for (k, &(dx, dz, yaw)) in [(16.0f32, 3.0f32, 1.57f32), (16.0, 6.2, 1.5), (-15.0, 11.0, 0.2)].iter().enumerate() {
         let (x, z) = (bx + dx, bz + dz);
-        if collision::blocked(x, z, 1.0, solid) {
+        if solid.blocked(x, z, 1.0) {
             continue;
         }
         prop(&mut commands, &assets.trash_can, Vec3::new(x, ground(x, z), z), yaw + k as f32 * 0.1, 1.4);
@@ -402,7 +402,7 @@ pub fn spawn_props(
         (VAULT_POS.0 + 24.0, VAULT_POS.1 - 28.0, PI, false),
     ];
     for &(x, z, yaw, flicker) in &vend_spots {
-        if collision::blocked(x, z, 0.8, solid) || terrain::lake_at(x, z).is_some() {
+        if solid.blocked(x, z, 0.8) || terrain::lake_at(x, z).is_some() {
             continue;
         }
         let gy = ground(x, z);
@@ -430,7 +430,7 @@ pub fn spawn_props(
     for (k, &x) in [-172.0f32, -104.0, -44.0, 38.0, 112.0, 176.0].iter().enumerate() {
         let side = if k % 2 == 0 { -1.0 } else { 1.0 };
         let z = road_n(x) + side * (ROAD_HALF_WIDTH + 2.2);
-        if collision::blocked(x, z, 0.4, solid) {
+        if solid.blocked(x, z, 0.4) {
             continue;
         }
         let gy = ground(x, z);
@@ -458,7 +458,7 @@ pub fn spawn_props(
         lamp_spots.push((VAULT_POS.0 + dx, VAULT_POS.1 + dz, if dx < 0.0 { 0.0 } else { PI }, dz == -12.0));
     }
     for &(x, z, yaw, lit) in &lamp_spots {
-        if collision::blocked(x, z, 0.4, solid) {
+        if solid.blocked(x, z, 0.4) {
             continue;
         }
         let gy = ground(x, z);
@@ -533,7 +533,7 @@ pub fn spawn_props(
 
     // ================= More road signs =================
     let post_gray = mat(&mut materials, Color::srgb(0.4, 0.4, 0.4));
-    let road_sign = |commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, solid: &mut Vec<Shape>, image: &Handle<Image>, size: Vec2, x: f32, side: f32, yaw: f32| {
+    let road_sign = |commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, solid: &mut SpatialGrid, image: &Handle<Image>, size: Vec2, x: f32, side: f32, yaw: f32| {
         let z = road_n(x) + side * (ROAD_HALF_WIDTH + 1.8);
         let gy = ground(x, z);
         let h = 2.2 + size.y * 0.5;
