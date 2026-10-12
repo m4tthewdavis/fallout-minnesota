@@ -41,6 +41,7 @@ mod particles;
 mod perf;
 mod pipboy;
 mod player;
+mod pool;
 mod props;
 mod quest;
 mod raiders;
@@ -86,7 +87,9 @@ fn main() {
                 .set(AssetPlugin {
                     file_path: assets::asset_root(),
                     ..default()
-                }),
+                })
+                // Extra IO threads for loading, without shrinking the compute pool.
+                .set(bevy::app::TaskPoolPlugin { task_pool_options: pool::task_pool_options() }),
         )
         .add_plugins((
             assets::AssetsPlugin,
