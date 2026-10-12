@@ -343,7 +343,6 @@ fn audio_controls(
 /// sound gets through the trees and walls between it and you (and use the
 /// dull version of the clip if not much), give gunshots the echo of the place
 /// they were fired in, and hold back anything with a delay.
-#[allow(clippy::too_many_arguments)]
 fn play_queued(
     mut commands: Commands,
     real: Res<Time<Real>>,

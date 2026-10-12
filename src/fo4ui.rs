@@ -326,7 +326,6 @@ fn render_xp(
 // Drawing the loot list and the feed
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
 fn render_loot(
     menu: Res<LootMenu>,
     containers: Query<&Container>,

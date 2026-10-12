@@ -257,7 +257,6 @@ fn announce(o: Objective, flavour: &str, flags: &rules::Flags, msgs: &mut Messag
 }
 
 /// E at the convoy, the breaker panel, or any of the pump's parts.
-#[allow(clippy::too_many_arguments)]
 fn use_spots(
     mut events: EventReader<UseSpot>,
     mut flags: ResMut<StoryFlags>,
@@ -356,7 +355,6 @@ fn current_level(game: &Game, pip: &PipState, flags: &rules::Flags) -> u32 {
 }
 
 /// When a perk pick is waiting, and nothing dangerous is near, show the choice.
-#[allow(clippy::too_many_arguments)]
 fn offer_perks(
     time: Res<Time>,
     game: Res<Game>,
@@ -406,7 +404,6 @@ fn begin_talk(mut events: EventReader<StartTalk>, flags: Res<StoryFlags>, mut ta
 const NUMBER_KEYS: [KeyCode; ROWS] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4];
 
 /// Up/down and Enter drive the panel; Esc leaves.
-#[allow(clippy::too_many_arguments)]
 fn drive_talk(
     controls: crate::keybind::Controls,
     keys: Res<ButtonInput<KeyCode>>,
@@ -550,7 +547,6 @@ fn build_talk_ui(mut commands: Commands, assets: Res<GameAssets>) {
 }
 
 /// Draw whatever the panel should show; hidden when there's no conversation.
-#[allow(clippy::too_many_arguments)]
 fn render_talk(
     talk: Res<Talk>,
     flags: Res<StoryFlags>,

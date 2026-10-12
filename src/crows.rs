@@ -132,7 +132,6 @@ fn spawn_crow(commands: &mut Commands, a: &CrowAssets, pos: Vec3, home: [f32; 2]
 }
 
 /// Fly: hear gunshots, steer, peck.
-#[allow(clippy::too_many_arguments)]
 fn crow_ai(
     time: Res<Time>,
     mut shots: EventReader<Gunshot>,

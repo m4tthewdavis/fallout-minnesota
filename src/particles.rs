@@ -13,7 +13,7 @@ use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 
 use crate::assets::GameAssets;
-use crate::player::{Player, EYE_HEIGHT};
+use crate::player::Player;
 use crate::sim::synth::Sound;
 use crate::sim::terrain;
 use crate::sim::interiors::Interior;
@@ -149,7 +149,6 @@ pub fn spawn_indoor_fire(commands: &mut Commands, meshes: &mut Assets<Mesh>, mat
     spawn_fire_in(commands, meshes, materials, soft, at, scale, seed, false, Some(room));
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_fire_in(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, soft: &Handle<Image>, at: Vec3, scale: f32, seed: f32, shadows: bool, room: Option<Interior>) {
     let indoors = room.is_some();
     // A big central tongue and smaller ones round it.
@@ -755,22 +754,4 @@ fn update_casings(time: Res<Time>, mut sfx: ResMut<SfxQueue>, mut q: Query<(&mut
             }
         }
     }
-}
-
-/// Where a shot that missed every wolf hits the snow, if within `range`.
-pub fn ground_hit(origin: Vec3, dir: Vec3, range: f32) -> Option<Vec3> {
-    let mut t = 0.5;
-    while t < range {
-        let p = origin + dir * t;
-        if p.y <= terrain::walk_height(p.x, p.z) {
-            return Some(p);
-        }
-        t += 0.75;
-    }
-    None
-}
-
-/// Footstep position under the player's camera.
-pub fn feet(cam: Vec3) -> Vec3 {
-    cam - Vec3::Y * EYE_HEIGHT
 }

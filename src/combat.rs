@@ -13,9 +13,8 @@ use bevy::window::PrimaryWindow;
 
 use crate::enemy::{Body, Dying, Species};
 use crate::gun::{breech_local, muzzle_local, GunModel, VIEW_LAYER};
-use crate::particles::ground_hit;
 use crate::player::{cursor_locked, Player};
-use crate::sim::combat::{ray_sphere, FireResult, WeaponKind};
+use crate::sim::combat::{FireResult, WeaponKind};
 use crate::sim::rng::Rng;
 use crate::sim::sfx;
 use crate::sim::synth::Sound;
@@ -239,16 +238,9 @@ fn fire(
 
     // ---- Melee: hit the nearest creature in front of you ----
     if weapon.melee {
-        let mut best: Option<(Entity, f32, Vec3)> = None;
-        for (entity, tf, body) in &bodies {
-            let centre = body.center(tf);
-            let to = centre - origin;
-            let reach = to.length() - body.hit_radius(tf);
-            if reach <= weapon.range && to.normalize_or_zero().dot(dir) > 0.5 && best.is_none_or(|(_, d, _)| reach < d) {
-                best = Some((entity, reach, centre - dir * body.hit_radius(tf)));
-            }
-        }
-        if let Some((entity, reach, point)) = best {
+        let targets = bodies.iter().map(|(e, tf, b)| (e, b.center(tf).to_array(), b.hit_radius(tf)));
+        if let Some((entity, reach, point)) = crate::sim::combat::melee_pick(origin.to_array(), dir.to_array(), weapon.range, targets) {
+            let point = Vec3::from_array(point);
             let damage = weapon.damage_at(reach.max(0.0));
             sfx.play_at(Sound::MeleeHit, point);
             fxq.spawn(Fx::WolfHit(point, dir));
@@ -283,15 +275,7 @@ fn fire(
     let mut ricochets = 0;
     for _ in 0..weapon.pellets {
         let d = jitter_dir(dir, right, up, weapon.spread, &mut rng.0);
-        let mut best: Option<(Entity, f32)> = None;
-        for (entity, tf, body) in &bodies {
-            let c = body.center(tf);
-            if let Some(t) = ray_sphere(origin.to_array(), d.to_array(), c.to_array(), body.hit_radius(tf)) {
-                if t <= weapon.range && best.is_none_or(|(_, bt)| t < bt) {
-                    best = Some((entity, t));
-                }
-            }
-        }
+        let best = crate::sim::combat::ray_pick(origin.to_array(), d.to_array(), weapon.range, bodies.iter().map(|(e, tf, b)| (e, b.center(tf).to_array(), b.hit_radius(tf))));
         let t = best.map(|(_, t)| t).unwrap_or(weapon.range);
         let end = origin + d * t;
         match best {
@@ -315,7 +299,7 @@ fn fire(
                 }
             }
             None if ricochets < 3 => {
-                if let Some(p) = ground_hit(origin, d, weapon.range) {
+                if let Some(p) = crate::sim::terrain::ground_hit(origin.to_array(), d.to_array(), weapon.range).map(Vec3::from_array) {
                     fxq.spawn(Fx::Ricochet(p));
                     ricochets += 1;
                 }
@@ -406,5 +390,92 @@ fn strike(
             .entity(s.entity)
             .remove::<Hostile>()
             .insert(Dying::new(tf, &body, side));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The sim's picks against the glam code they replaced, bit for bit, on
+    //! random scenes (the game layer is the only place glam is at hand).
+    use super::*;
+    use crate::sim::combat::{melee_pick, ray_pick, ray_sphere};
+    use crate::sim::terrain;
+
+    fn old_melee(origin: Vec3, dir: Vec3, range: f32, targets: &[(u32, Vec3, f32)]) -> Option<(u32, f32, Vec3)> {
+        let mut best: Option<(u32, f32, Vec3)> = None;
+        for &(id, centre, radius) in targets {
+            let to = centre - origin;
+            let reach = to.length() - radius;
+            if reach <= range && to.normalize_or_zero().dot(dir) > 0.5 && best.is_none_or(|(_, d, _)| reach < d) {
+                best = Some((id, reach, centre - dir * radius));
+            }
+        }
+        best
+    }
+
+    fn old_ray(origin: Vec3, dir: Vec3, range: f32, targets: &[(u32, Vec3, f32)]) -> Option<(u32, f32)> {
+        let mut best: Option<(u32, f32)> = None;
+        for &(id, c, radius) in targets {
+            if let Some(t) = ray_sphere(origin.to_array(), dir.to_array(), c.to_array(), radius) {
+                if t <= range && best.is_none_or(|(_, bt)| t < bt) {
+                    best = Some((id, t));
+                }
+            }
+        }
+        best
+    }
+
+    fn old_ground_hit(origin: Vec3, dir: Vec3, range: f32) -> Option<Vec3> {
+        let mut t = 0.5;
+        while t < range {
+            let p = origin + dir * t;
+            if p.y <= terrain::walk_height(p.x, p.z) {
+                return Some(p);
+            }
+            t += 0.75;
+        }
+        None
+    }
+
+    fn bits3(v: Vec3) -> [u32; 3] {
+        v.to_array().map(f32::to_bits)
+    }
+
+    #[test]
+    fn the_sims_picks_match_the_old_vector_code_bit_for_bit() {
+        let mut rng = Rng::new(7);
+        let mut hits = (0, 0, 0);
+        for _ in 0..4000 {
+            let origin = Vec3::new(rng.range(-150.0, 150.0), rng.range(-2.0, 8.0), rng.range(-150.0, 150.0));
+            let dir = Vec3::new(rng.range(-1.0, 1.0), rng.range(-0.6, 0.3), rng.range(-1.0, 1.0)).normalize_or_zero();
+            let range = rng.range(1.5, 120.0);
+            let n = (rng.f32() * 6.0) as u32;
+            let targets: Vec<(u32, Vec3, f32)> = (0..n)
+                .map(|i| {
+                    // Mostly near the line of fire, sometimes on top of the shooter.
+                    let along = rng.range(-2.0, range * 1.2);
+                    let off = Vec3::new(rng.range(-2.5, 2.5), rng.range(-1.5, 1.5), rng.range(-2.5, 2.5));
+                    let c = if rng.chance(0.05) { origin } else { origin + dir * along + off };
+                    (i, c, rng.range(0.2, 1.4))
+                })
+                .collect();
+            let list = || targets.iter().map(|&(i, c, r)| (i, c.to_array(), r));
+            let old = old_melee(origin, dir, range, &targets);
+            let new = melee_pick(origin.to_array(), dir.to_array(), range, list());
+            assert_eq!(old.map(|(i, d, p)| (i, d.to_bits(), bits3(p))), new.map(|(i, d, p)| (i, d.to_bits(), bits3(Vec3::from_array(p)))));
+            hits.0 += old.is_some() as u32;
+            let old = old_ray(origin, dir, range, &targets);
+            let new = ray_pick(origin.to_array(), dir.to_array(), range, list());
+            assert_eq!(old.map(|(i, t)| (i, t.to_bits())), new.map(|(i, t)| (i, t.to_bits())));
+            hits.1 += old.is_some() as u32;
+            let old = old_ground_hit(origin, dir, range);
+            let new = terrain::ground_hit(origin.to_array(), dir.to_array(), range).map(Vec3::from_array);
+            assert_eq!(old.map(bits3), new.map(bits3));
+            hits.2 += old.is_some() as u32;
+            let cam = origin;
+            assert_eq!(bits3(cam - Vec3::Y * terrain::EYE_HEIGHT), bits3(Vec3::from_array(terrain::feet(cam.to_array()))));
+        }
+        // The scenes exercise both outcomes of every pick.
+        assert!(hits.0 > 300 && hits.1 > 300 && hits.2 > 300 && hits.0 < 3700, "{hits:?}");
     }
 }

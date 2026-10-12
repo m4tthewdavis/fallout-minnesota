@@ -53,7 +53,6 @@ fn load_maps(mut commands: Commands, server: Res<AssetServer>) {
 
 /// After `apply_atmosphere` has set the flat ambient light for the frame:
 /// swap most of it for the sky map.
-#[allow(clippy::type_complexity)]
 fn apply_env_light(
     mut commands: Commands,
     time: Res<Time<Real>>,

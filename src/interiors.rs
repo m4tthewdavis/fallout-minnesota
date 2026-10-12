@@ -236,7 +236,6 @@ fn wainscot(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, room: Inter
 
 /// The four walls, floor and ceiling of a room, with colliders. `door_wall`
 /// is the south wall. Returns nothing: the rest is furniture.
-#[allow(clippy::too_many_arguments)]
 fn shell(
     r: &mut ChildSpawnerCommands,
     meshes: &mut Assets<Mesh>,
@@ -263,7 +262,6 @@ fn shell(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_interiors(
     mut commands: Commands,
     assets: Res<GameAssets>,
@@ -400,7 +398,6 @@ fn survivor(r: &mut ChildSpawnerCommands, kit: &PersonKit, house: u8, at: [f32; 
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 fn fish_house_extras(
     commands: &mut Commands,
     assets: &GameAssets,
@@ -848,7 +845,6 @@ fn reactor_extras(commands: &mut Commands, assets: &GameAssets, containers: &Con
 // ---------------------------------------------------------------------------
 
 /// Show what the nearest bunk, stove, terminal or door offers, and use it on E.
-#[allow(clippy::too_many_arguments)]
 fn use_fixtures(
     controls: crate::keybind::Controls,
     current: Res<CurrentInterior>,
@@ -941,7 +937,6 @@ fn start(moving: &mut Moving, transition: &mut Transition, sfx: &mut SfxQueue, t
 }
 
 /// Run the fade and, when the screen is black, make the move.
-#[allow(clippy::too_many_arguments)]
 fn run_trips(
     time: Res<Time<Real>>,
     mut moving: ResMut<Moving>,

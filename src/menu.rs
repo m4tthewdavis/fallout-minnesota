@@ -244,7 +244,6 @@ fn auto_open(real: Res<Time<Real>>, mut stage: Local<u8>, mut keys: ResMut<Butto
 
 /// Esc opens and closes the menu; while it's open, the keyboard and mouse
 /// drive it.
-#[allow(clippy::too_many_arguments)]
 fn menu_system(
     time: Res<Time<Real>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -404,7 +403,6 @@ fn menu_system(
 }
 
 /// Draw the current screen into the pooled rows.
-#[allow(clippy::type_complexity)]
 fn render_menu(
     paused: Res<Paused>,
     state: Res<MenuState>,
@@ -513,7 +511,6 @@ fn title_camera(real: Res<Time<Real>>, title: Res<TitleScreen>, mut cam: Query<(
 }
 
 /// Make the running game match the settings.
-#[allow(clippy::too_many_arguments)]
 fn apply_settings(
     mut commands: Commands,
     settings: Res<GameSettings>,

@@ -47,7 +47,6 @@ fn to_bevy(g: &Grade) -> ColorGrading {
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn apply_grade(
     mut commands: Commands,
     real: Res<Time<Real>>,

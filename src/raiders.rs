@@ -191,7 +191,6 @@ pub fn spawn_lineup(mut commands: Commands, assets: Res<RaiderAssets>, kit: Res<
 }
 
 /// Think, move, shoot.
-#[allow(clippy::too_many_arguments)]
 fn raider_ai(
     mut commands: Commands,
     time: Res<Time>,

@@ -3,7 +3,9 @@
 
 use super::quest::{self, Flags};
 
-/// Total XP for what you've done so far; `quest` is what the quest line has paid out.
+/// Total XP for what you've done so far; `quest` is what the quest line has
+/// paid out. The game uses [`breakdown`]; the tests check it against this.
+#[cfg(test)]
 pub fn experience(kills: u32, places: usize, upgrades: usize, coat: bool, quest: u32) -> u32 {
     kills * 25 + places as u32 * 20 + upgrades as u32 * 15 + if coat { 40 } else { 0 } + quest
 }

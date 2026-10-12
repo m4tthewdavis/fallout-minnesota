@@ -170,7 +170,6 @@ impl WorldView<'_, '_> {
 
 /// Carry out save and load requests from the menus, the Pip-Boy and the
 /// quicksave key.
-#[allow(clippy::too_many_arguments)]
 fn handle_requests(
     mut commands: Commands,
     mut requests: EventReader<SaveRequest>,
@@ -230,7 +229,6 @@ fn handle_requests(
 
 /// Step one of a load: the numbers (vitals, inventory, weapons, clock, weather,
 /// fog, story flags).
-#[allow(clippy::too_many_arguments)]
 fn apply_game_state(
     pending: Res<PendingLoad>,
     mut game: ResMut<Game>,
@@ -257,7 +255,6 @@ fn apply_game_state(
 
 /// Step two: the world itself (where you stand, which crates are open, which
 /// items are gone, and the enemies), then back into the game.
-#[allow(clippy::too_many_arguments)]
 fn apply_world_state(
     mut commands: Commands,
     pending: Res<PendingLoad>,

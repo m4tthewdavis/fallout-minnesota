@@ -18,7 +18,7 @@ use crate::assets::GameAssets;
 use crate::state::{alive, ClockRes, Colliders, Fx, FxQueue, Game, Messages, RngRes, SfxQueue, WeatherRes};
 use crate::wolves::Wolf;
 
-pub const EYE_HEIGHT: f32 = 1.7;
+pub use crate::sim::terrain::EYE_HEIGHT;
 const WALK_SPEED: f32 = 5.0;
 const SPRINT_SPEED: f32 = 8.5;
 const JUMP_SPEED: f32 = 5.5;
@@ -249,7 +249,7 @@ fn move_player(
             let temp = weather.weather.conditions().air_temp_f + clock.0.temp_offset_f();
             let (sound, gain) = crate::sim::soundscape::footstep(surface, p.sprinting, temp, rng.0.f32());
             sfx.play_gain(sound, gain);
-            fx.spawn(Fx::Footstep(crate::particles::feet(tf.translation) + wish.normalize() * 0.3));
+            fx.spawn(Fx::Footstep(Vec3::from_array(terrain::feet(tf.translation.to_array())) + wish.normalize() * 0.3));
         }
     } else {
         p.step_timer = 0.0;

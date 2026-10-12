@@ -196,7 +196,6 @@ fn show_overlay(
 
 /// The benchmark's flight: a slow loop over the woods, lakes and landmarks
 /// at head height, the same every run. Writes the result and quits at the end.
-#[allow(clippy::too_many_arguments)]
 fn bench_camera(
     real: Res<Time<Real>>,
     mut bench: ResMut<Benchmark>,

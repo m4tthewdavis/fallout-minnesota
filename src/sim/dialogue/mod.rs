@@ -11,7 +11,7 @@ use super::quest::{self, Flags, Objective, PumpStage, ENDING_COVER, ENDING_TRUTH
 
 mod script;
 
-pub use self::script::*;
+use self::script::NODES;
 
 #[cfg(test)]
 mod tests;

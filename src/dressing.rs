@@ -56,7 +56,6 @@ fn place(commands: &mut Commands, lib: &Library, id: &str, pos: Vec3, rot: Quat,
 
 /// A random spot within `r0..r1` of (x, z) where `ok` allows it and clear of
 /// everything solid and of `keep_clear` (pickups and quest fixtures).
-#[allow(clippy::too_many_arguments)]
 fn near(rng: &mut RngRes, solid: &SpatialGrid, keep_clear: &[Vec2], x: f32, z: f32, r0: f32, r1: f32, clearance: f32, ok: impl Fn(f32, f32) -> bool) -> Option<(f32, f32)> {
     for _ in 0..20 {
         let a = rng.0.range(0.0, TAU);
@@ -81,7 +80,6 @@ fn yard(x: f32, z: f32) -> bool {
     terrain::lake_at(x, z).is_none() && terrain::road_distance(x, z) > terrain::ROAD_HALF_WIDTH + 1.0
 }
 
-#[allow(clippy::too_many_arguments)]
 fn dress_world(
     mut commands: Commands,
     lib: Res<Library>,
