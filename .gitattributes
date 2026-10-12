@@ -1,0 +1,2 @@
+# Golden save files must keep LF line ends on every platform.
+src/sim/save/fixtures/* text eol=lf

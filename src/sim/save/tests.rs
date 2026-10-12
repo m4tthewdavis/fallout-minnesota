@@ -346,6 +346,8 @@ mod golden {
     /// Fail with the lines (and so the fields) that differ, and say whether
     /// only the order of keys moved.
     fn assert_same_json(got: &str, want: &str, what: &str) {
+        // A checkout on Windows may turn the fixture's line ends into CRLF.
+        let (got, want) = (got.replace("\r\n", "\n"), want.replace("\r\n", "\n"));
         let (got, want) = (got.trim_end(), want.trim_end());
         if got == want {
             return;

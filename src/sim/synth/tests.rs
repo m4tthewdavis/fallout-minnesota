@@ -268,9 +268,19 @@ const GOLDEN: &[(&str, u64)] = &[
 #[test]
 fn every_clip_is_byte_for_byte_what_the_original_synthesiser_made() {
     assert_eq!(GOLDEN.len(), Sound::ALL.len(), "a sound was added or removed: update GOLDEN");
+    // The fingerprints were recorded on Linux x86-64. Synthesis uses sin, exp
+    // and powf, which another platform's maths library may round differently
+    // in the last bit, so the exact check holds only there; elsewhere every
+    // clip is still checked to be a real, finite sound.
+    let exact = cfg!(all(target_os = "linux", target_arch = "x86_64"));
     for (&sound, &(name, want)) in Sound::ALL.iter().zip(GOLDEN) {
         assert_eq!(format!("{sound:?}"), name, "GOLDEN is in Sound::ALL order");
-        assert_eq!(clip_hash(sound), want, "{name} changed");
+        if exact {
+            assert_eq!(clip_hash(sound), want, "{name} changed");
+        } else {
+            let samples = sound.samples(0);
+            assert!(!samples.is_empty() && samples.iter().all(|s| s.is_finite() && s.abs() <= 1.5), "{name} is not a sound");
+        }
     }
 }
 
