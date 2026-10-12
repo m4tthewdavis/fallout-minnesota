@@ -82,6 +82,9 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
+        // The terrain mesh needs nothing from the app: build it while the rest
+        // of the game starts up, and pick it up in `build_world`.
+        start_terrain_mesh();
         app.add_systems(
             Startup,
             (
@@ -120,7 +123,12 @@ impl Plugin for WorldPlugin {
                 blink,
                 pulse_ice.run_if(crate::state::outdoors),
             ),
-        );
+        )
+        // Drift tangents, built in parallel once start-up has spawned them all
+        // (and, should a drift ever be spawned later, the frame after).
+        .init_resource::<PendingTangents>()
+        .add_systems(PostStartup, add_drift_tangents)
+        .add_systems(Update, add_drift_tangents.run_if(|p: Res<PendingTangents>| !p.0.is_empty()));
     }
 }
 
@@ -173,7 +181,47 @@ pub fn spawn_drift(
         let p = m.positions[i];
         m.colors[i] = terrain::terrain_tint(p[0], p[2], p[1]);
     }
-    commands.spawn((Mesh3d(meshes.add(to_mesh_tangents(&m))), MeshMaterial3d(assets.snow_ground.clone())));
+    // The mesh gets its tangents (mikktspace, the slow part) later, in
+    // parallel with the other drifts: see [`add_drift_tangents`]. The handle is
+    // reserved now, so the asset ids are the ones `meshes.add` would give.
+    let handle = meshes.reserve_handle();
+    let mesh = to_mesh(&m);
+    commands.spawn((Mesh3d(handle.clone()), MeshMaterial3d(assets.snow_ground.clone())));
+    commands.queue(move |world: &mut World| {
+        world.get_resource_or_insert_with(PendingTangents::default).0.push((handle, mesh));
+    });
+}
+
+/// Drift meshes spawned without their tangents yet (see [`spawn_drift`]).
+#[derive(Resource, Default)]
+pub struct PendingTangents(Vec<(Handle<Mesh>, Mesh)>);
+
+/// Gives every pending drift mesh its tangents, spread over the compute
+/// threads, and stores it under its reserved handle. Each mesh gets exactly
+/// the `generate_tangents` call `to_mesh_tangents` makes, so the meshes are
+/// bit-identical to building them one by one; it runs before anything is
+/// drawn, and draws nothing from the world's random numbers.
+fn add_drift_tangents(mut pending: ResMut<PendingTangents>, mut meshes: ResMut<Assets<Mesh>>) {
+    let mut jobs = std::mem::take(&mut pending.0);
+    if jobs.is_empty() {
+        return;
+    }
+    let pool = bevy::tasks::ComputeTaskPool::get();
+    // A few chunks per thread (the calling thread helps too), so uneven
+    // drift sizes still share out evenly.
+    let chunk = jobs.len().div_ceil((pool.thread_num() + 1) * 4).max(1);
+    pool.scope(|s| {
+        for part in jobs.chunks_mut(chunk) {
+            s.spawn(async move {
+                for (_, mesh) in part {
+                    crate::meshes::add_tangents(mesh);
+                }
+            });
+        }
+    });
+    for (handle, mesh) in jobs {
+        meshes.insert(handle.id(), mesh);
+    }
 }
 
 /// A soft shadow pooled on the snow under an object (`rx` by `rz` metres,
@@ -220,16 +268,23 @@ pub fn prop(commands: &mut Commands, scene: &Handle<Scene>, pos: Vec3, yaw: f32,
         .id()
 }
 
-fn build_world(
-    mut commands: Commands,
-    assets: Res<GameAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut colliders: ResMut<Colliders>,
-) {
-    let solid = &mut colliders.0;
+/// The terrain mesh being built on its own thread (see [`start_terrain_mesh`]).
+static TERRAIN_MESH: std::sync::Mutex<Option<std::thread::JoinHandle<Mesh>>> = std::sync::Mutex::new(None);
 
-    // ---------- Terrain ----------
+/// Starts building the terrain mesh on a thread, unless it is already being
+/// built. It is pure maths on the fixed height field (no random numbers, no
+/// app state), so it comes out bit for bit the same as building it in place.
+fn start_terrain_mesh() {
+    let mut job = TERRAIN_MESH.lock().unwrap_or_else(|e| e.into_inner());
+    if job.is_none() {
+        // If no thread can be started, `build_world` builds it itself.
+        *job = std::thread::Builder::new().name("terrain mesh".into()).spawn(terrain_mesh).ok();
+    }
+}
+
+/// The 201x201 terrain: the height field's own normals, the snow tint in the
+/// vertex colours, and tangents for the snow's normal map.
+fn terrain_mesh() -> Mesh {
     let terrain_data = meshgen::ground_patch(0.0, 0.0, HALF_SIZE, terrain::MESH_RES, 0.0, Some(4.0), &terrain::height);
     let mut terrain_data = MeshData {
         normals: terrain_data
@@ -242,8 +297,27 @@ fn build_world(
     for (i, p) in terrain_data.positions.iter().enumerate() {
         terrain_data.colors[i] = terrain::terrain_tint(p[0], p[2], p[1]);
     }
+    to_mesh_tangents(&terrain_data)
+}
+
+fn build_world(
+    mut commands: Commands,
+    assets: Res<GameAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut colliders: ResMut<Colliders>,
+) {
+    let solid = &mut colliders.0;
+
+    // ---------- Terrain ----------
+    // Started on its own thread by `WorldPlugin::build` (built here if not).
+    let job = TERRAIN_MESH.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let terrain = match job {
+        Some(job) => job.join().unwrap_or_else(|e| std::panic::resume_unwind(e)),
+        None => terrain_mesh(),
+    };
     commands.spawn((
-        Mesh3d(meshes.add(to_mesh_tangents(&terrain_data))),
+        Mesh3d(meshes.add(terrain)),
         MeshMaterial3d(assets.snow_ground.clone()),
         Transform::default(),
     ));

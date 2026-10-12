@@ -23,8 +23,14 @@ pub fn to_mesh(d: &MeshData) -> Mesh {
 /// Like [`to_mesh`], plus tangents so normal-mapped materials light correctly.
 pub fn to_mesh_tangents(d: &MeshData) -> Mesh {
     let mut mesh = to_mesh(d);
+    add_tangents(&mut mesh);
+    mesh
+}
+
+/// Adds mikktspace tangents to a mesh from [`to_mesh`] (what
+/// [`to_mesh_tangents`] does), for meshes whose tangents are built later.
+pub fn add_tangents(mesh: &mut Mesh) {
     if let Err(e) = mesh.generate_tangents() {
         warn!("could not generate tangents: {e}");
     }
-    mesh
 }
