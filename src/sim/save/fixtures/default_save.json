@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "saved_at": 0,
+  "place": "",
+  "play_secs": 0.0,
+  "kills": 0,
+  "player": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 152.0,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "survival": {
+    "health": 100.0,
+    "body_heat": 100.0,
+    "rads": 0.0,
+    "frostbite": false
+  },
+  "inventory": {
+    "stimpaks": 2,
+    "radaway": 1,
+    "hotdish": 2,
+    "ammo_reserve": 24,
+    "shells": 0,
+    "revolver_rounds": 0,
+    "scrap": 0,
+    "pelts": 0,
+    "has_frostfang_coat": false
+  },
+  "arsenal": {
+    "owned": [
+      true,
+      false,
+      false,
+      false
+    ],
+    "current": 0,
+    "weapons": [
+      {
+        "mag": 4294967295,
+        "jammed": false,
+        "upgrades": [
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "mag": 4294967295,
+        "jammed": false,
+        "upgrades": [
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "mag": 4294967295,
+        "jammed": false,
+        "upgrades": [
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "mag": 4294967295,
+        "jammed": false,
+        "upgrades": [
+          false,
+          false,
+          false,
+          false
+        ]
+      }
+    ]
+  },
+  "clock": {
+    "hours": 7.5,
+    "day": 1
+  },
+  "weather": {
+    "phase": "Calm",
+    "timer": 75.0,
+    "blizzards": 0
+  },
+  "fog": {
+    "runs": [],
+    "found": []
+  },
+  "opened": [],
+  "looted": [],
+  "collected": [],
+  "interior": null,
+  "flags": []
+}

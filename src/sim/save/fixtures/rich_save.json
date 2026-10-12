@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "saved_at": 1760000000,
+  "place": "near Sven's Shanty",
+  "play_secs": 5025.5,
+  "kills": 23,
+  "player": {
+    "x": -78.5,
+    "y": 1.25,
+    "z": -41.0,
+    "yaw": 2.0,
+    "pitch": -0.25
+  },
+  "survival": {
+    "health": 63.0,
+    "body_heat": 41.5,
+    "rads": 230.0,
+    "frostbite": true
+  },
+  "inventory": {
+    "stimpaks": 5,
+    "radaway": 3,
+    "hotdish": 4,
+    "ammo_reserve": 37,
+    "shells": 12,
+    "revolver_rounds": 18,
+    "scrap": 21,
+    "pelts": 2,
+    "has_frostfang_coat": true
+  },
+  "arsenal": {
+    "owned": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "current": 2,
+    "weapons": [
+      {
+        "mag": 7,
+        "jammed": false,
+        "upgrades": [
+          true,
+          true,
+          false,
+          true
+        ]
+      },
+      {
+        "mag": 1,
+        "jammed": true,
+        "upgrades": [
+          true,
+          false,
+          true,
+          true
+        ]
+      },
+      {
+        "mag": 6,
+        "jammed": false,
+        "upgrades": [
+          true,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "mag": 4294967295,
+        "jammed": false,
+        "upgrades": [
+          false,
+          false,
+          false,
+          false
+        ]
+      }
+    ]
+  },
+  "clock": {
+    "hours": 21.25,
+    "day": 4
+  },
+  "weather": {
+    "phase": "Blizzard",
+    "timer": 33.5,
+    "blizzards": 3
+  },
+  "fog": {
+    "runs": [
+      3525,
+      5,
+      93,
+      9,
+      90,
+      11,
+      88,
+      13,
+      87,
+      13,
+      86,
+      15,
+      85,
+      15,
+      85,
+      15,
+      85,
+      15,
+      85,
+      15,
+      86,
+      13,
+      87,
+      13,
+      88,
+      11,
+      90,
+      9,
+      93,
+      5,
+      2916,
+      8,
+      90,
+      12,
+      87,
+      14,
+      85,
+      16,
+      83,
+      18,
+      82,
+      18,
+      81,
+      20,
+      80,
+      20,
+      80,
+      20,
+      80,
+      20,
+      80,
+      20,
+      80,
+      20,
+      80,
+      20,
+      81,
+      18,
+      82,
+      18,
+      83,
+      16,
+      85,
+      14,
+      87,
+      12,
+      90,
+      8,
+      346
+    ],
+    "found": [
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "opened": [
+    [
+      -4,
+      7
+    ],
+    [
+      10,
+      20
+    ]
+  ],
+  "looted": [
+    {
+      "key": [
+        3,
+        4
+      ],
+      "items": [
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "key": [
+        100,
+        -100
+      ],
+      "items": [
+        1
+      ]
+    }
+  ],
+  "collected": [
+    [
+      -400,
+      12
+    ],
+    [
+      100,
+      -100
+    ]
+  ],
+  "interior": null,
+  "flags": [
+    "ending.cover",
+    "ending.truth",
+    "fixed.power",
+    "fixed.pump",
+    "found.convoy",
+    "found.coupling",
+    "found.impeller",
+    "killed.glowmoose",
+    "made.seals",
+    "met_olson",
+    "perk.field_medic",
+    "perk.frost_hardy",
+    "perk.quick_hands",
+    "perk.rad_resistant",
+    "perk.scrounger",
+    "pump.reported",
+    "pump.started",
+    "quest.reported",
+    "quest.started"
+  ]
+}
