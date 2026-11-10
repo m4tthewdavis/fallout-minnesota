@@ -1,5 +1,5 @@
 // The sky dome for Fallout: Minnesota. The dome's vertex colours carry the
-// scattering model's gradient (painted in sky.rs); this shader lays over it,
+// sky palette's gradient (painted in sky.rs); this shader lays over it,
 // back to front:
 //  - the stars (hidden by cloud),
 //  - the sun's disc and glare, and the moon,
@@ -221,6 +221,8 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     let sunward = 0.5 + 0.5 * dot(around, normalize(light_dir.xz + vec2<f32>(1e-4, 0.0)));
     // Dark spruce with snow in it, lit by the sky and a little by the sun.
     let wood = vec3<f32>(0.17, 0.21, 0.24) * (ambient * 1.5 + light * (0.25 + 0.35 * (1.0 - sunward)));
+    // How much the ridge line's height changes across a pixel (to soften its edge).
+    let edge = fwidth(rise) * 1.2 + 1e-5;
     for (var i = 0; i < 3; i = i + 1) {
         let fi = f32(i);
         // Far to near: taller and hazier at the back.
@@ -234,7 +236,6 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
         // Mist pools at the foot of each range.
         let foot = smoothstep(top, top - 0.05, rise) * 0.35;
         let ridge_col = mix(wood, haze_col, clamp(fog + foot * (1.0 - fog), 0.0, 1.0));
-        let edge = fwidth(rise) * 1.2 + 1e-5;
         col = mix(col, ridge_col, smoothstep(top + edge, top - edge, rise));
     }
     // Below the horizon: haze over far snow.

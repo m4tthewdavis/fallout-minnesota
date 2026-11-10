@@ -1,6 +1,6 @@
 # Asset credits
 
-Every asset in this folder is either made for this project or released under
+Every asset in this folder is either made for this project (some of it generated: see "Generated pictures") or released under
 **CC0 1.0** (public domain), except some recorded sound effects that are **CC BY 3.0/4.0**
 (attribution under "Recorded sounds" below). No Fallout/Bethesda assets are used.
 
@@ -113,6 +113,15 @@ Baked by `tools/bake_ibl.py` into the cubemaps in `environment/`. The sun is rem
 | Path | Font | Source | Author | License |
 | --- | --- | --- | --- | --- |
 | `fonts/ShareTechMono-Regular.ttf` | Share Tech Mono | <https://fonts.google.com/specimen/Share+Tech+Mono> | Carrois Apostrophe (Ralph du Carrois) | SIL Open Font License 1.1 (`fonts/OFL.txt`) |
+
+## Generated pictures
+
+Made for this project with [Higgsfield](https://higgsfield.ai) (the GPT Image 2 model) from written prompts, on the project owner's account; not taken from any asset library. The originals are in `tools/source_art/` and are cut out and repacked by `tools/gen_textures.py`.
+
+| Path | Made from | Used for |
+| --- | --- | --- |
+| `textures/generated/tree_cards.png` | `tools/source_art/winter_trees.png`: a snow-laden spruce, fir, white pine and birch clump in a row on flat magenta | the woods beyond the map's edge |
+| `textures/generated/spray_pine_photo.png` | `tools/source_art/pine_bough.png`: a white pine bough on flat magenta | the needle cards of the white and red pines |
 
 ## Made for this project
 

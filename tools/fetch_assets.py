@@ -212,7 +212,7 @@ def write_credits(credits):
     lines = [
         "# Asset credits",
         "",
-        "Every asset in this folder is either made for this project or released under",
+        "Every asset in this folder is either made for this project (some of it generated: see \"Generated pictures\") or released under",
         "**CC0 1.0** (public domain), except some recorded sound effects that are **CC BY 3.0/4.0**",
         "(attribution under \"Recorded sounds\" below). No Fallout/Bethesda assets are used.",
         "",

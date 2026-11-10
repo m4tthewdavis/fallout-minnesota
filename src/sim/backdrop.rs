@@ -247,7 +247,7 @@ pub const FRINGE: f32 = 26.0;
 pub fn fringe(seed: u64) -> Vec<(f32, f32, u8, f32)> {
     let mut rng = Rng::new(seed);
     let mut out = Vec::new();
-    let spacing = 8.5;
+    let spacing = 11.5;
     let outer = HALF_SIZE + FRINGE + 4.0;
     let n = (2.0 * outer / spacing).ceil() as i32;
     for gz in 0..n {
@@ -296,7 +296,7 @@ pub fn tree_cards(seed: u64) -> Vec<Card> {
         for gz in 0..n {
             for gx in 0..n {
                 // One try per cell of a jittered grid: even cover, no rows.
-                let (jx, jz, roll, pick, size, flip, shade) = (rng.f32(), rng.f32(), rng.f32(), rng.f32(), rng.f32(), rng.chance(0.5), rng.range(0.82, 1.08));
+                let (jx, jz, roll, pick, size, flip, shade) = (rng.f32(), rng.f32(), rng.f32(), rng.f32(), rng.f32(), rng.chance(0.5), rng.range(0.70, 0.92));
                 let x = -outer + (gx as f32 + jx) * spacing;
                 let z = -outer + (gz as f32 + jz) * spacing;
                 let d = beyond(x, z);

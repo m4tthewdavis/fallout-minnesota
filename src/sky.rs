@@ -1,5 +1,5 @@
 //! The sky: a dome that follows the day/night cycle and the weather. Its
-//! vertex colours are the scattering model's gradient; its shader
+//! vertex colours are the sky palette's gradient; its shader
 //! (`shaders/sky.wgsl`) adds drifting sunlit clouds, the sun's disc and
 //! glare, the moon, a slowly wheeling starfield and ranges of far wooded
 //! hills. The northern lights hang in front on clear nights. Everything here

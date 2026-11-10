@@ -218,7 +218,7 @@ fn update_fog_volume(
 pub struct AtmosphereSet;
 
 /// What the sky looks like this frame: worked out once here from the
-/// scattering model and the weather, then used by the sky dome, fog, sun and
+/// sky's palette and the weather, then used by the sky dome, fog, sun and
 /// ambient light so they all agree.
 #[derive(Resource, Clone)]
 pub struct SkyLook {
@@ -273,9 +273,9 @@ fn apply_atmosphere(
     let day = ((sky.daylight - 0.12) / 0.88).clamp(0.0, 1.0);
     let overcast = ((vis.fog - 0.01) / 0.03).clamp(0.0, 1.0);
 
-    // The sky itself: scattering through winter air, hazier in a storm.
+    // The sky itself: clear winter air, hazier in a storm.
     let conditions = Conditions { sun: sky.sun_pos, haze: 1.0 + 2.5 * overcast + 0.6 * vis.snow, moon: sky.moon * (1.0 - sky.sun) };
-    // The scattering model is costly and depends on nothing else: reuse the
+    // The palette's sums depend on nothing else: reuse the
     // last answer while the conditions are bit for bit the same (paused, the title screen).
     let key = conditions_key(&conditions);
     let [clear_horizon, clear_zenith, sun_light] = match *clear_sky {

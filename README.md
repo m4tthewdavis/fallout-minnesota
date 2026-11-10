@@ -1,4 +1,4 @@
-# Fallout: Minnesota — Prototype (Milestone 10)
+# Fallout: Minnesota — Prototype (Milestone 12)
 
 A first-person cold-survival prototype made with **Rust + Bevy 0.16**. It is based on the *Fallout: Minnesota* design doc.
 
@@ -68,7 +68,7 @@ The game opens on a title screen (Continue picks up your most recent save; New G
 ## Look and sound (Milestone 7)
 
 - **One winter palette** (`src/theme.rs`): ice blue ink, cyan for what's selected, frost white for emphasis, deep navy panels, used by the HUD, Pip-Boy, pause menu, dialogue, loot list and XP bar. The Pip-Boy keeps its scanlines, static and flicker, now in frosty cyan, and its map is recoloured through an ice ramp.
-- **The sky** is painted from a single-scattering atmosphere model: deep blue overhead, pale at the horizon, a haze that glows round the sun, orange then red as it sinks, a violet dusk and a moonlit night. It also sets the fog colour, the sunlight's colour and the ambient light, so they always agree. It's midwinter at 46 degrees north, so the noon sun only reaches 24 degrees and shadows are long all day.
+- **The sky** is painted from one palette keyed on the sun's height: deep clean blue overhead, pale at the horizon, a glare round the sun, gold then orange as it sinks, a rose belt opposite the sunset, a violet dusk and a moonlit night. Cumulus and high cirrus drift across it on the wind, lit by the sun (see Milestone 12). It also sets the fog colour and the ambient light, so they always agree. It's midwinter at 46 degrees north, so the noon sun only reaches 24 degrees and shadows are long all day.
 - **Atmosphere effects** (both toggles in the pause menu's settings): volumetric fog and light shafts (ground-hugging banks that thicken and drift in blizzards, a faint haze at other times) and ambient occlusion (darkens creases, drifts and tree bases; SMAA replaces MSAA while it's on). Fog toward the sun glows with its light.
 - **Weapons** get a normal-mapped steel texture, scanned painted-steel pipes, and hoar frost that builds on barrels, receivers and stocks in the cold (and melts indoors). Every shot throws a tongue of flame, sparks, powder smoke and condensing vapour.
 - **People** (survivors and raiders) wear a shared winter kit: quilted fleece parka, belt, fur-trimmed hood, cuffs and hem, beanies, trapper hats, balaclavas and goggles, mittens, boots, packs, bandoliers, scarves and frost, in scanned CC0 cloth, fur, wool and leather.
@@ -121,6 +121,18 @@ Then install the pump at the reactor housing (200 XP) and tell the Overseer (300
 ## Saving
 
 Five slots: Autosave, Quicksave (F4) and three manual slots, kept as `save_<n>.json` in `%APPDATA%\FalloutMinnesota` on Windows (`~/.local/share/fallout-minnesota` elsewhere; set `FMN_DATA_DIR` to change it). A save remembers where you are, your health, heat, rads, inventory, weapons and upgrades, the map you've seen, the crates you've opened and items you've taken, the time and weather, and your quest progress. Wolves and moose aren't saved: they repopulate when you load. The world itself is the same every game. Saves carry a format version; a file from a newer version of the game is refused with a message instead of being misread.
+
+## What's new in Milestone 12
+
+A pass on how the world looks from a distance: the sky, the air, and everything past the edge of the map.
+
+- **Clouds.** The sky dome has its own shader (`src/shaders/sky.wgsl`): drifting cumulus with bright sunlit sides, grey bases and a silver lining when the sun is behind them, streaks of high cirrus, the sun's disc and glare, the moon, and the stars (which the clouds hide). The deck builds and thins through the days, closes right over ahead of a storm, turns orange and rose at sunset and goes dark against the stars at night.
+- **A new palette for the sky.** The old scattering maths gave an olive horizon under a dull teal sky. The colours now come from a table of looks by the sun's height (`src/sim/atmosphere.rs`, unit-tested): clean blue days, gold round a low sun, orange sunsets with a rose belt opposite, an ember dusk. The aurora and the stars wait for real dark.
+- **Clear air.** On a calm day you can see for a kilometre, and far woods and hills stand in layers, each paler than the last. A storm still closes in to a whiteout.
+- **The land beyond the map.** Past the map's edge the snowfield now rolls on into wooded hills to the west, south and east, and to the north the shore of Lake Mille Lacs: wind-scoured ice with two wooded islands, out to the horizon. Beyond that, three ranges of far hills are painted into the sky. The highway runs on through a cut in the trees. The woods out there are flat pictures of whole trees (some 7,400 of them, two or four triangles each), with real trees in the first metres past the edge where a picture would show. View Distance thins the far belts. You still can't walk there.
+- **Thicker woods.** About 400 more trees on the map, in close-grown groves of fir and spruce with saplings round their edges, thickest toward the rim where they run into the woods beyond. They are planted from their own seed after everything else, so nothing that was already on the map moved (the world fingerprint's other parts are unchanged). White and red pines carry fuller crowns with real needle boughs.
+- **Light on snow.** The camera stops down for sunlit snow, so it keeps its warm light and blue shadows instead of burning out to white, and the sky stands bright over it. Snow in shade shows its ripples and pits (it was one flat sheet), and ripples too fine to draw fade out instead of shimmering. Falling snow takes the light of the sky it falls through: it no longer glows at dusk and at night.
+- **Pictures made for the game.** The tree pictures and the pine bough were generated with Higgsfield for this project and cut out by `tools/gen_textures.py`; the originals are in `tools/source_art/` (see `assets/CREDITS.md`).
 
 ## What's new in Milestone 10
 
@@ -189,7 +201,7 @@ python3 tools/decimate_models.py  # cuts the heavy scanned models to game budget
 python3 tools/bake_ibl.py         # bakes the winter sky lighting maps into assets/environment/
 python3 tools/compress_textures.py --out DIR --all  # optional, not used by the release yet: GPU-compressed .ktx2 copies of the textures (a quarter of the video memory; the game prefers a .ktx2 next to a .jpg). Known issue: the reactor's ceiling pipes vanish with the converted rusty_metal_02 colour map, so it is not in CI.
 pip install numpy pillow
-python3 tools/gen_textures.py     # generated textures, signs and HUD images
+python3 tools/gen_textures.py     # generated textures, signs and HUD images (and the tree cards cut from tools/source_art/)
 ```
 
 ## Code layout
@@ -218,7 +230,7 @@ src/
     collision.rs Circles and rectangles that push movers out
     meshgen/     Procedural geometry (wolves, moose, gloves, drifts, sheds, gear door...): primitives, hands, wolf, moose, scenery
     vehicles/    Sedans and snowmobiles, and fitting a vehicle to the ground (sedan, snowmobile, settle)
-    flora.rs     Minnesota trees and undergrowth, and where each grows
+    flora.rs     Minnesota trees and undergrowth, where each grows, and the thickets
     progress.rs  XP and level
     sfx.rs       Sound rules: variants, cooldowns, mixer, music director, Geiger
     loot.rs      What containers hold; weapon finds
@@ -243,7 +255,8 @@ src/
     lod.rs       Level-of-detail rules
     perf.rs      Frame-time statistics
     mathx.rs     Small maths helpers
-    atmosphere.rs  Sky scattering, sunlight colour, fog density field
+    atmosphere.rs  The sky's palette, sunlight colour, haze, cloud cover, fog density field
+    backdrop.rs  Beyond the map: heights, the big lake, where the woods stand, the skirt and card meshes
     soundscape.rs  Occlusion, echoes, footsteps, wind layers, room murmurs
     outfit.rs    Winter clothing meshes for people
     lootmenu.rs  Loot list entries, highlight and scrolling
@@ -269,7 +282,8 @@ src/
   flora.rs       Plants the forest, undergrowth and lake shores
   snow.rs        The snow ground material (shaders/snow.wgsl)
   tracks.rs      Footprints and old animal trails
-  sky.rs         Sky dome, stars, aurora, sun and moon
+  sky.rs         Sky dome (shaders/sky.wgsl: clouds, sun, moon, stars, far hills) and the aurora
+  backdrop.rs    The land beyond the map: hills, the big lake's ice, and the woods as tree cards
   particles.rs   Billboard particle effects
   devshot.rs     Screenshot mode for automated previews (FMN_SHOT)
   player.rs      First-person controller, survival tick, items, respawn
@@ -296,6 +310,7 @@ Environment variables for testing (not needed to play):
 - `FMN_DUMP_SYNTH=<folder>` writes every synthesised clip as a WAV and quits (`src/audio.rs`).
 - `FMN_SHOT="x,z,yaw,pitch,hour[,...]"` takes one headless screenshot (`src/devshot.rs`). Yaw and pitch are in degrees: yaw 0 looks north (-z), 90 west, 180 south, 270 east.
 - `FMN_SHADOWS=off|low|medium|high` sets shadow quality in shot mode only (anything else means high). Software rendering draws shadow maps very slowly, so use `off` unless testing shadows. `FMN_AO=on`, `FMN_VOL=on` or `FMN_FX=on` (both) turn ambient occlusion and volumetric fog back on in shot mode.
+- `FMN_NOHUD=1` hides the whole UI in shot mode, to look at the world alone.
 - `FMN_GOD=1` starts with god mode; `FMN_DATA_DIR` moves the save and settings folder; `FMN_PROFILE=1` and `FMN_BENCH=<seconds>` are the same as `--profile` and `--benchmark`.
 
 ## Possible next milestones
