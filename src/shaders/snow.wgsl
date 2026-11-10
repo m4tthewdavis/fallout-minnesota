@@ -70,7 +70,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let u = dot(wp, wind) + warp;
     let ripple_h = sin(u * k) + 0.35 * sin(2.0 * u * k + 1.3);
     let ripple_d = k * (cos(u * k) + 0.7 * cos(2.0 * u * k + 1.3));
-    let far = 1.0 - smoothstep(35.0, 80.0, dist);
+    // Ripples narrower than a pixel would only shimmer: fade them out by how
+    // fast their phase changes across the screen, as well as by distance.
+    let unresolved = smoothstep(0.7, 1.8, fwidth(u * k));
+    let far = (1.0 - smoothstep(35.0, 80.0, dist)) * (1.0 - unresolved);
     let amp = snow.wind.z * (0.25 + 0.75 * packed) * (1.0 - icy) * flat_ground * far * 0.02;
     var grad = wind * ripple_d * amp;
 
@@ -85,6 +88,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     grad = grad + f * (2.0 * 0.05 / (r * r)) * pit * inside;
 
     pbr_input.N = normalize(N0 - vec3<f32>(grad.x, 0.0, grad.y));
+    // The steep sides of ripples and pits see less sky: without this, snow in
+    // shade (lit by the sky alone) is one flat sheet.
+    let hollow = clamp(length(grad) * 1.1, 0.0, 0.4);
+    pbr_input.diffuse_occlusion = pbr_input.diffuse_occlusion * (1.0 - hollow);
 
     // ---- Colour ----
     var color = pbr_input.material.base_color.rgb;
@@ -92,6 +99,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let big = textureSample(pbr_bindings::base_color_texture, pbr_bindings::base_color_sampler, in.uv * 0.21 + vec2<f32>(0.37, 0.71)).rgb;
     color = color * mix(1.0, dot(big, vec3<f32>(0.3333)) / 0.9, 0.35);
     color = color * (0.95 + 0.07 * fbm(wp * 0.012 + vec2<f32>(2.0, 8.0)));
+    // Scoured and drifted patches a few metres across, lighter and darker.
+    color = color * (0.94 + 0.12 * fbm(wp * 0.21 + vec2<f32>(14.0, 5.0)));
+    // The bottom of a pit is in its own shade.
+    color = color * (1.0 - 0.22 * pit * inside * (1.0 - smoothstep(0.0, r * r, dot(f, f))));
     // Packed snow is a touch greyer; ripple crests catch a little more light.
     color = color * mix(1.0, 0.95, packed) * (1.0 + 2.5 * ripple_h * amp);
     // Icy crust: bluer and darker, like old glazed snow.

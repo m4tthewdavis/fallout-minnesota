@@ -149,6 +149,9 @@ impl Plugin for DevShotPlugin {
         .add_systems(PreUpdate, inject_keys.run_if(resource_exists::<KeyScript>).after(bevy::input::InputSystem))
         .add_systems(PostStartup, spawn_extras)
         .add_systems(Startup, resize_window);
+        if std::env::var("FMN_NOHUD").is_ok() {
+            app.add_systems(PostUpdate, hide_ui.before(bevy::ui::UiSystem::Layout));
+        }
     }
 }
 
@@ -176,6 +179,13 @@ fn spawn_extras(mut commands: Commands, cameras: Query<Entity, With<Camera3d>>) 
             commands.run_system_cached(crate::flora::spawn_lineup);
         }
         _ => {}
+    }
+}
+
+/// `FMN_NOHUD=1`: hide every UI tree, to look at the world alone.
+fn hide_ui(mut roots: Query<&mut Visibility, (With<Node>, Without<ChildOf>)>) {
+    for mut v in &mut roots {
+        v.set_if_neq(Visibility::Hidden);
     }
 }
 

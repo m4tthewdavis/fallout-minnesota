@@ -5,6 +5,7 @@
 //! `cargo test` and reused if the renderer ever changes.
 
 pub mod atmosphere;
+pub mod backdrop;
 pub mod collision;
 pub mod combat;
 pub mod compass;

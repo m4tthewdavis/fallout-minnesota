@@ -14,6 +14,7 @@ use std::f32::consts::{PI, TAU};
 
 use super::meshgen::{add, cross, lathe, normalize, scale, sub, MeshData, V3, WHITE};
 use super::rng::Rng;
+use super::terrain;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Species {
@@ -234,28 +235,28 @@ fn conifer_shape(s: Species) -> ConiferShape {
             card_len: 0.75,
         },
         Species::WhitePine => ConiferShape {
-            crown_start: 0.32,
-            radius: |t| 0.22 * (1.0 - t).powf(0.55) * (0.85 + 0.15 * (t * 9.0).sin()),
-            whorl_spacing: 0.9,
-            branches: 5,
+            crown_start: 0.30,
+            radius: |t| 0.25 * (1.0 - t).powf(0.55) * (0.85 + 0.15 * (t * 9.0).sin()),
+            whorl_spacing: 0.66,
+            branches: 6,
             pitch: 0.05,
             droop: 0.12,
-            gaps: 0.3,
-            tufts: true,
-            needles: [0.15, 0.25, 0.2],
-            card_len: 0.7,
-        },
-        Species::RedPine => ConiferShape {
-            crown_start: 0.52,
-            radius: |t| 0.16 * (t * PI).sin().powf(0.6) + 0.03,
-            whorl_spacing: 0.75,
-            branches: 5,
-            pitch: 0.35,
-            droop: 0.2,
             gaps: 0.2,
             tufts: true,
-            needles: [0.17, 0.27, 0.12],
-            card_len: 0.65,
+            needles: [0.13, 0.22, 0.17],
+            card_len: 0.95,
+        },
+        Species::RedPine => ConiferShape {
+            crown_start: 0.5,
+            radius: |t| 0.19 * (t * PI).sin().powf(0.6) + 0.03,
+            whorl_spacing: 0.58,
+            branches: 6,
+            pitch: 0.35,
+            droop: 0.2,
+            gaps: 0.14,
+            tufts: true,
+            needles: [0.15, 0.24, 0.11],
+            card_len: 0.9,
         },
         // Tamarack: a narrow cone of bare twigs and the last golden tufts.
         _ => ConiferShape {
@@ -688,9 +689,116 @@ pub fn pick_species(x: f32, z: f32, near_water: f32, roll: f32) -> Species {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Thickets: second growth that closes the woods in
+// ---------------------------------------------------------------------------
+
+/// A tree to plant: where, what, and how grown (its share of a full-size
+/// tree's height: saplings round the edge of a grove, big trees in the middle).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Planting {
+    pub x: f32,
+    pub z: f32,
+    pub species: Species,
+    pub size: f32,
+}
+
+/// About how many trees the thickets add to the map.
+pub const THICKET_TREES: usize = 460;
+
+/// May a thicket grow here? Open ground, well clear of everywhere the game
+/// happens: the vault's doorstep, the shelters, the camps, the ruins, the
+/// wrecks and the highway keep their open views and room to fight.
+pub fn thicket_ground(x: f32, z: f32) -> bool {
+    let far = |(px, pz): (f32, f32), r: f32| (x - px).hypot(z - pz) > r;
+    terrain::is_open_ground(x, z)
+        && far(terrain::PLAYER_SPAWN, 34.0)
+        && terrain::SHELTERS.iter().all(|&p| far(p, 18.0))
+        && terrain::CAMPS.iter().all(|&(cx, cz, _)| far((cx, cz), 22.0))
+        && terrain::RUINS.iter().all(|&(rx, rz, r)| far((rx, rz), r + 8.0))
+        && terrain::CARS.iter().all(|&(cx, cz, _)| far((cx, cz), 9.0))
+        && terrain::RAD_SOURCES.iter().all(|&(cx, cz, r, _)| far((cx, cz), r + 4.0))
+        && terrain::road_distance(x, z) > terrain::ROAD_HALF_WIDTH + 7.0
+}
+
+/// Groves of close-grown trees, mostly fir and spruce, thickest towards the
+/// edge of the map where they run into the woods beyond it. Built from its
+/// own seed, after everything else on the map has its place, so adding them
+/// moved nothing. Two may land close together: whoever plants them should
+/// skip any that would stand in something solid.
+pub fn thickets(seed: u64) -> Vec<Planting> {
+    let mut rng = Rng::new(seed);
+    let mut out = Vec::new();
+    let reach = terrain::HALF_SIZE - 6.0;
+    for _ in 0..6000 {
+        if out.len() >= THICKET_TREES {
+            break;
+        }
+        let (cx, cz) = (rng.range(-reach, reach), rng.range(-reach, reach));
+        let (keep, conifer, which, roll, count, radius) = (rng.f32(), rng.chance(0.78), rng.chance(0.55), rng.f32(), rng.f32(), rng.range(5.0, 13.0));
+        // Thick round the rim, and in broad patches across the middle.
+        let rim = super::mathx::smoothstep(60.0, 185.0, cx.abs().max(cz.abs()));
+        let patch = super::mathx::smoothstep(0.52, 0.75, smooth_noise(cx / 55.0 + 11.3, cz / 55.0 + 4.1));
+        if keep > 0.10 + 0.55 * rim + 0.45 * patch || !thicket_ground(cx, cz) {
+            continue;
+        }
+        // A grove is mostly one kind of tree.
+        let species = if conifer {
+            if which {
+                Species::BalsamFir
+            } else {
+                Species::WhiteSpruce
+            }
+        } else {
+            pick_species(cx, cz, 1.0, roll)
+        };
+        for _ in 0..5 + (count * 9.0) as usize {
+            let (a, r, grown) = (rng.range(0.0, TAU), rng.f32().sqrt() * radius, rng.range(0.75, 1.0));
+            let (x, z) = (cx + a.cos() * r, cz + a.sin() * r);
+            if !thicket_ground(x, z) {
+                continue;
+            }
+            out.push(Planting { x, z, species, size: (1.0 - 0.5 * r / radius) * grown });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thickets_fill_the_woods_without_crowding_the_places_that_matter() {
+        let t = thickets(144);
+        assert_eq!(t, thickets(144), "the same seed, the same groves");
+        assert!(t.len() >= THICKET_TREES && t.len() < THICKET_TREES + 20, "{} trees", t.len());
+        let mut conifers = 0;
+        let (mut rim, mut middle) = (0, 0);
+        for p in &t {
+            assert!(thicket_ground(p.x, p.z), "{p:?}");
+            assert!((0.35..=1.0).contains(&p.size), "{p:?}");
+            conifers += !matches!(p.species, Species::PaperBirch | Species::QuakingAspen) as usize;
+            if p.x.abs().max(p.z.abs()) > 141.0 {
+                rim += 1;
+            } else {
+                middle += 1;
+            }
+        }
+        assert!(conifers * 10 > t.len() * 7, "mostly evergreen: {conifers} of {}", t.len());
+        // The outer half of the map's area holds well over half of them.
+        assert!(rim > middle, "{rim} round the rim, {middle} in the middle");
+        // Kept clear: the spawn, the road, the shelters and the camps.
+        assert!(!thicket_ground(terrain::PLAYER_SPAWN.0, terrain::PLAYER_SPAWN.1 - 20.0));
+        let (rx, rz) = terrain::ROAD[4];
+        assert!(!thicket_ground(rx, rz + 8.0));
+        for &(sx, sz) in &terrain::SHELTERS {
+            assert!(!thicket_ground(sx + 12.0, sz));
+        }
+        for &(cx, cz, _) in &terrain::CAMPS {
+            assert!(!thicket_ground(cx + 15.0, cz));
+        }
+    }
 
     #[test]
     fn every_species_builds_a_sensible_tree() {

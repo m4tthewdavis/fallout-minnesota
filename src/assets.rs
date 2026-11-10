@@ -437,7 +437,7 @@ fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<As
         // Alpha-tested foliage cards keep their density in the distance.
         let foliage = server.get_path(*id).is_some_and(|p| {
             let p = p.path().to_string_lossy();
-            ["spray_", "twigs", "grass_tuft", "reed_plume", "snow_clumps"].iter().any(|k| p.contains(k))
+            ["spray_", "twigs", "grass_tuft", "reed_plume", "snow_clumps", "tree_cards"].iter().any(|k| p.contains(k))
         });
         if foliage {
             mipmaps::preserve_coverage(&mut chain, w, h, levels, 0.35);

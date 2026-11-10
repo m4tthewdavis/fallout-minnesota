@@ -61,7 +61,7 @@ pub struct FloraPlugin;
 
 impl Plugin for FloraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, tree_lod);
+        app.add_systems(Update, tree_lod).add_systems(Startup, (plant_thickets, plant_fringe).chain().after(crate::state::PostWorldGen));
     }
 }
 
@@ -219,6 +219,138 @@ fn free(x: f32, z: f32, clearance: f32, solid: &SpatialGrid, avoid: &dyn Fn(f32,
     terrain::is_open_ground(x, z) && !avoid(x, z) && !solid.blocked(x, z, clearance)
 }
 
+/// Plants one tree: its three parts, its level-of-detail switch, its trunk in
+/// the collision grid and a contact shadow. `size` scales it (1 = a full-size
+/// tree of its kind). Returns its trunk radius and which way it was turned.
+fn plant_tree(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    assets: &GameAssets,
+    models: &HashMap<Species, Vec<TreeModel>>,
+    mats: &Materials,
+    rng: &mut Rng,
+    solid: &mut SpatialGrid,
+    trees_out: &mut Vec<(f32, f32)>,
+    species: Species,
+    x: f32,
+    z: f32,
+    size: f32,
+) -> (f32, f32) {
+    let list = &models[&species];
+    let model = &list[(rng.f32() * list.len() as f32) as usize % list.len()];
+    let (lo, hi) = species.heights();
+    let scale = rng.range(lo, hi) / model.height * size;
+    let yaw = rng.range(0.0, std::f32::consts::TAU);
+    let tf = Transform::from_xyz(x, terrain::mesh_height(x, z) - 0.05, z)
+        .with_scale(Vec3::splat(scale))
+        .with_rotation(Quat::from_rotation_y(yaw));
+    let mut parts = None;
+    let tree = commands
+        .spawn((tf, Visibility::default()))
+        .with_children(|t| {
+            let bark = t.spawn((Mesh3d(model.bark.clone()), MeshMaterial3d(mats.barks[&species.bark()].clone()))).id();
+            let foliage = t.spawn((Mesh3d(model.foliage.clone()), MeshMaterial3d(mats.cards[&species.card()].clone()))).id();
+            if let Some(snow) = &model.snow {
+                t.spawn((Mesh3d(snow.clone()), MeshMaterial3d(mats.snow.clone()), NotShadowCaster));
+            }
+            parts = Some((bark, foliage));
+        })
+        .id();
+    let (bark, foliage) = parts.expect("tree parts are spawned above");
+    commands.entity(tree).insert(TreeLod {
+        bark,
+        foliage,
+        near: (model.bark.clone(), model.foliage.clone()),
+        far: (model.bark_far.clone(), model.foliage_far.clone()),
+        far_now: false,
+        shadowed: true,
+        hidden: false,
+    });
+    let trunk = species.trunk_radius(model.height) * scale;
+    solid.push(Shape::Circle { x, z, r: trunk + 0.15 });
+    trees_out.push((x, z));
+    let shade = (model.height * scale * 0.12).clamp(0.8, 2.2);
+    spawn_contact_shadow(commands, meshes, assets, x, z, shade, shade, yaw);
+    (trunk, yaw)
+}
+
+/// The seed the thickets grow from (the forest proper grows from 143).
+const THICKET_SEED: u64 = 144;
+
+/// Second growth: groves of close-set trees (see [`flora::thickets`]),
+/// planted once everything else on the map has its place, from their own
+/// seed, so they moved nothing. A tree that would stand in something solid
+/// (another tree, a rock, a wreck) is left out.
+fn plant_thickets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    assets: Res<GameAssets>,
+    kit: Option<Res<FloraKit>>,
+    mut colliders: ResMut<crate::state::Colliders>,
+    mut tree_positions: ResMut<crate::state::TreePositions>,
+) {
+    let Some(kit) = kit else { return };
+    let mut rng = Rng::new(THICKET_SEED);
+    let mut planted = 0;
+    for p in flora::thickets(THICKET_SEED) {
+        if colliders.0.blocked(p.x, p.z, 0.9) {
+            continue;
+        }
+        planted += 1;
+        plant_tree(&mut commands, &mut meshes, &assets, &kit.models, &kit.mats, &mut rng, &mut colliders.0, &mut tree_positions.0, p.species, p.x, p.z, p.size);
+    }
+    info!("thickets: {planted} trees planted");
+}
+
+/// The seed the trees just past the map's edge grow from.
+const FRINGE_SEED: u64 = 145;
+
+/// Real trees in the first few metres past the map's edge (see
+/// [`crate::sim::backdrop::fringe`]), where a flat picture of a tree would
+/// show. Nobody can reach them: no collision, no contact shadow.
+fn plant_fringe(mut commands: Commands, kit: Option<Res<FloraKit>>) {
+    let Some(kit) = kit else { return };
+    let mut rng = Rng::new(FRINGE_SEED);
+    for (x, z, kind, size) in crate::sim::backdrop::fringe(FRINGE_SEED) {
+        let species = match kind {
+            0 => Species::WhiteSpruce,
+            1 => Species::BalsamFir,
+            2 => Species::WhitePine,
+            _ => Species::PaperBirch,
+        };
+        let list = &kit.models[&species];
+        let model = &list[(rng.f32() * list.len() as f32) as usize % list.len()];
+        let (lo, hi) = species.heights();
+        let scale = rng.range(lo, hi) / model.height * size;
+        let tf = Transform::from_xyz(x, crate::sim::backdrop::height(x, z) - 0.3, z)
+            .with_scale(Vec3::splat(scale))
+            .with_rotation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)));
+        let mut parts = None;
+        // They start far from the vault door: begin on the cheap model.
+        let tree = commands
+            .spawn((tf, Visibility::default()))
+            .with_children(|t| {
+                let bark = t.spawn((Mesh3d(model.bark_far.clone()), MeshMaterial3d(kit.mats.barks[&species.bark()].clone()), NotShadowCaster)).id();
+                let foliage = t.spawn((Mesh3d(model.foliage_far.clone()), MeshMaterial3d(kit.mats.cards[&species.card()].clone()), NotShadowCaster)).id();
+                if let Some(snow) = &model.snow {
+                    t.spawn((Mesh3d(snow.clone()), MeshMaterial3d(kit.mats.snow.clone()), NotShadowCaster));
+                }
+                parts = Some((bark, foliage));
+            })
+            .id();
+        let (bark, foliage) = parts.expect("tree parts are spawned above");
+        commands.entity(tree).insert(TreeLod {
+            bark,
+            foliage,
+            near: (model.bark.clone(), model.foliage.clone()),
+            far: (model.bark_far.clone(), model.foliage_far.clone()),
+            far_now: true,
+            shadowed: false,
+            hidden: false,
+        });
+    }
+}
+
 pub fn plant_forest(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -258,45 +390,12 @@ pub fn plant_forest(
     commands.insert_resource(FloraKit { models: models.clone(), mats: mats.clone() });
 
     let plant = |commands: &mut Commands, meshes: &mut Assets<Mesh>, rng: &mut Rng, solid: &mut SpatialGrid, trees_out: &mut Vec<(f32, f32)>, species: Species, x: f32, z: f32| {
-        let list = &models[&species];
-        let model = &list[(rng.f32() * list.len() as f32) as usize % list.len()];
-        let (lo, hi) = species.heights();
-        let scale = rng.range(lo, hi) / model.height;
-        let yaw = rng.range(0.0, std::f32::consts::TAU);
-        let tf = Transform::from_xyz(x, terrain::mesh_height(x, z) - 0.05, z)
-            .with_scale(Vec3::splat(scale))
-            .with_rotation(Quat::from_rotation_y(yaw));
-        let mut parts = None;
-        let tree = commands
-            .spawn((tf, Visibility::default()))
-            .with_children(|t| {
-                let bark = t.spawn((Mesh3d(model.bark.clone()), MeshMaterial3d(mats.barks[&species.bark()].clone()))).id();
-                let foliage = t.spawn((Mesh3d(model.foliage.clone()), MeshMaterial3d(mats.cards[&species.card()].clone()))).id();
-                if let Some(snow) = &model.snow {
-                    t.spawn((Mesh3d(snow.clone()), MeshMaterial3d(mats.snow.clone()), NotShadowCaster));
-                }
-                parts = Some((bark, foliage));
-            })
-            .id();
-        let (bark, foliage) = parts.expect("tree parts are spawned above");
-        commands.entity(tree).insert(TreeLod {
-            bark,
-            foliage,
-            near: (model.bark.clone(), model.foliage.clone()),
-            far: (model.bark_far.clone(), model.foliage_far.clone()),
-            far_now: false,
-            shadowed: true,
-            hidden: false,
-        });
-        let trunk = species.trunk_radius(model.height) * scale;
-        solid.push(Shape::Circle { x, z, r: trunk + 0.15 });
-        trees_out.push((x, z));
-        let shade = (model.height * scale * 0.12).clamp(0.8, 2.2);
-        spawn_contact_shadow(commands, meshes, assets, x, z, shade, shade, yaw);
+        let (trunk, yaw) = plant_tree(commands, meshes, assets, &models, &mats, rng, solid, trees_out, species, x, z, 1.0);
         if rng.chance(0.35) {
             let d = 0.5 + trunk * 3.0;
             spawn_drift(commands, meshes, assets, x + WIND_DIR[0] * d, z + WIND_DIR[1] * d, 2.6, 1.5, 0.3, WIND_DIR, (x * 31.0 + z) as u64);
         }
+        let _ = yaw;
     };
 
     // ---- Trees ----

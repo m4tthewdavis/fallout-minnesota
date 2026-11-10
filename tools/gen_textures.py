@@ -1113,6 +1113,200 @@ def fir_photo_card():
     save(card.convert("RGBA"), GEN, "spray_fir_photo.png")
 
 
+def tree_cards():
+    """Whole trees on one sheet, for the woods beyond the map: a white
+    spruce, a balsam fir, a white pine and a bare birch, each in a 256 x 512
+    cell with a clear margin (so neighbours don't bleed into each other in
+    the small mip levels). Painted as they'd look unlit under an even sky:
+    the game's own sun and fog light them.
+
+    Uses its own random numbers, so adding it changed no other texture.
+    """
+    r = np.random.default_rng(1949)
+    S = 3  # supersampling
+    CW, CH = 256 * S, 512 * S
+    sheet = Image.new("RGBA", (CW * 4, CH), (0, 0, 0, 0))
+
+    def needle_green(shade):
+        # Dark spruce green; `shade` 0 (deep in the crown) .. 1 (an outer tip).
+        g = np.array([16, 26, 22]) + (np.array([40, 60, 46]) - np.array([16, 26, 22])) * shade
+        g = g * r.uniform(0.9, 1.1)
+        return tuple(int(v) for v in np.clip(g, 0, 255)) + (255,)
+
+    def snow_white(shade):
+        c = np.array([150, 170, 198]) + (np.array([236, 241, 248]) - np.array([150, 170, 198])) * shade
+        return tuple(int(v) for v in c) + (255,)
+
+    def bough(d, x, y, side, length, droop, thick, shade, snow):
+        """One branch from the trunk at (x, y) out to `side` (-1 left, +1
+        right): a drooping arc of short needle strokes, snow lying on top."""
+        steps = max(4, int(length / (5 * S)))
+        px, py = x, y
+        for k in range(1, steps + 1):
+            f = k / steps
+            nx = x + side * length * f
+            # Sags in the middle, lifts a little at the tip.
+            ny = y + droop * length * (f * f) - 0.12 * droop * length * max(0.0, f - 0.7) * 3.0
+            w = max(1.5 * S, thick * (1.0 - 0.75 * f))
+            col = needle_green(min(1.0, shade * (0.35 + 0.75 * f)))
+            d.line([px, py, nx, ny], fill=col, width=int(w))
+            # Needles: a fringe hanging off the branch.
+            for _ in range(3):
+                a = r.uniform(0.5, 2.6)
+                ln = r.uniform(0.5, 1.2) * w * 1.3
+                hx, hy = nx - side * r.uniform(0, 6 * S), ny
+                d.line([hx, hy, hx + math.cos(a) * ln * side * 0.6, hy + abs(math.sin(a)) * ln], fill=needle_green(min(1.0, shade * (0.25 + 0.6 * f))), width=max(1, int(1.2 * S)))
+            if snow > 0 and f > 0.25 and r.random() < snow:
+                sw = w * r.uniform(0.3, 0.55)
+                d.line([px, py - w * 0.45, nx, ny - w * 0.45], fill=snow_white(r.uniform(0.55, 1.0)), width=max(1, int(sw)))
+            px, py = nx, ny
+
+    def conifer(col, crown_from, half_width, power, whorl, droop, snow, trunk_rgb, flare=1.0):
+        d = ImageDraw.Draw(sheet)
+        x0 = col * CW + CW // 2
+        base, top = CH - 8 * S, 26 * S
+        height = base - top
+        # Trunk.
+        tw = 9 * S
+        d.polygon([(x0 - tw, base), (x0 + tw, base), (x0 + 2 * S, top + height * 0.08), (x0 - 2 * S, top + height * 0.08)], fill=trunk_rgb + (255,))
+        # Back of the crown first: a dark, solid body so the tree isn't see-through.
+        y = base - height * crown_from
+        while y > top + 10 * S:
+            t = (base - height * crown_from - y) / (height * (1.0 - crown_from))
+            hw = half_width * CW * (1.0 - t) ** power * flare + 5 * S
+            d.polygon([(x0 - hw * 0.72, y), (x0 + hw * 0.72, y), (x0 + hw * 0.3, y - whorl * 1.5), (x0 - hw * 0.3, y - whorl * 1.5)], fill=needle_green(0.05))
+            y -= whorl * 0.7
+        # Then the boughs, bottom to top, so each whorl overlaps the one below.
+        y = base - height * crown_from
+        while y > top + 6 * S:
+            t = (base - height * crown_from - y) / (height * (1.0 - crown_from))
+            hw = half_width * CW * (1.0 - t) ** power * flare + 4 * S
+            for side in (-1, 1):
+                for _ in range(3):
+                    ln = hw * r.uniform(0.55, 1.05)
+                    yy = y + r.uniform(-0.35, 0.35) * whorl
+                    bough(d, x0 + side * 2 * S, yy, side, ln, droop * r.uniform(0.7, 1.3), (10 + 9 * (1 - t)) * S, r.uniform(0.55, 1.0), snow)
+            # Boughs coming towards the viewer: fans of needles down the middle,
+            # brighter than the body behind them, with snow on their upper sprays.
+            for _ in range(4):
+                cx = x0 + r.uniform(-0.6, 0.6) * hw
+                cy = y + r.uniform(-0.3, 0.5) * whorl
+                rw = hw * r.uniform(0.16, 0.30) + 4 * S
+                shade = r.uniform(0.4, 1.0)
+                snowy = r.random() < snow
+                for k in range(11):
+                    a = math.pi * (0.08 + 0.84 * k / 10) + r.uniform(-0.12, 0.12)
+                    ln = rw * r.uniform(0.7, 1.1)
+                    ex, ey = cx + math.cos(a) * ln, cy + math.sin(a) * ln * 0.62
+                    d.line([cx, cy, ex, ey], fill=needle_green(shade * r.uniform(0.6, 1.0)), width=int(r.uniform(2.2, 3.6) * S))
+                    if snowy and (k < 3 or k > 7) and r.random() < 0.8:
+                        mx, my = cx + (ex - cx) * 0.25, cy + (ey - cy) * 0.25 - 1.6 * S
+                        d.line([mx, my, ex, ey - 1.6 * S], fill=snow_white(r.uniform(0.55, 1.0)), width=int(1.7 * S))
+            y -= whorl * r.uniform(0.85, 1.15)
+        # The leader.
+        d.polygon([(x0 - 5 * S, top + 26 * S), (x0 + 5 * S, top + 26 * S), (x0, top)], fill=needle_green(0.6))
+
+    def pine(col):
+        """White pine: a tall bare trunk and flat, wind-combed plumes."""
+        d = ImageDraw.Draw(sheet)
+        x0 = col * CW + CW // 2
+        base, top = CH - 8 * S, 30 * S
+        height = base - top
+        tw = 11 * S
+        d.polygon([(x0 - tw, base), (x0 + tw, base), (x0 + 3 * S, top + height * 0.1), (x0 - 3 * S, top + height * 0.1)], fill=(74, 58, 50, 255))
+        # Dead stubs low on the trunk.
+        for k in range(5):
+            y = base - height * r.uniform(0.18, 0.4)
+            side = r.choice([-1, 1])
+            d.line([x0, y, x0 + side * r.uniform(14, 34) * S, y - r.uniform(2, 10) * S], fill=(66, 52, 46, 255), width=int(2.5 * S))
+        tiers = 9
+        for k in range(tiers):
+            t = k / (tiers - 1)
+            y = base - height * (0.42 + 0.55 * t)
+            reach = CW * (0.38 - 0.22 * t) * r.uniform(0.8, 1.05)
+            for side in (-1, 1):
+                ln = reach * r.uniform(0.6, 1.0) * (1.15 if side > 0 else 0.85)
+                # The limb, rising a little, with a flat plume along its outer half.
+                ex, ey = x0 + side * ln, y - ln * r.uniform(0.02, 0.2)
+                d.line([x0, y, ex, ey], fill=(66, 52, 46, 255), width=int((6 - 3 * t) * S))
+                n = int(5 + ln / (14 * S))
+                for j in range(n):
+                    f = 0.3 + 0.7 * j / n
+                    cx, cy = x0 + (ex - x0) * f, y + (ey - y) * f
+                    rw, rh = r.uniform(14, 24) * S, r.uniform(8, 13) * S
+                    shade = r.uniform(0.35, 1.0)
+                    # A tuft: long needles splaying up and out from the twig.
+                    for k in range(16):
+                        a = r.uniform(-0.35, math.pi + 0.35)
+                        nx, ny = cx + math.cos(a) * rw * r.uniform(0.6, 1.1), cy - math.sin(a) * rh * r.uniform(0.6, 1.2) + 2 * S
+                        d.line([cx, cy, nx, ny], fill=needle_green(shade * r.uniform(0.55, 1.0)), width=int(r.uniform(2.4, 3.8) * S))
+                    if r.random() < 0.45:
+                        d.line([cx - rw * 0.6, cy - rh * 0.55, cx + rw * 0.6, cy - rh * 0.55], fill=snow_white(r.uniform(0.6, 1.0)), width=int(2.6 * S))
+        for k in range(14):
+            a = r.uniform(0.0, math.pi)
+            d.line([x0, top + 22 * S, x0 + math.cos(a) * 22 * S, top + 22 * S - math.sin(a) * 22 * S], fill=needle_green(r.uniform(0.5, 1.0)), width=int(3 * S))
+
+    def birch(col):
+        """A clump of bare paper birch: white stems, a haze of dark twigs."""
+        d = ImageDraw.Draw(sheet)
+        cx0 = col * CW + CW // 2
+        base = CH - 8 * S
+
+        def limb(x, y, ang, length, width, depth):
+            ex, ey = x + math.sin(ang) * length, y - math.cos(ang) * length
+            shade = int(r.uniform(52, 78))
+            d.line([x, y, ex, ey], fill=(shade + 14, shade, shade - 6, 255), width=max(int(1.5 * S), int(width)))
+            if depth > 0:
+                for _ in range(3):
+                    f = r.uniform(0.3, 1.0)
+                    limb(x + (ex - x) * f, y + (ey - y) * f, ang + r.uniform(-0.75, 0.75), length * r.uniform(0.5, 0.72), width * 0.62, depth - 1)
+
+        for stem, (dx, lean, hgt) in enumerate([(-10, -0.06, 0.78), (8, 0.04, 0.86), (2, 0.11, 0.66)]):
+            x, y = cx0 + dx * S, base
+            top_y = base - (CH - 40 * S) * hgt
+            segs = 9
+            pts = [(x + math.sin(lean) * (base - top_y) * k / segs + r.uniform(-3, 3) * S, base - (base - top_y) * k / segs) for k in range(segs + 1)]
+            # Crown first (behind the stem).
+            for k in range(4, segs + 1):
+                for _ in range(3):
+                    limb(pts[k][0], pts[k][1], lean + r.uniform(-1.3, 1.3), (CH - 40 * S) * hgt * r.uniform(0.07, 0.125), 3.2 * S, 3)
+            for k in range(segs):
+                w = (9 - 6 * k / segs) * S
+                d.line([pts[k], pts[k + 1]], fill=(214, 212, 204, 255), width=int(w))
+                # The dark scars of fallen branches.
+                if r.random() < 0.7:
+                    my = (pts[k][1] + pts[k + 1][1]) / 2
+                    mx = (pts[k][0] + pts[k + 1][0]) / 2
+                    d.line([mx - w * 0.5, my, mx + w * 0.3, my + 1.5 * S], fill=(48, 44, 42, 255), width=int(1.8 * S))
+
+    conifer(0, 0.06, 0.40, 0.95, 20 * S, 0.34, 0.42, (52, 42, 38))            # white spruce
+    conifer(1, 0.10, 0.30, 1.15, 17 * S, 0.16, 0.5, (58, 50, 46), flare=1.0)   # balsam fir: a narrow spire
+    pine(2)
+    birch(3)
+
+    # Soften, then cut back to a crisp edge: the cards are alpha-tested.
+    small = sheet.resize((256 * 4, 512), Image.LANCZOS)
+    arr = np.asarray(small).astype(np.float32) / 255.0
+    # Bleed colour out under the transparent texels so edges don't fringe grey.
+    rgb, a = arr[..., :3], arr[..., 3]
+    filled, weight = rgb * a[..., None], a.copy()
+    for _ in range(10):
+        fb = np.asarray(Image.fromarray((np.clip(filled, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2))).astype(np.float32) / 255.0
+        wb = np.asarray(Image.fromarray((np.clip(weight, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2))).astype(np.float32) / 255.0
+        est = fb / np.maximum(wb[..., None], 1e-3)
+        hole = weight < 0.02
+        filled[hole] = est[hole] * np.minimum(wb[hole], 1.0)[..., None]
+        weight[hole] = np.minimum(wb[hole], 1.0)
+    out_rgb = np.where(a[..., None] > 0.02, rgb, filled / np.maximum(weight[..., None], 1e-3))
+    # Keep the margins of each cell empty.
+    for c in range(4):
+        a[:, c * 256 : c * 256 + 3] = 0
+        a[:, c * 256 + 253 : c * 256 + 256] = 0
+    a[:2, :] = 0
+    out = np.dstack([np.clip(out_rgb, 0, 1), a])
+    save(Image.fromarray((out * 255).astype(np.uint8), "RGBA"), GEN, "tree_cards.png")
+
+
 def main():
     print("generating textures")
     nuclear_ice()
@@ -1136,6 +1330,7 @@ def main():
     fir_photo_card()
     pipboy_art()
     flame_sheet()
+    tree_cards()
 
 
 def signs_only():
@@ -1144,7 +1339,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "firphoto": fir_photo_card, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "firphoto": fir_photo_card, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon, "treecards": tree_cards}
 
 if __name__ == "__main__":
     import sys
