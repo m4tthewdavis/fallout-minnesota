@@ -90,7 +90,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     pbr_input.N = normalize(N0 - vec3<f32>(grad.x, 0.0, grad.y));
     // The steep sides of ripples and pits see less sky: without this, snow in
     // shade (lit by the sky alone) is one flat sheet.
-    let hollow = clamp(length(grad) * 1.1, 0.0, 0.4);
+    let hollow = clamp(length(grad) * 0.7, 0.0, 0.28);
     pbr_input.diffuse_occlusion = pbr_input.diffuse_occlusion * (1.0 - hollow);
 
     // ---- Colour ----

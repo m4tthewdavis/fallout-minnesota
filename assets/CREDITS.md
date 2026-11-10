@@ -93,7 +93,7 @@ cut to game budgets by `tools/decimate_models.py`.
 | `textures/Concrete031/` | Concrete031 | <https://ambientcg.com/view?id=Concrete031> | ambientCG (Lennart Demes) | concrete panel walls on the reactor level |
 | `textures/MetalPlates013/` | MetalPlates013 | <https://ambientcg.com/view?id=MetalPlates013> | ambientCG (Lennart Demes) | riveted plating on the reactor core and machinery |
 | `textures/OfficeCeiling003/` | OfficeCeiling003 | <https://ambientcg.com/view?id=OfficeCeiling003> | ambientCG (Lennart Demes) | drop ceiling in the vault lobby |
-| `textures/Snow014/` | Snow014 | <https://ambientcg.com/view?id=Snow014> | ambientCG (Lennart Demes) | surface relief of the snow ground (normal map) |
+| `textures/Snow014/` | Snow014 | <https://ambientcg.com/view?id=Snow014> | ambientCG (Lennart Demes) | the broad forms in the snow ground's relief (blended into its normal map by gen_textures.py) |
 | `textures/Ice003/` | Ice003 | <https://ambientcg.com/view?id=Ice003> | ambientCG (Lennart Demes) | clear green-black lake ice with bubbles and cracks |
 | `textures/LeafSet019/` | LeafSet019 | <https://ambientcg.com/view?id=LeafSet019> | ambientCG (Lennart Demes) | photo-scanned fir sprays on the balsam fir and spruce cards (see gen_textures.py) |
 <!-- generated-above -->
@@ -122,6 +122,7 @@ Made for this project with [Higgsfield](https://higgsfield.ai) (the GPT Image 2 
 | --- | --- | --- |
 | `textures/generated/tree_cards.png` | `tools/source_art/winter_trees.png`: a snow-laden spruce, fir, white pine and birch clump in a row on flat magenta | the woods beyond the map's edge |
 | `textures/generated/spray_pine_photo.png` | `tools/source_art/pine_bough.png`: a white pine bough on flat magenta | the needle cards of the white and red pines |
+| `textures/generated/snow_photo_diff.jpg`, `snow_photo_nor.jpg`, `snow_photo_arm.jpg` | `tools/source_art/snow_field.png`: wind-packed snow from straight above, in raking light | the snow ground's colour, relief and roughness |
 
 ## Made for this project
 

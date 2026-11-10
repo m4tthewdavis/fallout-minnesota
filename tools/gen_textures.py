@@ -1260,6 +1260,91 @@ def photo_cards():
     photo_spray_card("pine_bough.png", "spray_pine_photo.png")
 
 
+def tile_blend(img):
+    """Make a picture tile: blend it with copies of itself shifted half-way
+    across, so that along every edge only a copy that is continuous there
+    shows. `img` is a float array (h, w) or (h, w, c) with its broad
+    brightness already taken out (detail around zero): the blend is scaled
+    so the detail keeps its contrast where two copies are mixed."""
+    h, w = img.shape[:2]
+    wx = np.sin(np.pi * (np.arange(w) + 0.5) / w) ** 2
+    wy = np.sin(np.pi * (np.arange(h) + 0.5) / h) ** 2
+    wx, wy = wx[None, :], wy[:, None]
+    parts = [
+        (img, wx * wy),
+        (np.roll(img, w // 2, axis=1), (1 - wx) * wy),
+        (np.roll(img, h // 2, axis=0), wx * (1 - wy)),
+        (np.roll(np.roll(img, w // 2, axis=1), h // 2, axis=0), (1 - wx) * (1 - wy)),
+    ]
+    out = np.zeros_like(img)
+    power = np.zeros((h, w))
+    for part, weight in parts:
+        out += part * (weight[..., None] if img.ndim == 3 else weight)
+        power += weight * weight
+    norm = np.sqrt(power)
+    return out / (norm[..., None] if img.ndim == 3 else norm)
+
+
+def snow_photo_textures():
+    """The snow ground from a photograph: `tools/source_art/snow_field.png`,
+    a top-down picture of wind-packed snow in low light from the upper left,
+    generated for this project with Higgsfield (see assets/CREDITS.md).
+
+    The picture is flattened (its broad light and shade taken out) and made
+    to tile. Its relief is read from its shading (bright stands proud, dark
+    lies low) and becomes the normal map. The colour map keeps only part of
+    the photo's light and shade (the game's own sun does the rest), and the
+    grains that flash in the photo are made smoother in the roughness map so
+    they glint in the game too."""
+    src = np.asarray(Image.open(os.path.join(SOURCE_ART, "snow_field.png")).convert("RGB")).astype(np.float32) / 255.0
+    n = src.shape[0]
+
+    def blur(a, r):
+        # (Mirrored at the edges first: the photo doesn't tile yet.)
+        pad = int(r * 3)
+        return wrap_blur(np.pad(a, pad, mode="reflect"), r)[pad:-pad, pad:-pad]
+
+    # Detail: each channel minus its own broad light, then made to tile.
+    detail = np.dstack([src[..., c] - blur(src[..., c], 70) for c in range(3)])
+    detail = tile_blend(detail)
+    lum = 0.299 * detail[..., 0] + 0.587 * detail[..., 1] + 0.114 * detail[..., 2]
+    lum /= lum.std() + 1e-6
+
+    # Relief from the photo's own shading: what is bright stands proud, what
+    # is dark lies low, at every size from the lumps down to the grain (broad
+    # shapes count for more: they are the taller ones). Under raking light
+    # brightness is really the slope towards the light, which puts each bump
+    # a little to one side of where it was, and nobody can tell; adding the
+    # slope up along the light's direction instead leaves the map combed.
+    hgt = 1.5 * wrap_blur(lum, 14.0) + 1.0 * wrap_blur(lum, 5.0) + 0.45 * wrap_blur(lum, 1.6) + 0.12 * lum
+    hgt /= hgt.std() + 1e-6
+    grain = lum - wrap_blur(lum, 2.5)
+    nor = normal_from_height(hgt, 1.3)
+    # Under the photo's lumps and grain go the broad, soft forms of a scanned
+    # snow crust (ambientCG Snow014, CC0, fetched by tools/fetch_assets.py).
+    scan = np.asarray(Image.open(os.path.join(ASSETS, "textures", "Snow014", "nor.jpg")).convert("RGB").resize((n, n), Image.LANCZOS)).astype(np.float32) / 255.0
+    v = nor * 2.0 - 1.0
+    v[..., :2] += (scan[..., :2] * 2.0 - 1.0) * 0.6
+    nor = v / np.linalg.norm(v, axis=-1, keepdims=True) * 0.5 + 0.5
+    Image.fromarray((nor * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_photo_nor.jpg"), quality=93)
+    print("   textures/generated/snow_photo_nor.jpg")
+
+    # Colour: clean white, with under half of the photo's own light and shade (blue
+    # in the hollows, as the photo has it).
+    white = np.array([0.945, 0.957, 0.98])
+    col = np.clip(white + detail * 0.45, 0, 1)
+    Image.fromarray((col * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_photo_diff.jpg"), quality=93)
+    print("   textures/generated/snow_photo_diff.jpg")
+
+    # Hollows see less sky; the brightest grains are smooth facets that glint.
+    cavity = np.clip((wrap_blur(hgt, 7.0) - hgt) * 0.45, 0, 1)
+    sparkle = np.clip((grain / (grain.std() + 1e-6) - 1.6) / 2.0, 0, 1)
+    rough = np.clip(0.9 - 0.45 * sparkle, 0, 1)
+    arm = np.stack([1 - 0.2 * cavity, rough, np.zeros_like(rough)], -1)
+    Image.fromarray((arm * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_photo_arm.jpg"), quality=93)
+    print("   textures/generated/snow_photo_arm.jpg")
+
+
 def main():
     print("generating textures")
     nuclear_ice()
@@ -1285,6 +1370,7 @@ def main():
     flame_sheet()
     tree_cards()
     photo_cards()
+    snow_photo_textures()
 
 
 def signs_only():
@@ -1293,7 +1379,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "firphoto": fir_photo_card, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon, "treecards": tree_cards, "photocards": photo_cards}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "firphoto": fir_photo_card, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon, "treecards": tree_cards, "photocards": photo_cards, "snowphoto": snow_photo_textures}
 
 if __name__ == "__main__":
     import sys

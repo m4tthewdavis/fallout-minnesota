@@ -265,17 +265,18 @@ fn load_assets(
     let soft = png(include_bytes!("../assets/textures/generated/soft.png"));
     let flash = png(include_bytes!("../assets/textures/generated/flash.png"));
 
-    // Terrain snow: a cleaned-up diffuse (see tools/gen_textures.py) and no
-    // baked AO, which made the whole map look dirty when tiled.
-    // Generated snow (tools/gen_textures.py): the photo set's twigs and
-    // debris read as dark streaks when tiled across a whole map.
+    // Terrain snow, from a photograph of wind-packed snow made to tile
+    // (tools/gen_textures.py, `snow_photo_textures`): its colour with some
+    // of the photo's own light and shade left in, the relief read from its
+    // shading (over the broad forms of ambientCG's scanned Snow014 crust), and
+    // a roughness map in which the grains that flashed in the
+    // photo glint here too. Clean snow only: twigs and debris in a ground
+    // texture read as dark streaks once it is tiled across a whole map.
     let snow_base = StandardMaterial {
         base_color: Color::srgb(0.8, 0.81, 0.83),
-        base_color_texture: Some(tiled(s, "textures/generated/snow_diff.jpg".into(), true)),
-        // Photo-scanned crust relief (ambientCG Snow014): its colour map has
-        // grass specks that would tile, but the relief alone reads as real snow.
-        normal_map_texture: Some(tiled(s, "textures/Snow014/nor.jpg".into(), false)),
-        metallic_roughness_texture: Some(tiled(s, "textures/generated/snow_arm.jpg".into(), false)),
+        base_color_texture: Some(tiled(s, "textures/generated/snow_photo_diff.jpg".into(), true)),
+        normal_map_texture: Some(tiled(s, "textures/generated/snow_photo_nor.jpg".into(), false)),
+        metallic_roughness_texture: Some(tiled(s, "textures/generated/snow_photo_arm.jpg".into(), false)),
         metallic: 0.0,
         perceptual_roughness: 1.0,
         ..default()
