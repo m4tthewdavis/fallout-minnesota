@@ -39,21 +39,35 @@ struct Sky {
 
 const PI: f32 = 3.14159265;
 
-fn hash2(p: vec2<f32>) -> f32 {
-    var q = fract(p * vec2<f32>(123.34, 456.21));
-    q = q + dot(q, q + 45.32);
-    return fract(q.x * q.y);
+// An integer hash (PCG): the same answer on every GPU. The float hash this
+// replaced (`fract(p * 123.34)` and friends) loses its randomness to rounding
+// on some GPUs, which left clouds built of a few big straight-edged cells.
+fn pcg(v: u32) -> u32 {
+    let state = v * 747796405u + 2891336453u;
+    let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
 }
 
+// The gradient at one lattice corner: two random numbers in -1..1.
+fn corner_gradient(c: vec2<i32>) -> vec2<f32> {
+    let h = pcg(u32(c.x) * 1597334677u ^ pcg(u32(c.y) * 3812015801u + 374761393u));
+    return vec2<f32>(f32(h & 255u), f32((h >> 8u) & 255u)) * (1.0 / 127.5) - vec2<f32>(1.0);
+}
+
+// Smooth gradient noise, 0..1 (about 0.5 on average). Unlike value noise it
+// has no straight edges along the lattice, and a quintic fade keeps its
+// slopes continuous across cells.
 fn value_noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
-    let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f);
-    let a = hash2(i);
-    let b = hash2(i + vec2<f32>(1.0, 0.0));
-    let c = hash2(i + vec2<f32>(0.0, 1.0));
-    let d = hash2(i + vec2<f32>(1.0, 1.0));
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    let f = p - i;
+    let c = vec2<i32>(i);
+    let u = f * f * f * (f * (f * 6.0 - vec2<f32>(15.0)) + vec2<f32>(10.0));
+    let a = dot(corner_gradient(c), f);
+    let b = dot(corner_gradient(c + vec2<i32>(1, 0)), f - vec2<f32>(1.0, 0.0));
+    let cc = dot(corner_gradient(c + vec2<i32>(0, 1)), f - vec2<f32>(0.0, 1.0));
+    let d = dot(corner_gradient(c + vec2<i32>(1, 1)), f - vec2<f32>(1.0, 1.0));
+    let v = mix(mix(a, b, u.x), mix(cc, d, u.x), u.y);
+    return clamp(0.5 + v * 0.8, 0.0, 1.0);
 }
 
 fn fbm(p: vec2<f32>, octaves: i32) -> f32 {
@@ -71,20 +85,28 @@ fn fbm(p: vec2<f32>, octaves: i32) -> f32 {
     return v / norm;
 }
 
-// Rounded bumps with sharp creases between them: the cauliflower tops of cumulus.
+// Rounded bumps with soft creases between them: the cauliflower tops of
+// cumulus. (A true |x| makes razor creases that cut straight lines through
+// the clouds; this rounds them.)
 fn billow(p: vec2<f32>, octaves: i32) -> f32 {
     var v = 0.0;
     var amp = 0.5;
     var q = p;
     var norm = 0.0;
     for (var i = 0; i < octaves; i = i + 1) {
-        v = v + amp * abs(2.0 * value_noise(q) - 1.0);
+        let t = 2.0 * value_noise(q) - 1.0;
+        v = v + amp * (sqrt(t * t + 0.04) - 0.2);
         norm = norm + amp;
         q = vec2<f32>(q.x * 1.62 - q.y * 1.21, q.x * 1.21 + q.y * 1.62) + vec2<f32>(5.3, 2.8);
         amp = amp * 0.55;
     }
     return v / max(norm, 1e-3);
 }
+
+// How big the cloud pattern is on the deck: cells per unit of `plane`. Looking
+// straight up the deck spans only a short way across the screen, so the
+// pattern has to be fine enough that a few cells don't fill the view.
+const CLOUD_SCALE: f32 = 2.0;
 
 // The cumulus deck at a point in cloud space: how far inside a cloud the
 // point is (negative in clear sky, about 0.1 at a soft edge, 0.3 and more deep
@@ -93,12 +115,12 @@ fn billow(p: vec2<f32>, octaves: i32) -> f32 {
 fn cumulus(uv: vec2<f32>, cover: f32, detail: i32) -> f32 {
     var n = fbm(uv, 3);
     if (detail > 0) {
-        n = n + (billow(uv * 3.7 + vec2<f32>(3.1, 8.4), detail) - 0.42) * 0.22;
+        n = n + (billow(uv * 3.1 + vec2<f32>(3.1, 8.4), detail) - 0.18) * 0.30;
     }
     // Big slow patches open and close the deck, so cover is never even.
     let patches = value_noise(uv * 0.16 + vec2<f32>(31.0, 7.0));
     let c = clamp(cover + (patches - 0.5) * 0.55 * (1.0 - cover), 0.0, 1.0);
-    let lo = 0.5 + (0.5 - c) * 0.34;
+    let lo = 0.47 + (0.5 - c) * 0.34;
     return n - lo;
 }
 
@@ -131,12 +153,13 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     // stretching to infinity at the horizon.
     let plane = d.xz / (up + 0.11);
     let scroll = sky.cloud.zw;
-    var uv = plane * 0.8 + scroll;
+    var uv = plane * CLOUD_SCALE + scroll;
     let warp = vec2<f32>(fbm(uv * 0.55 + vec2<f32>(7.3, 1.1), 3), fbm(uv * 0.55 + vec2<f32>(19.1, 4.7), 3));
-    uv = uv + (warp - 0.5) * 0.35;
+    uv = uv + (warp - 0.5) * 0.7;
     let cover = sky.cloud.x;
     let depth = cumulus(uv, cover, 4);
-    let dens = smoothstep(0.0, 0.10, depth);
+    // Under a storm the deck closes right over (no holes onto the sky behind it).
+    let dens = mix(smoothstep(0.0, 0.10, depth), 1.0, smoothstep(0.3, 0.75, overcast));
     // Fade the deck out into the horizon haze.
     let low_fade = smoothstep(0.0, 0.11, up);
     let cloud_a = dens * low_fade * step(0.0, d.y);
@@ -187,8 +210,8 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     // towards the sun, and a longer way. The side of a cloud facing the sun
     // is bright; the far side and the thick middle are in its own shade.
     let to_light = normalize(light_dir.xz / (max(light_dir.y, 0.0) + 0.11) - plane + vec2<f32>(1e-4, 0.0));
-    let near_light = max(cumulus(uv + to_light * 0.07, cover, 2), 0.0);
-    let far_light = max(cumulus(uv + to_light * 0.22, cover, 0), 0.0);
+    let near_light = max(cumulus(uv + to_light * 0.16, cover, 2), 0.0);
+    let far_light = max(cumulus(uv + to_light * 0.5, cover, 0), 0.0);
     let thickness = max(depth, 0.0) * 0.9 + near_light * 1.6 + far_light * 1.3;
     let lit = exp(-thickness * 3.4);
     let bright = sky.misc.z;
@@ -200,7 +223,7 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     // Silver lining: thin edges glow when the light is behind them.
     cloud_col = cloud_col + light * bright * pow(mu, 10.0) * (1.0 - dens * 0.8) * 1.6 * lit;
     // A storm deck is one flat grey sheet, with only a little shape left.
-    let sheet = haze_col * (0.74 + 0.22 * lit);
+    let sheet = haze_col * (0.82 + 0.08 * lit);
     cloud_col = mix(cloud_col, sheet, overcast * 0.85);
     // Far clouds sink into the haze.
     let cloud_haze = exp(-up * 7.0);
@@ -221,22 +244,27 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     let sunward = 0.5 + 0.5 * dot(around, normalize(light_dir.xz + vec2<f32>(1e-4, 0.0)));
     // Dark spruce with snow in it, lit by the sky and a little by the sun.
     let wood = vec3<f32>(0.17, 0.21, 0.24) * (ambient * 1.5 + light * (0.25 + 0.35 * (1.0 - sunward)));
-    // How much the ridge line's height changes across a pixel (to soften its edge).
-    let edge = fwidth(rise) * 1.2 + 1e-5;
-    for (var i = 0; i < 3; i = i + 1) {
-        let fi = f32(i);
-        // Far to near: taller and hazier at the back.
-        let freq = 2.2 + fi * 2.6;
-        let base = (0.030 - fi * 0.009) * lift;
-        let amp = (0.050 - fi * 0.012) * lift;
-        var top = ridge(around, freq, 11.0 + fi * 23.0, base, amp);
-        // Treetops along the nearest ridge.
-        top = top + (value_noise(around * (140.0 + fi * 60.0)) - 0.5) * 0.0022 * fi;
-        let fog = clamp(mix(0.90, 0.60, fi / 2.0) + lost, 0.0, 1.0);
-        // Mist pools at the foot of each range.
-        let foot = smoothstep(top, top - 0.05, rise) * 0.35;
-        let ridge_col = mix(wood, haze_col, clamp(fog + foot * (1.0 - fog), 0.0, 1.0));
-        col = mix(col, ridge_col, smoothstep(top + edge, top - edge, rise));
+    // How much the ridge line's height changes across a pixel (to soften its
+    // edge), kept small so it can't blow up where the view is nearly vertical.
+    let edge = min(fwidth(rise) * 1.2 + 1e-5, 0.01);
+    // The hills lie within a few degrees of the horizon: nothing above that
+    // needs their (costly) noise.
+    if (rise < 0.2) {
+        for (var i = 0; i < 3; i = i + 1) {
+            let fi = f32(i);
+            // Far to near: taller and hazier at the back.
+            let freq = 2.2 + fi * 2.6;
+            let base = (0.030 - fi * 0.009) * lift;
+            let amp = (0.050 - fi * 0.012) * lift;
+            var top = ridge(around, freq, 11.0 + fi * 23.0, base, amp);
+            // Treetops along the nearest ridge.
+            top = top + (value_noise(around * (140.0 + fi * 60.0)) - 0.5) * 0.0022 * fi;
+            let fog = clamp(mix(0.90, 0.60, fi / 2.0) + lost, 0.0, 1.0);
+            // Mist pools at the foot of each range.
+            let foot = smoothstep(top, top - 0.05, rise) * 0.35;
+            let ridge_col = mix(wood, haze_col, clamp(fog + foot * (1.0 - fog), 0.0, 1.0));
+            col = mix(col, ridge_col, smoothstep(top + edge, top - edge, rise));
+        }
     }
     // Below the horizon: haze over far snow.
     col = mix(col, haze_col * 0.96, smoothstep(0.0, -0.02, rise));

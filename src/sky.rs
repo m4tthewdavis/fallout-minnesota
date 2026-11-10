@@ -121,7 +121,7 @@ impl Plugin for SkyPlugin {
 
 /// Elevations (degrees) of the dome's rings: close together near the horizon,
 /// where the sky's colour changes fastest, and a few below it to close the bowl.
-const DOME_RINGS: [f32; 21] = [-90.0, -30.0, -8.0, -2.0, 0.0, 1.0, 2.0, 3.5, 5.5, 8.0, 11.0, 15.0, 20.0, 26.0, 33.0, 41.0, 50.0, 60.0, 72.0, 82.0, 90.0];
+const DOME_RINGS: [f32; 26] = [-90.0, -30.0, -8.0, -2.0, 0.0, 1.0, 2.0, 3.5, 5.5, 8.0, 11.0, 15.0, 20.0, 26.0, 33.0, 41.0, 46.0, 52.0, 58.0, 65.0, 72.0, 77.0, 82.0, 86.0, 89.0, 90.0];
 const DOME_SEGMENTS: usize = 72;
 
 /// The sky dome: a sphere of rings at [`DOME_RINGS`], seen from inside.

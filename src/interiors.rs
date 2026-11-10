@@ -622,9 +622,13 @@ fn mart(r: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, k: &Kit, assets
     }
     solid.push(Shape::Circle { x: ox + 5.9, z: oz + 6.8, r: 0.9 });
     // Painted shelves of rations along the west wall.
+    // (Each shelf is 0.57 m wide with planks 0.51 m and 0.81 m up, set 0.06 to
+    // 0.29 m out from the wall; the tins, 0.4 m across, stand in the middle of
+    // a plank, not hanging off its side.)
     for z in [5.4f32, 6.0] {
         model(r, k, "painted_wooden_shelves", [-hw + 0.05, 0.0, z], FRAC_PI_2, 1.1);
-        model(r, k, "long_life_food", [-hw + 0.25, 0.62, z + 0.2], FRAC_PI_2, 0.9);
+        model(r, k, "long_life_food", [-hw + 0.18, 0.51, z], FRAC_PI_2, 0.8);
+        model(r, k, "long_life_food", [-hw + 0.18, 0.82, z], -FRAC_PI_2, 0.8);
     }
     solid.push(Shape::rect_centered(ox - hw + 0.3, oz + 5.7, 0.7, 1.4));
     // The loading dock's roller door.
