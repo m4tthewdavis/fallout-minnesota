@@ -409,7 +409,7 @@ fn pose_hands(
     for (sleeve, mut tf) in &mut sleeves {
         let i = sleeve.0 as usize;
         let along = Vec3::from_array(viewmodel::forearm_direction(arms[i].to_array(), hang[i].to_array()));
-        let len = 0.5;
+        let len = meshgen::SLEEVE_LEN * SCALE;
         *tf = Transform::from_translation(wrists[i]).with_rotation(Quat::from_rotation_arc(Vec3::Z, along)).with_scale(Vec3::new(SCALE, SCALE, len));
     }
 }

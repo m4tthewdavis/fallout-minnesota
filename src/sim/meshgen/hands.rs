@@ -301,9 +301,9 @@ pub const GLOVE_END: f32 = 0.091;
 /// wrist strap.
 pub const SLEEVE_MOUTH: V3 = [0.0, -0.004, 0.068];
 
-/// How long the sleeve is in gun space (it is drawn stretched from the wrist
-/// to an elbow off the bottom of the screen).
-const SLEEVE_LEN: f32 = 0.625;
+/// How long the sleeve is in gun space: the forearm and on up the arm, far
+/// enough that its end is always off the screen.
+pub const SLEEVE_LEN: f32 = 1.0;
 
 /// A Vault 143 jumpsuit sleeve over the forearm: its mouth at the origin,
 /// big enough to take the glove's wrist, the elbow at z = 1 (scaled to the
