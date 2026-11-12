@@ -1,10 +1,15 @@
-//! The sky: a gradient dome that follows the day/night cycle and the weather,
-//! a slowly wheeling starfield, the northern lights on clear nights, and
-//! sun and moon discs. Everything here ignores fog and follows the camera.
+//! The sky: a dome that follows the day/night cycle and the weather. Its
+//! vertex colours are the sky palette's gradient; its shader
+//! (`shaders/sky.wgsl`) adds drifting sunlit clouds, the sun's disc and
+//! glare, the moon, a slowly wheeling starfield and ranges of far wooded
+//! hills. The northern lights hang in front on clear nights. Everything here
+//! ignores fog and follows the camera.
 
-use bevy::pbr::{NotShadowCaster, NotShadowReceiver};
+use bevy::asset::embedded_asset;
+use bevy::pbr::{MaterialPipeline, MaterialPipelineKey, NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
-use bevy::render::mesh::VertexAttributeValues;
+use bevy::render::mesh::{MeshVertexBufferLayoutRef, VertexAttributeValues};
+use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError};
 
 use crate::assets::GameAssets;
 use crate::meshes::to_mesh;
@@ -12,21 +17,16 @@ use crate::player::Player;
 use crate::sim::meshgen::MeshData;
 use crate::sim::atmosphere;
 use crate::changed::{set_base_color, set_uv_transform};
+use crate::sim::weather::WIND_DIR;
 use crate::state::{ClockRes, CurrentInterior};
-use crate::weather_fx::{SkyLook, SKY_EXPOSURE};
+use crate::weather_fx::{SkyLook, VisualWeather};
 
 const DOME_RADIUS: f32 = 900.0;
 
 #[derive(Component)]
 struct SkyDome;
 #[derive(Component)]
-struct Stars;
-#[derive(Component)]
 struct Aurora;
-#[derive(Component)]
-struct SunDisc;
-#[derive(Component)]
-struct MoonDisc;
 
 /// Everything that should stay centred on the camera.
 #[derive(Component)]
@@ -35,20 +35,114 @@ struct FollowCamera;
 #[derive(Resource)]
 struct SkyHandles {
     dome: Handle<Mesh>,
-    stars: Handle<StandardMaterial>,
+    sky: Handle<SkyMaterial>,
     aurora: Vec<Handle<StandardMaterial>>,
-    sun: Handle<StandardMaterial>,
-    moon: Handle<StandardMaterial>,
 }
+
+/// What `shaders/sky.wgsl` needs to know each frame (see the comments there).
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+struct SkyParams {
+    sun: Vec4,
+    light: Vec4,
+    light_dir: Vec4,
+    moon: Vec4,
+    horizon: Vec4,
+    zenith: Vec4,
+    cloud: Vec4,
+    misc: Vec4,
+}
+
+/// The dome's material: unlit, drawn from the inside.
+#[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
+pub struct SkyMaterial {
+    #[uniform(0)]
+    sun: Vec4,
+    #[uniform(0)]
+    light: Vec4,
+    #[uniform(0)]
+    light_dir: Vec4,
+    #[uniform(0)]
+    moon: Vec4,
+    #[uniform(0)]
+    horizon: Vec4,
+    #[uniform(0)]
+    zenith: Vec4,
+    #[uniform(0)]
+    cloud: Vec4,
+    #[uniform(0)]
+    misc: Vec4,
+    #[texture(1)]
+    #[sampler(2)]
+    stars: Handle<Image>,
+}
+
+impl SkyMaterial {
+    fn params(&self) -> SkyParams {
+        SkyParams { sun: self.sun, light: self.light, light_dir: self.light_dir, moon: self.moon, horizon: self.horizon, zenith: self.zenith, cloud: self.cloud, misc: self.misc }
+    }
+
+    fn set(&mut self, p: SkyParams) {
+        (self.sun, self.light, self.light_dir, self.moon) = (p.sun, p.light, p.light_dir, p.moon);
+        (self.horizon, self.zenith, self.cloud, self.misc) = (p.horizon, p.zenith, p.cloud, p.misc);
+    }
+}
+
+impl Material for SkyMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://fallout_minnesota/shaders/sky.wgsl".into()
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // We are inside the sphere.
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
+/// Where the moon hangs (it does not move).
+const MOON_DIR: Vec3 = Vec3::new(-0.3, 0.8, -0.5);
 
 pub struct SkyPlugin;
 
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_sky)
+        embedded_asset!(app, "shaders/sky.wgsl");
+        app.add_plugins(MaterialPlugin::<SkyMaterial> { prepass_enabled: false, shadows_enabled: false, ..default() })
+            .add_systems(Startup, spawn_sky)
             .add_systems(PostUpdate, follow_camera.before(bevy::transform::TransformSystem::TransformPropagate))
             .add_systems(Update, update_sky.after(crate::weather_fx::AtmosphereSet));
     }
+}
+
+/// Elevations (degrees) of the dome's rings: close together near the horizon,
+/// where the sky's colour changes fastest, and a few below it to close the bowl.
+const DOME_RINGS: [f32; 26] = [-90.0, -30.0, -8.0, -2.0, 0.0, 1.0, 2.0, 3.5, 5.5, 8.0, 11.0, 15.0, 20.0, 26.0, 33.0, 41.0, 46.0, 52.0, 58.0, 65.0, 72.0, 77.0, 82.0, 86.0, 89.0, 90.0];
+const DOME_SEGMENTS: usize = 72;
+
+/// The sky dome: a sphere of rings at [`DOME_RINGS`], seen from inside.
+fn dome_mesh() -> MeshData {
+    let mut m = MeshData::default();
+    for (r, elev) in DOME_RINGS.iter().enumerate() {
+        let (sy, cy) = elev.to_radians().sin_cos();
+        for s in 0..=DOME_SEGMENTS {
+            let a = s as f32 / DOME_SEGMENTS as f32 * std::f32::consts::TAU;
+            let d = [cy * a.cos(), sy, cy * a.sin()];
+            m.vertex([d[0] * DOME_RADIUS, d[1] * DOME_RADIUS, d[2] * DOME_RADIUS], [-d[0], -d[1], -d[2]], [s as f32 / DOME_SEGMENTS as f32, r as f32 / (DOME_RINGS.len() - 1) as f32], [0.6, 0.65, 0.7, 1.0]);
+        }
+    }
+    let row = DOME_SEGMENTS as u32 + 1;
+    for r in 0..DOME_RINGS.len() as u32 - 1 {
+        for s in 0..DOME_SEGMENTS as u32 {
+            let a = r * row + s;
+            m.quad(a, a + 1, a + row + 1, a + row);
+        }
+    }
+    m
 }
 
 fn sky_material(materials: &mut Assets<StandardMaterial>, texture: Option<Handle<Image>>, alpha: AlphaMode) -> Handle<StandardMaterial> {
@@ -91,31 +185,18 @@ fn spawn_sky(
     assets: Res<GameAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut skies: ResMut<Assets<SkyMaterial>>,
 ) {
-    // Gradient dome: vertex colours are rewritten every frame.
-    let mut dome_mesh: Mesh = Sphere::new(DOME_RADIUS).mesh().uv(72, 40);
-    let count = dome_mesh.count_vertices();
-    dome_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[0.6f32, 0.65, 0.7, 1.0]; count]);
-    let dome = meshes.add(dome_mesh);
-    let dome_mat = sky_material(&mut materials, None, AlphaMode::Opaque);
+    // The dome: its vertex colours are rewritten as the light changes.
+    let dome = meshes.add(to_mesh(&dome_mesh()));
+    let sky = skies.add(SkyMaterial { stars: assets.stars.clone(), ..default() });
     commands.spawn((
         Mesh3d(dome.clone()),
-        MeshMaterial3d(dome_mat),
+        MeshMaterial3d(sky.clone()),
         Transform::default(),
         NotShadowCaster,
         NotShadowReceiver,
         SkyDome,
-        FollowCamera,
-    ));
-
-    let stars = sky_material(&mut materials, Some(assets.stars.clone()), AlphaMode::Add);
-    commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(DOME_RADIUS * 0.97).mesh().uv(48, 24))),
-        MeshMaterial3d(stars.clone()),
-        Transform::default(),
-        NotShadowCaster,
-        NotShadowReceiver,
-        Stars,
         FollowCamera,
     ));
 
@@ -151,35 +232,10 @@ fn spawn_sky(
         ));
     }
 
-    let sun = sky_material(&mut materials, Some(assets.soft.clone()), AlphaMode::Add);
-    commands.spawn((
-        Mesh3d(meshes.add(Rectangle::new(90.0, 90.0))),
-        MeshMaterial3d(sun.clone()),
-        Transform::default(),
-        NotShadowCaster,
-        SunDisc,
-        FollowCamera,
-    ));
-    let moon = sky_material(&mut materials, None, AlphaMode::Blend);
-    commands.spawn((
-        Mesh3d(meshes.add(Circle::new(14.0))),
-        MeshMaterial3d(moon.clone()),
-        Transform::default(),
-        NotShadowCaster,
-        MoonDisc,
-        FollowCamera,
-    ));
-
-    commands.insert_resource(SkyHandles {
-        dome,
-        stars,
-        aurora,
-        sun,
-        moon,
-    });
+    commands.insert_resource(SkyHandles { dome, sky, aurora });
 }
 
-fn follow_camera(cam: Query<&Transform, With<Player>>, mut q: Query<&mut Transform, (With<FollowCamera>, Without<Player>, Without<SunDisc>, Without<MoonDisc>)>) {
+fn follow_camera(cam: Query<&Transform, With<Player>>, mut q: Query<&mut Transform, (With<FollowCamera>, Without<Player>)>) {
     let Ok(cam) = cam.single() else { return };
     for mut tf in &mut q {
         tf.translation = cam.translation;
@@ -223,21 +279,17 @@ fn update_sky(
     time: Res<Time>,
     clock: Res<ClockRes>,
     look: Res<SkyLook>,
+    vis: Res<VisualWeather>,
     interior: Res<CurrentInterior>,
     handles: Option<Res<SkyHandles>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut skies: ResMut<Assets<SkyMaterial>>,
     mut painted: Local<Option<[u32; 13]>>,
-    cam: Query<&Transform, With<Player>>,
-    mut layers: Query<(&mut Visibility, Has<SkyDome>, Has<Stars>, Has<Aurora>, Has<SunDisc>, Has<MoonDisc>), With<FollowCamera>>,
-    mut stars: Query<&mut Transform, (With<Stars>, Without<Player>)>,
-    mut discs: ParamSet<(
-        Query<&mut Transform, (With<SunDisc>, Without<Player>, Without<Stars>)>,
-        Query<&mut Transform, (With<MoonDisc>, Without<Player>, Without<Stars>)>,
-    )>,
+    mut scroll: Local<Vec2>,
+    mut layers: Query<(&mut Visibility, Has<SkyDome>, Has<Aurora>), With<FollowCamera>>,
 ) {
     let Some(h) = handles else { return };
-    let Ok(cam) = cam.single() else { return };
     let sky = clock.0.sky();
     let day = ((sky.daylight - 0.12) / 0.88).clamp(0.0, 1.0);
     let overcast = look.overcast;
@@ -251,29 +303,24 @@ fn update_sky(
     let sun_alpha = (sky.sun * 1.5).min(1.0) * (1.0 - overcast * 0.9);
     let moon_alpha = (night * 1.2).min(1.0) * (1.0 - overcast * 0.85);
     let t = time.elapsed_secs();
-    let aurora_alpha = |i: usize| clear_night * (0.55 + 0.45 * (t * 0.13 + i as f32 * 1.7).sin()) * 0.9;
-    let show_stars = sky_layer_shows(outdoors, clear_night);
-    let show_aurora = sky_layer_shows(outdoors, clear_night);
-    let show_sun = sky_layer_shows(outdoors, sun_alpha);
-    let show_moon = sky_layer_shows(outdoors, moon_alpha);
-    for (mut vis, dome, star, aurora, sun, moon) in &mut layers {
+    let cover = atmosphere::cloud_cover(clock.0.day as f32 * 24.0 + clock.0.hours, overcast);
+    // The northern lights show through the gaps: fainter the more cloud there is.
+    // Not at dusk, while the sky still has colour: only once it is properly dark.
+    let deep_night = clear_night * crate::sim::mathx::smoothstep(0.55, 0.9, night);
+    let aurora_alpha = |i: usize| deep_night * (0.55 + 0.45 * (t * 0.13 + i as f32 * 1.7).sin()) * 0.9 * (1.0 - cover * 0.6);
+    let show_aurora = sky_layer_shows(outdoors, deep_night);
+    for (mut vis, dome, aurora) in &mut layers {
         let on = if dome {
             outdoors
-        } else if star {
-            show_stars
         } else if aurora {
             show_aurora
-        } else if sun {
-            show_sun
-        } else if moon {
-            show_moon
         } else {
             outdoors
         };
         show(&mut vis, on);
     }
 
-    // Repaint the dome from the scattering model (storms flatten it towards
+    // Repaint the dome from the sky's palette (storms flatten it towards
     // the weather colours the fog already uses), when what it shows has changed.
     let key = dome_key(&look);
     if outdoors && *painted != Some(key) {
@@ -283,6 +330,8 @@ fn update_sky(
                 _ => Vec::new(),
             };
             let green = Vec3::new(0.45, 0.62, 0.42);
+            // Every vertex of a ring at or below the horizon is the same colour,
+            // and the model's sums are costly: work each direction out once.
             let colors: Vec<[f32; 4]> = positions
                 .iter()
                 .map(|p| {
@@ -290,7 +339,7 @@ fn update_sky(
                     if d.y < 0.0 {
                         return [look.horizon.x, look.horizon.y, look.horizon.z, 1.0];
                     }
-                    let model = Vec3::from_array(atmosphere::expose(atmosphere::sky_radiance(d.to_array(), &look.conditions), SKY_EXPOSURE));
+                    let model = Vec3::from_array(atmosphere::sky_color(d.to_array(), &look.conditions));
                     // Under cloud the sky is a smooth ramp from horizon to zenith.
                     let overcast_c = look.horizon.lerp(look.zenith, d.y.max(0.0).powf(0.5));
                     let mut c = model.lerp(overcast_c, overcast * 0.9);
@@ -308,9 +357,6 @@ fn update_sky(
 
     // Materials of hidden layers are left as they are: they're rewritten
     // (from the current time) the frame they show again.
-    if show_stars {
-        set_base_color(&mut materials, &h.stars, Color::srgba(1.0, 1.0, 1.0, clear_night));
-    }
     if show_aurora {
         for (i, handle) in h.aurora.iter().enumerate() {
             let Some(base) = materials.get(handle).map(|m| m.base_color.to_srgba()) else { continue };
@@ -318,31 +364,48 @@ fn update_sky(
             set_uv_transform(&mut materials, handle, bevy::math::Affine2::from_translation(Vec2::new(t * 0.01 * (i as f32 + 1.0), 0.0)));
         }
     }
-    for mut tf in &mut stars {
-        tf.rotation = Quat::from_rotation_y(t * 0.002) * Quat::from_rotation_x(0.35);
-    }
 
-    // Sun and moon discs, facing the camera.
-    if show_sun {
-        // The disc takes the colour of the light that survives the air: white-gold
-        // high up, orange then red as it sinks.
-        let t = look.sun_light;
-        let k = 5.0 / t.max_element().max(1e-3);
-        set_base_color(&mut materials, &h.sun, Color::LinearRgba(LinearRgba::new(t.x * k, t.y * k, t.z * k, sun_alpha)));
+    if !outdoors {
+        return;
     }
-    for mut tf in &mut discs.p0() {
-        let p = cam.translation + sun_dir * DOME_RADIUS * 0.9;
-        *tf = Transform::from_translation(p).looking_at(cam.translation, Vec3::Y);
+    // The clouds ride the wind (faster in a storm), high enough to be slow.
+    *scroll -= Vec2::from_array(WIND_DIR) * time.delta_secs() * (0.0022 + 0.0006 * vis.wind);
+    // Keep the numbers small: the pattern only needs to be continuous.
+    if scroll.length() > 4096.0 {
+        *scroll = Vec2::ZERO;
     }
-    let moon_dir = Vec3::new(-0.3, 0.8, -0.5).normalize();
-    if show_moon {
-        set_base_color(&mut materials, &h.moon, Color::LinearRgba(LinearRgba::new(2.2, 2.3, 2.6, moon_alpha)));
-    }
-    for mut tf in &mut discs.p1() {
-        let p = cam.translation + moon_dir * DOME_RADIUS * 0.9;
-        *tf = Transform::from_translation(p).looking_at(cam.translation, Vec3::Y);
+    // What lights the clouds: the sun (they stay lit a little after the
+    // ground has lost it), or the moon.
+    let sun_light = look.sun_light.max(Vec3::ZERO);
+    let moon_dir = MOON_DIR.normalize();
+    let moonlight = Vec3::new(0.016, 0.021, 0.034) * sky.moon * (1.0 - sky.sun);
+    let by_sun = sun_light.max_element() > 0.02;
+    let (light, light_dir) = if by_sun {
+        // Clouds stand in clearer air than the ground: the light on them is
+        // brighter and less red than what reaches the snow.
+        (Vec3::new(sun_light.x.powf(0.6), sun_light.y.powf(0.6), sun_light.z.powf(0.6)) * (0.35 + 0.65 * vis.light) + moonlight, sun_dir)
+    } else {
+        (moonlight, moon_dir)
+    };
+    let params = SkyParams {
+        sun: sun_dir.extend(sun_alpha),
+        light: light.extend(0.0),
+        light_dir: light_dir.extend(0.0),
+        moon: moon_dir.extend(moon_alpha),
+        horizon: look.horizon.extend(overcast),
+        zenith: look.zenith.extend(look.sick),
+        cloud: Vec4::new(cover, atmosphere::cirrus_amount(clock.0.day as f32 * 24.0 + clock.0.hours), scroll.x, scroll.y),
+        misc: Vec4::new(clear_night * crate::sim::mathx::smoothstep(0.3, 0.8, night), t * 0.002, CLOUD_BRIGHTNESS, (overcast * 0.6).min(1.0)),
+    };
+    if skies.get(&h.sky).is_some_and(|m| m.params() != params) {
+        if let Some(m) = skies.get_mut(&h.sky) {
+            m.set(params);
+        }
     }
 }
+
+/// How bright sunlit cloud is next to the sky's own gradient.
+const CLOUD_BRIGHTNESS: f32 = 1.5;
 
 #[cfg(test)]
 mod tests {
@@ -357,6 +420,21 @@ mod tests {
         assert!(!sky_layer_shows(false, 1.0));
         // Garbage keeps drawing, as it always did.
         assert!(sky_layer_shows(true, f32::NAN));
+    }
+
+    #[test]
+    fn the_dome_is_a_closed_bowl_with_most_rings_near_the_horizon() {
+        let m = dome_mesh();
+        assert_eq!(m.positions.len(), DOME_RINGS.len() * (DOME_SEGMENTS + 1));
+        assert_eq!(m.indices.len(), (DOME_RINGS.len() - 1) * DOME_SEGMENTS * 6);
+        assert!(DOME_RINGS.windows(2).all(|w| w[0] < w[1]), "rings climb");
+        assert_eq!((DOME_RINGS[0], DOME_RINGS[DOME_RINGS.len() - 1]), (-90.0, 90.0));
+        let low = DOME_RINGS.iter().filter(|e| (0.0..=15.0).contains(*e)).count();
+        assert!(low >= 8, "{low} rings in the first 15 degrees");
+        for p in &m.positions {
+            let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+            assert!((r - DOME_RADIUS).abs() < 0.01);
+        }
     }
 
     #[test]

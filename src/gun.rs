@@ -171,7 +171,7 @@ pub fn spawn_view_model(
     let h = viewmodel::hip(WeaponKind::PipeRifle);
     let mats = make_mats(materials, assets);
     cam.commands().insert_resource(GunFrost(mats.rime.clone()));
-    spawn_arms(cam, meshes, materials, &mats, &layer);
+    spawn_arms(cam, meshes, materials, &mats, &assets.leather, &assets.canvas, &layer);
     cam.spawn((
         Transform::from_xyz(h[0], h[1], h[2]).with_scale(Vec3::splat(SCALE)),
         Visibility::default(),
@@ -311,17 +311,20 @@ fn mirrored(m: MeshData) -> MeshData {
 
 /// Gloved hands with three grip shapes each, sleeves, and the shells and
 /// rounds the left hand carries while loading.
-fn spawn_arms(cam: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, m: &Mats, layer: &RenderLayers) {
-    let glove = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        perceptual_roughness: 0.72,
-        ..default()
-    });
-    let cloth = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        perceptual_roughness: 0.95,
-        ..default()
-    });
+fn spawn_arms(cam: &mut ChildSpawnerCommands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, m: &Mats, leather_set: &Handle<StandardMaterial>, canvas_set: &Handle<StandardMaterial>, layer: &RenderLayers) {
+    // Scanned leather (the same set the people's winter kit wears), tinted
+    // in the mesh's vertex colours.
+    let scanned = |materials: &mut Assets<StandardMaterial>, base: &Handle<StandardMaterial>, rough: f32| match materials.get(base).cloned() {
+        Some(m) => materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: rough, ..m }),
+        None => materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: rough, ..default() }),
+    };
+    let glove = scanned(materials, leather_set, 0.85);
+    // The sleeve's weave is a tan cloth dyed vault blue: the tint (in the
+    // mesh) is multiplied up here so the blue comes out as strong as it was.
+    let cloth = match materials.get(canvas_set).cloned() {
+        Some(m) => materials.add(StandardMaterial { base_color: Color::linear_rgb(1.8, 1.8, 1.8), perceptual_roughness: 1.0, ..m }),
+        None => materials.add(StandardMaterial { base_color: Color::linear_rgb(0.5, 0.4, 0.3), perceptual_roughness: 1.0, ..default() }),
+    };
     let shapes = [0.0f32, 0.55, 1.0];
     for side in [Side::Left, Side::Right] {
         cam.spawn((Transform::default(), Visibility::default(), HandRoot(side), ArmsRig)).with_children(|h| {
@@ -364,12 +367,16 @@ fn pose_hands(
         .with_rotation(Quat::from_euler(EulerRot::YXZ, pose.rot[1], pose.rot[0], pose.rot[2]))
         .with_scale(Vec3::splat(SCALE));
     let mut wrists = [Vec3::ZERO; 2];
+    // Which way each hand's cuff points (back along its arm), in camera space.
+    let mut arms = [Vec3::Z; 2];
     for (root, mut tf, children) in &mut roots {
         let hand = if root.0 == Side::Left { pose.left } else { pose.right };
         let (x, y) = (Vec3::from_array(hand.x), Vec3::from_array(hand.y));
         let local = Transform::from_translation(Vec3::from_array(hand.pos)).with_rotation(Quat::from_mat3(&Mat3::from_cols(x, y, x.cross(y))));
         *tf = gun.mul_transform(local);
-        wrists[root.0 as usize] = tf.transform_point(Vec3::new(0.0, 0.0, 0.1));
+        // (The sleeve's mouth sits round the glove's wrist.)
+        wrists[root.0 as usize] = tf.transform_point(Vec3::from_array(meshgen::SLEEVE_MOUTH));
+        arms[root.0 as usize] = (tf.rotation * Vec3::Z).normalize_or_zero();
         // Show the shape closest to the grip.
         let mut best = (f32::MAX, 0.0);
         for &c in children {
@@ -395,14 +402,15 @@ fn pose_hands(
             *vis = want;
         }
     }
-    // Forearms hang down and back from the wrists, out past the screen edge.
+    // Forearms run back from the wrists to elbows down past the screen's
+    // edge: partly the way the hand itself points (a wrist only bends so
+    // far), partly down and back towards the body.
     let hang = [Vec3::new(-0.35, -0.8, 0.45).normalize(), Vec3::new(0.3, -0.8, 0.5).normalize()];
     for (sleeve, mut tf) in &mut sleeves {
         let i = sleeve.0 as usize;
-        let (wrist, elbow) = (wrists[i], wrists[i] + hang[i] * 0.5);
-        let along = elbow - wrist;
-        let len = along.length().max(0.05);
-        *tf = Transform::from_translation(wrist).with_rotation(Quat::from_rotation_arc(Vec3::Z, along / len)).with_scale(Vec3::new(SCALE, SCALE, len));
+        let along = Vec3::from_array(viewmodel::forearm_direction(arms[i].to_array(), hang[i].to_array()));
+        let len = meshgen::SLEEVE_LEN * SCALE;
+        *tf = Transform::from_translation(wrists[i]).with_rotation(Quat::from_rotation_arc(Vec3::Z, along)).with_scale(Vec3::new(SCALE, SCALE, len));
     }
 }
 

@@ -187,6 +187,46 @@ fn gloves_open_and_close_round_the_grip() {
 }
 
 #[test]
+fn the_glove_is_a_hand_and_the_sleeve_an_arm() {
+    for g in [0.0, 0.55, 1.0] {
+        let m = glove(g);
+        assert!(m.is_valid(), "grip {g}");
+        assert!(m.triangle_count() < 9000, "{} triangles", m.triangle_count());
+        let (lo, hi) = m.bounds();
+        // A hand's size: about 10 cm across with the thumb, cuff to 12 cm behind the palm.
+        assert!(hi[0] - lo[0] > 0.085 && hi[0] - lo[0] < 0.13, "grip {g}: {} m wide", hi[0] - lo[0]);
+        assert!((hi[2] - GLOVE_END).abs() < 1e-4);
+        // The thumb is on the -x side: the hand reaches further that way.
+        assert!(-lo[0] > hi[0] || g > 0.9);
+    }
+    // Four fingers of different lengths, the middle one longest.
+    let open = glove(0.0);
+    let reach_at = |x: f32| open.positions.iter().filter(|p| (p[0] - x).abs() < 0.008).map(|p| -p[2]).fold(f32::MIN, f32::max);
+    let (index, middle, little) = (reach_at(-0.035), reach_at(-0.012), reach_at(0.033));
+    assert!(middle > index && index > little, "{index} {middle} {little}");
+    // The sleeve's mouth takes the glove's wrist: wider than the glove there,
+    // and the glove's cuff ends inside the sleeve.
+    let wrist_width = open.positions.iter().filter(|p| (p[2] - SLEEVE_MOUTH[2]).abs() < 0.006).map(|p| p[0].abs()).fold(0.0, f32::max);
+    let mouth_width = sleeve().positions.iter().filter(|p| p[2] < 0.01).map(|p| p[0].abs()).fold(0.0, f32::max);
+    assert!(mouth_width > wrist_width + 0.001, "mouth {mouth_width} vs wrist {wrist_width}");
+    assert!(GLOVE_END > SLEEVE_MOUTH[2] + 0.015);
+    // The sleeve: narrow at the wrist, fuller up the forearm, never a plain cone.
+    let s = sleeve();
+    let radius_at = |z0: f32, z1: f32| s.positions.iter().filter(|p| p[2] >= z0 && p[2] < z1).map(|p| p[0].abs()).fold(0.0, f32::max);
+    let (wrist, band, forearm) = (radius_at(0.0, 0.04), radius_at(0.13, 0.17), radius_at(0.4, 0.5));
+    assert!(wrist < band && band < forearm, "{wrist} {band} {forearm}");
+    assert!(wrist < 0.04 && forearm > 0.045);
+    // Folds: along one line down the arm the surface rises and falls.
+    let column: Vec<f32> = (0..75).map(|i| s.positions[i * 37 + 8]).filter(|p| p[2] > 0.2 && p[2] < 0.5).map(|p| (p[0] * p[0] + p[1] * p[1]).sqrt()).collect();
+    let turns = column.windows(3).filter(|w| (w[1] - w[0]) * (w[2] - w[1]) < 0.0).count();
+    assert!(turns >= 4, "{turns} folds along the forearm");
+    // The vault's gold band is there, and the rest is blue.
+    let gold = s.colors.iter().filter(|c| c[0] > 0.8 && c[2] < 0.4).count();
+    let blue = s.colors.iter().filter(|c| c[2] > c[0] * 3.0).count();
+    assert!(gold > 60 && blue > gold * 5, "{gold} gold, {blue} blue");
+}
+
+#[test]
 fn transforms_keep_normals_unit() {
     let m = cuboid([1.0, 1.0, 1.0], 1.0)
         .scaled([2.0, 0.5, 1.0])
@@ -288,4 +328,30 @@ fn tent_without_overhang_stops_at_the_walls_and_still_faces_up() {
     assert!(big[0] > hi[0] && big[2] > hi[2]);
     // A tent with no gable rise is a flat-topped box and must still be a valid mesh.
     assert!(tent(2.0, 1.0, 3.0, 0.0, 0.1, 1.0).is_valid());
+}
+
+/// Developer tool: `FMN_DUMP_HANDS=<folder> cargo test dump_hands -- --ignored`
+/// writes the glove (three grips), its trim and the sleeve as OBJ files to
+/// look at outside the game.
+#[test]
+#[ignore]
+fn dump_hands() {
+    let Ok(dir) = std::env::var("FMN_DUMP_HANDS") else { return };
+    let write = |name: &str, m: &MeshData| {
+        let mut out = String::new();
+        for (p, c) in m.positions.iter().zip(&m.colors) {
+            out += &format!("v {} {} {} {} {} {}\n", p[0], p[1], p[2], c[0], c[1], c[2]);
+        }
+        for n in &m.normals {
+            out += &format!("vn {} {} {}\n", n[0], n[1], n[2]);
+        }
+        for t in m.indices.chunks(3) {
+            out += &format!("f {0}//{0} {1}//{1} {2}//{2}\n", t[0] + 1, t[1] + 1, t[2] + 1);
+        }
+        std::fs::write(format!("{dir}/{name}.obj"), out).unwrap();
+    };
+    for (name, g) in [("glove_open", 0.0), ("glove_half", 0.55), ("glove_fist", 1.0)] {
+        write(name, &glove(g));
+    }
+    write("sleeve", &sleeve());
 }
