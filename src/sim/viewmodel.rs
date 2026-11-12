@@ -227,6 +227,28 @@ impl Hand {
     }
 }
 
+/// Which way a forearm runs from its wrist (a unit vector, camera space:
+/// x right, y up, z towards the viewer). `cuff` is the way the hand's cuff
+/// points and `hang` the way an arm would hang to an elbow by the body. A
+/// wrist only bends so far, so the arm goes between the two; and it always
+/// runs down and towards the viewer enough that its elbow is off the screen.
+pub fn forearm_direction(cuff: [f32; 3], hang: [f32; 3]) -> [f32; 3] {
+    let (c, h) = (vnorm(cuff), vnorm(hang));
+    // A cuff pointing away from the body (a hand turned right over) says
+    // nothing useful about where the elbow is: trust it less.
+    let agree = vdot(c, h).max(0.0);
+    let w = 0.45 + 0.35 * agree;
+    let mut d = vnorm(vadd(vscale(c, w), vscale(h, 1.0 - w)));
+    d[1] = d[1].min(-0.3);
+    d[2] = d[2].max(0.25);
+    let d = vnorm(d);
+    if d.iter().all(|x| x.is_finite()) {
+        d
+    } else {
+        h
+    }
+}
+
 /// The rifle's magazine seat (top of the magazine), gun space.
 pub const RIFLE_MAG_REST: [f32; 3] = [0.0, -0.0475, -0.075];
 /// The rifle's bolt handle knob at rest, gun space.
@@ -573,6 +595,34 @@ fn axe_swing(out: &mut Pose, swing: Option<f32>) {
     out.rot[0] += -0.9 * windup + 1.5 * strike;
     out.rot[1] += 0.3 * windup - 0.6 * strike;
     out.rot[2] += 0.5 * windup - 0.9 * strike;
+}
+
+#[cfg(test)]
+mod forearm_tests {
+    use super::*;
+
+    #[test]
+    fn forearms_follow_the_hand_but_always_leave_the_screen() {
+        let hang = vnorm([-0.35, -0.8, 0.45]);
+        // A cuff already pointing where the arm hangs: the arm goes that way.
+        let d = forearm_direction(hang, hang);
+        assert!(vdot(d, hang) > 0.999);
+        // A cuff pointing straight at the viewer: the arm comes mostly towards the viewer.
+        let d = forearm_direction([0.0, 0.0, 1.0], hang);
+        assert!(d[2] > 0.75 && vdot(d, [0.0, 0.0, 1.0]) > vdot(hang, [0.0, 0.0, 1.0]), "{d:?}");
+        // Whatever the hand does, the arm is a unit vector running down and
+        // towards the viewer (so the elbow is never on the screen).
+        for cuff in [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0], [0.3, 0.9, -0.3], [0.0, 0.0, 0.0], [f32::NAN, 0.0, 0.0]] {
+            let d = forearm_direction(cuff, hang);
+            assert!((vdot(d, d) - 1.0).abs() < 1e-4, "{cuff:?} -> {d:?}");
+            assert!(d[1] < -0.2 && d[2] > 0.15, "{cuff:?} -> {d:?}");
+        }
+        // The wrist bends less than it would hanging straight down: the arm
+        // is closer to the cuff's line than the hang direction is.
+        let cuff = vnorm([-0.9, 0.0, 0.3]);
+        let d = forearm_direction(cuff, hang);
+        assert!(vdot(d, cuff) > vdot(hang, cuff) + 0.2);
+    }
 }
 
 #[cfg(test)]

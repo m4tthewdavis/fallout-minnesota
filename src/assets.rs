@@ -79,6 +79,8 @@ pub struct GameAssets {
     pub fur: Handle<StandardMaterial>,
     pub wool: Handle<StandardMaterial>,
     pub leather: Handle<StandardMaterial>,
+    /// Coarse woven cloth (scanned hessian), for the jumpsuit's sleeves.
+    pub canvas: Handle<StandardMaterial>,
     /// Rust textures on their own, for car bodies in different paint colours.
     pub rust_diff: Handle<Image>,
     pub rust_normal: Handle<Image>,
@@ -364,6 +366,7 @@ fn load_assets(
         fur: pbr(s, m, "curly_teddy_natural", Color::WHITE),
         wool: pbr(s, m, "wool_boucle", Color::WHITE),
         leather: pbr(s, m, "brown_leather", Color::srgb(0.8, 0.7, 0.62)),
+        canvas: pbr(s, m, "hessian_230", Color::WHITE),
         rust_diff: tiled(s, "textures/rusty_metal_02/diff.jpg".into(), true),
         rust_normal: tiled(s, "textures/rusty_metal_02/nor.jpg".into(), false),
 
