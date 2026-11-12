@@ -25,7 +25,8 @@ use crate::snow::{SnowExt, SnowMaterial};
 /// Handles to every model, material and sprite the world uses.
 #[derive(Resource)]
 pub struct GameAssets {
-    /// Pipe-rifle textures: steel_diff, steel_arm, wood_diff, wood_nor.
+    /// Weapon textures (from photographs, see tools/gen_textures.py): steel_diff,
+    /// steel_arm, steel_nor, wood_diff, wood_nor, and the frost rime.
     pub gun_textures: std::collections::HashMap<&'static str, Handle<Image>>,
     pub font: Handle<Font>,
 
@@ -307,11 +308,11 @@ fn load_assets(
     });
 
     let gun_textures = [
-        ("steel_diff", "gun_steel_diff.png", true),
-        ("steel_arm", "gun_steel_arm.png", false),
-        ("wood_diff", "gun_wood_diff.png", true),
-        ("wood_nor", "gun_wood_nor.png", false),
-        ("steel_nor", "gun_steel_nor.png", false),
+        ("steel_diff", "gun_steel_diff.jpg", true),
+        ("steel_arm", "gun_steel_arm.jpg", false),
+        ("wood_diff", "gun_wood_diff.jpg", true),
+        ("wood_nor", "gun_wood_nor.jpg", false),
+        ("steel_nor", "gun_steel_nor.jpg", false),
         ("rime", "frost_rime.png", true),
     ]
     .into_iter()

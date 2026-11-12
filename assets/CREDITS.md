@@ -123,6 +123,8 @@ Made for this project with [Higgsfield](https://higgsfield.ai) (the GPT Image 2 
 | `textures/generated/tree_cards.png` | `tools/source_art/winter_trees.png`: a snow-laden spruce, fir, white pine and birch clump in a row on flat magenta | the woods beyond the map's edge |
 | `textures/generated/spray_pine_photo.png` | `tools/source_art/pine_bough.png`: a white pine bough on flat magenta | the needle cards of the white and red pines |
 | `textures/generated/snow_photo_diff.jpg`, `snow_photo_nor.jpg`, `snow_photo_arm.jpg` | `tools/source_art/snow_field.png`: wind-packed snow from straight above, in raking light | the snow ground's colour, relief and roughness |
+| `textures/generated/gun_steel_diff.jpg`, `gun_steel_arm.jpg`, `gun_steel_nor.jpg` | `tools/source_art/blued_steel.png`: worn blued steel with rust in the pits | the weapons' steel |
+| `textures/generated/gun_wood_diff.jpg`, `gun_wood_nor.jpg` | `tools/source_art/walnut_stock.png`: oiled walnut, grain top to bottom | the stocks, forends and the axe haft |
 
 ## Made for this project
 

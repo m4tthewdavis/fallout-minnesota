@@ -234,71 +234,62 @@ SIGNS = [
 
 
 def gun_textures():
-    """Pipe-rifle materials: worn blued steel with rust gathering in pits and
-    seams plus bright scratches, and scratched, grimy wood grain."""
-    n = 512
-    yy, xx = np.mgrid[0:n, 0:n].astype(float)
+    """The weapons' steel and wood, from photographs generated for this
+    project with Higgsfield (see assets/CREDITS.md): `tools/source_art/
+    blued_steel.png`, worn blued steel brushed side to side with rust in the
+    pits, and `tools/source_art/walnut_stock.png`, oiled walnut with its grain
+    running top to bottom (along the stocks, as their UVs run). Each is
+    flattened (its broad light taken out) and made to tile; the relief and,
+    for the steel, the roughness and metalness are read from the picture."""
+
+    def blur(a, r):
+        # (Mirrored at the edges first: the photo doesn't tile yet.)
+        pad = int(r * 3)
+        return wrap_blur(np.pad(a, pad, mode="reflect"), r)[pad:-pad, pad:-pad]
+
+    def flatten(name, r):
+        """The picture as a tiling texture: its mean colour plus its detail."""
+        src = np.asarray(Image.open(os.path.join(SOURCE_ART, name)).convert("RGB")).astype(np.float32) / 255.0
+        mean = src.reshape(-1, 3).mean(0)
+        detail = np.dstack([src[..., c] - blur(src[..., c], r) for c in range(3)])
+        return mean, tile_blend(detail)
+
+    def save_jpg(arr, name):
+        Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8)).save(os.path.join(GEN, name), quality=92)
+        print("  ", "textures/generated/" + name)
+
     # --- steel ---
-    brushed = value_noise(n, 64, 2)
-    brushed = np.repeat(brushed[:, :1], n, 1) * 0.5 + brushed * 0.5  # streaks along U
-    pits = value_noise(n, 12, 5)
-    seams = np.clip(1 - voronoi_edges(n, 14) / 5.0, 0, 1)
-    rust = np.clip((pits - 0.64) * 5 + seams * 0.55 * (pits > 0.45), 0, 1)
-    rust = np.asarray(Image.fromarray((rust * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2)), float) / 255
-    scratches = np.zeros((n, n))
-    img = Image.fromarray((scratches * 255).astype(np.uint8))
-    d = ImageDraw.Draw(img)
-    for _ in range(60):
-        x0, y0 = rng.random(2) * n
-        ang = rng.normal(0, 0.35)
-        length = rng.uniform(15, 90)
-        d.line([x0, y0, x0 + math.cos(ang) * length, y0 + math.sin(ang) * length], fill=int(rng.uniform(80, 200)), width=1)
-    scratches = np.asarray(img, float) / 255
-    blued = np.stack([0.16, 0.17, 0.19]) * (0.85 + 0.3 * brushed[..., None])
-    rust_col = np.stack([0.3, 0.15, 0.07]) * (0.7 + 0.5 * pits[..., None])
-    steel = blued * (1 - rust[..., None]) + rust_col * rust[..., None]
-    steel = steel + scratches[..., None] * 0.18 * (1 - rust[..., None])
-    save(Image.fromarray((np.clip(steel, 0, 1) * 255).astype(np.uint8)), GEN, "gun_steel_diff.png")
-    rough = 0.35 + 0.15 * brushed + 0.5 * rust - 0.15 * scratches
-    metal = 1.0 - 0.9 * rust
-    arm = np.stack([1 - 0.4 * seams * rust, np.clip(rough, 0, 1), np.clip(metal, 0, 1)], -1)
-    save(Image.fromarray((arm * 255).astype(np.uint8)), GEN, "gun_steel_arm.png")
-    # Normal map for the steel: brushed grain, rust pitting, seams and scratches.
-    steel_h = brushed * 0.35 - rust * 0.6 - seams * 0.25 - scratches * 0.5
-    sy, sx = np.gradient(steel_h)
-    nx, ny, nz = -sx * 4.0, sy * 4.0, np.ones_like(steel_h)
-    ln = np.sqrt(nx * nx + ny * ny + nz * nz)
-    save(Image.fromarray((np.stack([nx / ln, ny / ln, nz / ln], -1) * 0.5 * 255 + 127.5).astype(np.uint8)), GEN, "gun_steel_nor.png")
+    mean, detail = flatten("blued_steel.png", 90)
+    col = np.clip(mean + detail * 1.15, 0, 1)
+    r, g, b = col[..., 0], col[..., 1], col[..., 2]
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    # Rust: where the picture is red-brown rather than blue-grey.
+    rust = np.clip(((r - b) - 0.015) * 14.0, 0, 1)
+    rust = np.clip(wrap_blur(rust, 1.0) * 1.3, 0, 1)
+    # Bright steel where the bluing is worn through.
+    worn = np.clip((lum - lum.mean()) / (lum.std() * 2.5 + 1e-6), 0, 1) * (1 - rust)
+    save_jpg(col, "gun_steel_diff.jpg")
+    rough = 0.42 - 0.14 * worn + 0.45 * rust
+    metal = 1.0 - 0.85 * rust
+    cavity = np.clip((wrap_blur(lum, 4.0) - lum) * 6.0, 0, 1)
+    save_jpg(np.stack([1 - 0.35 * cavity, rough, metal], -1), "gun_steel_arm.jpg")
+    # Relief: the fine brushing (bright lines stand proud), pitted rust.
+    fine = lum - wrap_blur(lum, 2.0)
+    hgt = fine / (fine.std() + 1e-6) * 0.35 - wrap_blur(rust, 1.5) * 1.2
+    save_jpg(normal_from_height(hgt, 0.9), "gun_steel_nor.jpg")
 
     # --- wood ---
-    warp = value_noise(n, 4, 3)
-    knots = value_noise(n, 3, 2)
-    grain = np.sin((xx / n * 56 + warp * 4 + knots * 1.5) * math.pi) * 0.5 + 0.5
-    fine = value_noise(n, 128, 1)
-    fine = np.repeat(fine[:1], n, 0) * 0.5 + fine * 0.5  # fine pores along the grain
-    wood_h = grain * 0.7 + fine * 0.3
-    light = np.stack([0.45, 0.28, 0.15])
-    dark = np.stack([0.22, 0.12, 0.06])
-    wood = dark + (light - dark) * wood_h[..., None]
-    grime = np.clip((value_noise(n, 6, 3) - 0.5) * 2.5, 0, 1)
-    wood = wood * (1 - 0.35 * grime[..., None])
-    img = Image.fromarray(np.zeros((n, n), np.uint8))
-    d = ImageDraw.Draw(img)
-    for _ in range(90):
-        x0, y0 = rng.random(2) * n
-        ang = rng.uniform(0, math.pi)
-        length = rng.uniform(8, 50)
-        d.line([x0, y0, x0 + math.cos(ang) * length, y0 + math.sin(ang) * length], fill=int(rng.uniform(100, 255)), width=1)
-    nicks = np.asarray(img, float) / 255
-    wood = wood * (1 - 0.3 * nicks[..., None]) + np.stack([0.55, 0.42, 0.3]) * 0.25 * nicks[..., None]
-    save(Image.fromarray((np.clip(wood, 0, 1) * 255).astype(np.uint8)), GEN, "gun_wood_diff.png")
-    # Normal map from the grain and scratch height (OpenGL convention).
-    hgt = wood_h * 0.6 - nicks * 0.8
-    gy, gx = np.gradient(hgt)
-    nx, ny, nz = -gx * 3.0, gy * 3.0, np.ones_like(hgt)
-    length = np.sqrt(nx * nx + ny * ny + nz * nz)
-    nor = np.stack([nx / length, ny / length, nz / length], -1) * 0.5 + 0.5
-    save(Image.fromarray((nor * 255).astype(np.uint8)), GEN, "gun_wood_nor.png")
+    mean, detail = flatten("walnut_stock.png", 60)
+    col = np.clip(mean + detail * 1.1, 0, 1)
+    save_jpg(col, "gun_wood_diff.jpg")
+    lum = 0.299 * col[..., 0] + 0.587 * col[..., 1] + 0.114 * col[..., 2]
+    # The dark grain lines and pores lie low. Smeared out along the grain
+    # (top to bottom), so the relief is long shallow lines, as on an oiled
+    # stock, not pitting.
+    hgt = wrap_blur(lum, 1.0) - wrap_blur(lum, 8.0)
+    hgt = sum(np.roll(hgt, k, axis=0) for k in range(-7, 8)) / 15.0
+    hgt /= hgt.std() + 1e-6
+    save_jpg(normal_from_height(hgt, 0.45), "gun_wood_nor.jpg")
 
 
 def frost_rime():
