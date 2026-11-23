@@ -193,6 +193,25 @@ fn room(r: Interior) -> Grade {
     }
 }
 
+/// The camera exposure (EV100) the rooms' lamps were balanced at: Bevy's default.
+pub const ROOM_EV100: f32 = 9.7;
+
+/// How far the camera stops down for a clear day's snow, in stops.
+pub const SNOW_STOPS: f32 = 0.55;
+
+/// The camera's exposure (EV100: higher is darker). Sunlit snow is the
+/// brightest thing there is: on a clear day the camera stops down for it, so
+/// the snow keeps its warm light and blue shadows instead of burning out to
+/// flat white, and the sky stands bright over it. At night, in a storm and
+/// indoors there is no such glare, and it opens back up. `day` is 0 at
+/// deepest night and 1 in full day; `overcast` 0 clear, 1 socked in.
+pub fn camera_ev100(day: f32, overcast: f32, indoors: bool) -> f32 {
+    if indoors || !day.is_finite() || !overcast.is_finite() {
+        return ROOM_EV100;
+    }
+    ROOM_EV100 + SNOW_STOPS * smoothstep(0.15, 0.8, day) * (1.0 - 0.5 * overcast.clamp(0.0, 1.0))
+}
+
 /// The grade for this moment.
 pub fn grade(m: &Mood) -> Grade {
     // One NaN anywhere would turn the whole picture to NaN: treat a bad
@@ -249,6 +268,30 @@ mod tests {
 
     fn day() -> Mood {
         Mood::default()
+    }
+
+    #[test]
+    fn the_camera_stops_down_for_sunlit_snow_and_nowhere_else() {
+        let noon = camera_ev100(1.0, 0.0, false);
+        assert!((noon - (ROOM_EV100 + SNOW_STOPS)).abs() < 1e-5);
+        // Night and rooms are shot wide open, at the exposure the lamps were set for.
+        assert_eq!(camera_ev100(0.0, 0.0, false), ROOM_EV100);
+        assert_eq!(camera_ev100(1.0, 0.0, true), ROOM_EV100);
+        // A storm has less glare than a clear day, but still some.
+        let storm = camera_ev100(1.0, 1.0, false);
+        assert!(storm > ROOM_EV100 && storm < noon);
+        // It never jumps as the day goes by, and never goes outside the two ends.
+        let mut last = camera_ev100(0.0, 0.0, false);
+        for i in 0..=200 {
+            let e = camera_ev100(i as f32 / 200.0, 0.0, false);
+            assert!(e >= last && e - last < 0.02 && (ROOM_EV100..=noon).contains(&e));
+            last = e;
+        }
+        for bad in [f32::NAN, f32::INFINITY] {
+            assert_eq!(camera_ev100(bad, 0.0, false), ROOM_EV100);
+            assert_eq!(camera_ev100(1.0, bad, false), ROOM_EV100);
+        }
+        assert_eq!(camera_ev100(1.0, 9.0, false), storm, "overcast is clamped");
     }
 
     #[test]

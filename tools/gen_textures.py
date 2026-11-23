@@ -234,71 +234,62 @@ SIGNS = [
 
 
 def gun_textures():
-    """Pipe-rifle materials: worn blued steel with rust gathering in pits and
-    seams plus bright scratches, and scratched, grimy wood grain."""
-    n = 512
-    yy, xx = np.mgrid[0:n, 0:n].astype(float)
+    """The weapons' steel and wood, from photographs generated for this
+    project with Higgsfield (see assets/CREDITS.md): `tools/source_art/
+    blued_steel.png`, worn blued steel brushed side to side with rust in the
+    pits, and `tools/source_art/walnut_stock.png`, oiled walnut with its grain
+    running top to bottom (along the stocks, as their UVs run). Each is
+    flattened (its broad light taken out) and made to tile; the relief and,
+    for the steel, the roughness and metalness are read from the picture."""
+
+    def blur(a, r):
+        # (Mirrored at the edges first: the photo doesn't tile yet.)
+        pad = int(r * 3)
+        return wrap_blur(np.pad(a, pad, mode="reflect"), r)[pad:-pad, pad:-pad]
+
+    def flatten(name, r):
+        """The picture as a tiling texture: its mean colour plus its detail."""
+        src = np.asarray(Image.open(os.path.join(SOURCE_ART, name)).convert("RGB")).astype(np.float32) / 255.0
+        mean = src.reshape(-1, 3).mean(0)
+        detail = np.dstack([src[..., c] - blur(src[..., c], r) for c in range(3)])
+        return mean, tile_blend(detail)
+
+    def save_jpg(arr, name):
+        Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8)).save(os.path.join(GEN, name), quality=92)
+        print("  ", "textures/generated/" + name)
+
     # --- steel ---
-    brushed = value_noise(n, 64, 2)
-    brushed = np.repeat(brushed[:, :1], n, 1) * 0.5 + brushed * 0.5  # streaks along U
-    pits = value_noise(n, 12, 5)
-    seams = np.clip(1 - voronoi_edges(n, 14) / 5.0, 0, 1)
-    rust = np.clip((pits - 0.64) * 5 + seams * 0.55 * (pits > 0.45), 0, 1)
-    rust = np.asarray(Image.fromarray((rust * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2)), float) / 255
-    scratches = np.zeros((n, n))
-    img = Image.fromarray((scratches * 255).astype(np.uint8))
-    d = ImageDraw.Draw(img)
-    for _ in range(60):
-        x0, y0 = rng.random(2) * n
-        ang = rng.normal(0, 0.35)
-        length = rng.uniform(15, 90)
-        d.line([x0, y0, x0 + math.cos(ang) * length, y0 + math.sin(ang) * length], fill=int(rng.uniform(80, 200)), width=1)
-    scratches = np.asarray(img, float) / 255
-    blued = np.stack([0.16, 0.17, 0.19]) * (0.85 + 0.3 * brushed[..., None])
-    rust_col = np.stack([0.3, 0.15, 0.07]) * (0.7 + 0.5 * pits[..., None])
-    steel = blued * (1 - rust[..., None]) + rust_col * rust[..., None]
-    steel = steel + scratches[..., None] * 0.18 * (1 - rust[..., None])
-    save(Image.fromarray((np.clip(steel, 0, 1) * 255).astype(np.uint8)), GEN, "gun_steel_diff.png")
-    rough = 0.35 + 0.15 * brushed + 0.5 * rust - 0.15 * scratches
-    metal = 1.0 - 0.9 * rust
-    arm = np.stack([1 - 0.4 * seams * rust, np.clip(rough, 0, 1), np.clip(metal, 0, 1)], -1)
-    save(Image.fromarray((arm * 255).astype(np.uint8)), GEN, "gun_steel_arm.png")
-    # Normal map for the steel: brushed grain, rust pitting, seams and scratches.
-    steel_h = brushed * 0.35 - rust * 0.6 - seams * 0.25 - scratches * 0.5
-    sy, sx = np.gradient(steel_h)
-    nx, ny, nz = -sx * 4.0, sy * 4.0, np.ones_like(steel_h)
-    ln = np.sqrt(nx * nx + ny * ny + nz * nz)
-    save(Image.fromarray((np.stack([nx / ln, ny / ln, nz / ln], -1) * 0.5 * 255 + 127.5).astype(np.uint8)), GEN, "gun_steel_nor.png")
+    mean, detail = flatten("blued_steel.png", 90)
+    col = np.clip(mean + detail * 1.15, 0, 1)
+    r, g, b = col[..., 0], col[..., 1], col[..., 2]
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    # Rust: where the picture is red-brown rather than blue-grey.
+    rust = np.clip(((r - b) - 0.015) * 14.0, 0, 1)
+    rust = np.clip(wrap_blur(rust, 1.0) * 1.3, 0, 1)
+    # Bright steel where the bluing is worn through.
+    worn = np.clip((lum - lum.mean()) / (lum.std() * 2.5 + 1e-6), 0, 1) * (1 - rust)
+    save_jpg(col, "gun_steel_diff.jpg")
+    rough = 0.42 - 0.14 * worn + 0.45 * rust
+    metal = 1.0 - 0.85 * rust
+    cavity = np.clip((wrap_blur(lum, 4.0) - lum) * 6.0, 0, 1)
+    save_jpg(np.stack([1 - 0.35 * cavity, rough, metal], -1), "gun_steel_arm.jpg")
+    # Relief: the fine brushing (bright lines stand proud), pitted rust.
+    fine = lum - wrap_blur(lum, 2.0)
+    hgt = fine / (fine.std() + 1e-6) * 0.35 - wrap_blur(rust, 1.5) * 1.2
+    save_jpg(normal_from_height(hgt, 0.9), "gun_steel_nor.jpg")
 
     # --- wood ---
-    warp = value_noise(n, 4, 3)
-    knots = value_noise(n, 3, 2)
-    grain = np.sin((xx / n * 56 + warp * 4 + knots * 1.5) * math.pi) * 0.5 + 0.5
-    fine = value_noise(n, 128, 1)
-    fine = np.repeat(fine[:1], n, 0) * 0.5 + fine * 0.5  # fine pores along the grain
-    wood_h = grain * 0.7 + fine * 0.3
-    light = np.stack([0.45, 0.28, 0.15])
-    dark = np.stack([0.22, 0.12, 0.06])
-    wood = dark + (light - dark) * wood_h[..., None]
-    grime = np.clip((value_noise(n, 6, 3) - 0.5) * 2.5, 0, 1)
-    wood = wood * (1 - 0.35 * grime[..., None])
-    img = Image.fromarray(np.zeros((n, n), np.uint8))
-    d = ImageDraw.Draw(img)
-    for _ in range(90):
-        x0, y0 = rng.random(2) * n
-        ang = rng.uniform(0, math.pi)
-        length = rng.uniform(8, 50)
-        d.line([x0, y0, x0 + math.cos(ang) * length, y0 + math.sin(ang) * length], fill=int(rng.uniform(100, 255)), width=1)
-    nicks = np.asarray(img, float) / 255
-    wood = wood * (1 - 0.3 * nicks[..., None]) + np.stack([0.55, 0.42, 0.3]) * 0.25 * nicks[..., None]
-    save(Image.fromarray((np.clip(wood, 0, 1) * 255).astype(np.uint8)), GEN, "gun_wood_diff.png")
-    # Normal map from the grain and scratch height (OpenGL convention).
-    hgt = wood_h * 0.6 - nicks * 0.8
-    gy, gx = np.gradient(hgt)
-    nx, ny, nz = -gx * 3.0, gy * 3.0, np.ones_like(hgt)
-    length = np.sqrt(nx * nx + ny * ny + nz * nz)
-    nor = np.stack([nx / length, ny / length, nz / length], -1) * 0.5 + 0.5
-    save(Image.fromarray((nor * 255).astype(np.uint8)), GEN, "gun_wood_nor.png")
+    mean, detail = flatten("walnut_stock.png", 60)
+    col = np.clip(mean + detail * 1.1, 0, 1)
+    save_jpg(col, "gun_wood_diff.jpg")
+    lum = 0.299 * col[..., 0] + 0.587 * col[..., 1] + 0.114 * col[..., 2]
+    # The dark grain lines and pores lie low. Smeared out along the grain
+    # (top to bottom), so the relief is long shallow lines, as on an oiled
+    # stock, not pitting.
+    hgt = wrap_blur(lum, 1.0) - wrap_blur(lum, 8.0)
+    hgt = sum(np.roll(hgt, k, axis=0) for k in range(-7, 8)) / 15.0
+    hgt /= hgt.std() + 1e-6
+    save_jpg(normal_from_height(hgt, 0.45), "gun_wood_nor.jpg")
 
 
 def frost_rime():
@@ -1113,6 +1104,238 @@ def fir_photo_card():
     save(card.convert("RGBA"), GEN, "spray_fir_photo.png")
 
 
+SOURCE_ART = os.path.join(HERE, "source_art")
+
+
+def key_magenta(path):
+    """Cut a picture shot against flat magenta out of its background.
+    Returns (rgb, alpha) as float arrays in 0..1. Magenta is the one colour
+    with red and blue both far above green, so how much of it a pixel holds
+    is its coverage; the background's share is then taken back out of the
+    colour, and what magenta is left in fine edges is drained."""
+    arr = np.asarray(Image.open(path).convert("RGB")).astype(np.float32) / 255.0
+    r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
+    # The background as the picture actually has it (it is rarely exactly 255, 0, 255).
+    corners = np.concatenate([arr[:8, :8].reshape(-1, 3), arr[:8, -8:].reshape(-1, 3), arr[-8:, :8].reshape(-1, 3), arr[-8:, -8:].reshape(-1, 3)])
+    bg = np.median(corners, axis=0)
+    full = min(bg[0], bg[2]) - bg[1]
+    amount = np.clip((np.minimum(r, b) - g) / max(full, 1e-3), 0.0, 1.0)
+    alpha = 1.0 - np.clip((amount - 0.12) / 0.70, 0.0, 1.0)
+    # Take the background's light back out of half-covered pixels.
+    a3 = np.maximum(alpha[..., None], 0.05)
+    fg = np.clip((arr - (1.0 - alpha[..., None]) * bg) / a3, 0.0, 1.0)
+    # Drain what magenta is left: red and blue come down to green's level.
+    spill = np.maximum(np.minimum(fg[..., 0], fg[..., 2]) - fg[..., 1], 0.0)
+    fg[..., 0] -= spill
+    fg[..., 2] -= spill
+    # A hair-thin twig is mostly background: once that is drained what is left
+    # leans green. Such pixels keep their brightness but lose the false colour.
+    thin = np.clip(amount * 2.0, 0.0, 1.0)[..., None] * 0.85
+    grey = (0.299 * fg[..., 0] + 0.587 * fg[..., 1] + 0.114 * fg[..., 2])[..., None]
+    fg = fg + (grey * np.array([1.06, 1.0, 0.94]) - fg) * thin
+    return np.clip(fg, 0.0, 1.0), alpha
+
+
+def bleed_colour(rgb, alpha, passes=10):
+    """Spread the colour of covered texels out under the transparent ones, so
+    edges don't fringe in the small mip levels."""
+    filled, weight = rgb * alpha[..., None], alpha.copy()
+    for _ in range(passes):
+        fb = np.asarray(Image.fromarray((np.clip(filled, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2))).astype(np.float32) / 255.0
+        wb = np.asarray(Image.fromarray((np.clip(weight, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2))).astype(np.float32) / 255.0
+        est = fb / np.maximum(wb[..., None], 1e-3)
+        hole = weight < 0.02
+        filled[hole] = est[hole] * np.minimum(wb[hole], 1.0)[..., None]
+        weight[hole] = np.minimum(wb[hole], 1.0)
+    return np.where(alpha[..., None] > 0.02, rgb, filled / np.maximum(weight[..., None], 1e-3))
+
+
+def tree_cards():
+    """Whole trees on one sheet, for the woods beyond the map: a white
+    spruce, a balsam fir, a white pine and a clump of bare birch, each in a
+    256 x 512 cell with its trunk at the bottom centre and a clear margin (so
+    neighbours don't bleed into each other in the small mip levels).
+
+    The trees are cut from `tools/source_art/winter_trees.png`, a picture
+    generated for this project with Higgsfield (see assets/CREDITS.md): four
+    trees in a row against flat magenta.
+    """
+    rgb, alpha = key_magenta(os.path.join(SOURCE_ART, "winter_trees.png"))
+    h, w = alpha.shape
+    # The four trees are the four widest runs of covered columns.
+    covered = (alpha > 0.5).sum(axis=0) > 2
+    runs, start = [], None
+    for x in range(w + 1):
+        on = x < w and covered[x]
+        if on and start is None:
+            start = x
+        elif not on and start is not None:
+            runs.append((start, x))
+            start = None
+    # Join runs split by a hair's gap (a twig's tip), then keep the four biggest.
+    joined = []
+    for run in runs:
+        if joined and run[0] - joined[-1][1] < 6:
+            joined[-1] = (joined[-1][0], run[1])
+        else:
+            joined.append(run)
+    trees = sorted(sorted(joined, key=lambda r: r[1] - r[0])[-4:])
+    assert len(trees) == 4, f"expected four trees in the source picture, found {len(trees)}"
+    CW, CH, MARGIN = 256, 512, 5
+    sheet = np.zeros((CH, CW * 4, 4), dtype=np.float32)
+    for k, (x0, x1) in enumerate(trees):
+        a = alpha[:, x0:x1]
+        rows = np.where((a > 0.5).any(axis=1))[0]
+        y0, y1 = rows[0], rows[-1] + 1
+        # Where the trunk meets the ground: the middle of the lowest rows.
+        foot = np.where((a[y1 - 6 : y1] > 0.5).any(axis=0))[0]
+        trunk = x0 + (foot[0] + foot[-1]) / 2.0
+        half = max(trunk - x0, x1 - trunk)
+        scale = min((CH - 2 * MARGIN) / (y1 - y0), (CW / 2 - MARGIN) / half)
+        # Cut a box centred on the trunk, so the card stands on the tree's foot.
+        bx0, bx1 = int(round(trunk - half)), int(round(trunk + half))
+        box = np.zeros((y1 - y0, bx1 - bx0, 4), dtype=np.float32)
+        sx0, sx1 = max(bx0, 0), min(bx1, w)
+        box[:, sx0 - bx0 : sx1 - bx0, :3] = rgb[y0:y1, sx0:sx1]
+        # Only this tree's own columns: a neighbour's twig must not come along.
+        own = np.zeros(w, dtype=bool)
+        own[x0:x1] = True
+        box[:, sx0 - bx0 : sx1 - bx0, 3] = alpha[y0:y1, sx0:sx1] * own[sx0:sx1]
+        size = (max(1, int(round(box.shape[1] * scale))), max(1, int(round(box.shape[0] * scale))))
+        # Scale colour premultiplied, so the old background can't seep in at edges.
+        pre = np.dstack([box[..., :3] * box[..., 3:4], box[..., 3]])
+        small = np.dstack([np.asarray(Image.fromarray((pre[..., c] * 255).astype(np.uint8)).resize(size, Image.LANCZOS)).astype(np.float32) / 255.0 for c in range(4)])
+        small[..., :3] /= np.maximum(small[..., 3:4], 1e-3)
+        ox = k * CW + (CW - size[0]) // 2
+        oy = CH - MARGIN + 2 - size[1]
+        sheet[oy : oy + size[1], ox : ox + size[0]] = np.clip(small, 0, 1)
+    rgb_out = bleed_colour(sheet[..., :3], sheet[..., 3])
+    out = np.dstack([np.clip(rgb_out, 0, 1), sheet[..., 3]])
+    save(Image.fromarray((out * 255).astype(np.uint8), "RGBA"), GEN, "tree_cards.png")
+
+
+def photo_spray_card(source, name, contrast=34.0):
+    """A foliage card from a picture of a branch shot against flat magenta
+    (`tools/source_art/<source>`): stood upright with its cut end at the
+    bottom centre like the drawn cards, turned to near-white luminance so the
+    game tints it per species with vertex colours, its cut-out in the alpha."""
+    rgb, alpha = key_magenta(os.path.join(SOURCE_ART, source))
+    lum = (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]) * 255.0
+    inside = alpha > 0.5
+    rows, cols = np.where(inside.any(axis=1))[0], np.where(inside.any(axis=0))[0]
+    y0, y1, x0, x1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
+    # The cut end: the middle of the lowest rows.
+    foot = np.where(inside[y1 - 8 : y1].any(axis=0))[0]
+    stem = (foot[0] + foot[-1]) / 2.0
+    half = max(stem - x0, x1 - stem)
+    bx0, bx1 = max(int(round(stem - half)), 0), min(int(round(stem + half)), alpha.shape[1])
+    lum, a = lum[y0:y1, bx0:bx1], alpha[y0:y1, bx0:bx1]
+    inside = a > 0.5
+    # Near white (mean ~205) with the photo's light and dark kept.
+    mean, std = lum[inside].mean(), lum[inside].std() + 1e-3
+    lum = np.clip(205.0 + (lum - mean) / std * contrast, 60, 255)
+    lum[a < 0.05] = 205.0
+    W, H = 256, 512
+    scale = min((W - 4) / lum.shape[1], (H - 2) / lum.shape[0])
+    size = (max(1, round(lum.shape[1] * scale)), max(1, round(lum.shape[0] * scale)))
+    L = Image.fromarray(lum.astype(np.uint8)).resize(size, Image.LANCZOS)
+    A = Image.fromarray((a * 255).astype(np.uint8)).resize(size, Image.LANCZOS)
+    card = Image.new("LA", (W, H), (205, 0))
+    card.paste(Image.merge("LA", (L, A)), ((W - size[0]) // 2, H - size[1]))
+    save(card.convert("RGBA"), GEN, name)
+
+
+def photo_cards():
+    """The white and red pine needle card, from a picture of a white pine
+    bough generated for this project with Higgsfield (see assets/CREDITS.md)."""
+    photo_spray_card("pine_bough.png", "spray_pine_photo.png")
+
+
+def tile_blend(img):
+    """Make a picture tile: blend it with copies of itself shifted half-way
+    across, so that along every edge only a copy that is continuous there
+    shows. `img` is a float array (h, w) or (h, w, c) with its broad
+    brightness already taken out (detail around zero): the blend is scaled
+    so the detail keeps its contrast where two copies are mixed."""
+    h, w = img.shape[:2]
+    wx = np.sin(np.pi * (np.arange(w) + 0.5) / w) ** 2
+    wy = np.sin(np.pi * (np.arange(h) + 0.5) / h) ** 2
+    wx, wy = wx[None, :], wy[:, None]
+    parts = [
+        (img, wx * wy),
+        (np.roll(img, w // 2, axis=1), (1 - wx) * wy),
+        (np.roll(img, h // 2, axis=0), wx * (1 - wy)),
+        (np.roll(np.roll(img, w // 2, axis=1), h // 2, axis=0), (1 - wx) * (1 - wy)),
+    ]
+    out = np.zeros_like(img)
+    power = np.zeros((h, w))
+    for part, weight in parts:
+        out += part * (weight[..., None] if img.ndim == 3 else weight)
+        power += weight * weight
+    norm = np.sqrt(power)
+    return out / (norm[..., None] if img.ndim == 3 else norm)
+
+
+def snow_photo_textures():
+    """The snow ground from a photograph: `tools/source_art/snow_field.png`,
+    a top-down picture of wind-packed snow in low light from the upper left,
+    generated for this project with Higgsfield (see assets/CREDITS.md).
+
+    The picture is flattened (its broad light and shade taken out) and made
+    to tile. Its relief is read from its shading (bright stands proud, dark
+    lies low) and becomes the normal map. The colour map keeps only part of
+    the photo's light and shade (the game's own sun does the rest), and the
+    grains that flash in the photo are made smoother in the roughness map so
+    they glint in the game too."""
+    src = np.asarray(Image.open(os.path.join(SOURCE_ART, "snow_field.png")).convert("RGB")).astype(np.float32) / 255.0
+    n = src.shape[0]
+
+    def blur(a, r):
+        # (Mirrored at the edges first: the photo doesn't tile yet.)
+        pad = int(r * 3)
+        return wrap_blur(np.pad(a, pad, mode="reflect"), r)[pad:-pad, pad:-pad]
+
+    # Detail: each channel minus its own broad light, then made to tile.
+    detail = np.dstack([src[..., c] - blur(src[..., c], 70) for c in range(3)])
+    detail = tile_blend(detail)
+    lum = 0.299 * detail[..., 0] + 0.587 * detail[..., 1] + 0.114 * detail[..., 2]
+    lum /= lum.std() + 1e-6
+
+    # Relief from the photo's own shading: what is bright stands proud, what
+    # is dark lies low, at every size from the lumps down to the grain (broad
+    # shapes count for more: they are the taller ones). Under raking light
+    # brightness is really the slope towards the light, which puts each bump
+    # a little to one side of where it was, and nobody can tell; adding the
+    # slope up along the light's direction instead leaves the map combed.
+    hgt = 1.5 * wrap_blur(lum, 14.0) + 1.0 * wrap_blur(lum, 5.0) + 0.45 * wrap_blur(lum, 1.6) + 0.12 * lum
+    hgt /= hgt.std() + 1e-6
+    grain = lum - wrap_blur(lum, 2.5)
+    nor = normal_from_height(hgt, 1.3)
+    # Under the photo's lumps and grain go the broad, soft forms of a scanned
+    # snow crust (ambientCG Snow014, CC0, fetched by tools/fetch_assets.py).
+    scan = np.asarray(Image.open(os.path.join(ASSETS, "textures", "Snow014", "nor.jpg")).convert("RGB").resize((n, n), Image.LANCZOS)).astype(np.float32) / 255.0
+    v = nor * 2.0 - 1.0
+    v[..., :2] += (scan[..., :2] * 2.0 - 1.0) * 0.6
+    nor = v / np.linalg.norm(v, axis=-1, keepdims=True) * 0.5 + 0.5
+    Image.fromarray((nor * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_photo_nor.jpg"), quality=93)
+    print("   textures/generated/snow_photo_nor.jpg")
+
+    # Colour: clean white, with under half of the photo's own light and shade (blue
+    # in the hollows, as the photo has it).
+    white = np.array([0.945, 0.957, 0.98])
+    col = np.clip(white + detail * 0.45, 0, 1)
+    Image.fromarray((col * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_photo_diff.jpg"), quality=93)
+    print("   textures/generated/snow_photo_diff.jpg")
+
+    # Hollows see less sky; the brightest grains are smooth facets that glint.
+    cavity = np.clip((wrap_blur(hgt, 7.0) - hgt) * 0.45, 0, 1)
+    sparkle = np.clip((grain / (grain.std() + 1e-6) - 1.6) / 2.0, 0, 1)
+    rough = np.clip(0.9 - 0.45 * sparkle, 0, 1)
+    arm = np.stack([1 - 0.2 * cavity, rough, np.zeros_like(rough)], -1)
+    Image.fromarray((arm * 255).astype(np.uint8)).save(os.path.join(GEN, "snow_photo_arm.jpg"), quality=93)
+    print("   textures/generated/snow_photo_arm.jpg")
+
+
 def main():
     print("generating textures")
     nuclear_ice()
@@ -1136,6 +1359,9 @@ def main():
     fir_photo_card()
     pipboy_art()
     flame_sheet()
+    tree_cards()
+    photo_cards()
+    snow_photo_textures()
 
 
 def signs_only():
@@ -1144,7 +1370,7 @@ def signs_only():
 
 
 # Groups that can be regenerated on their own: `gen_textures.py signs vehicles`.
-GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "firphoto": fir_photo_card, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon}
+GROUPS = {"signs": signs_only, "vehicles": vehicle_textures, "snow": snow_textures, "tracks": track_textures, "plants": plant_textures, "firphoto": fir_photo_card, "pipboy": pipboy_art, "flame": flame_sheet, "guns": gun_textures, "frost": frost_rime, "icon": game_icon, "treecards": tree_cards, "photocards": photo_cards, "snowphoto": snow_photo_textures}
 
 if __name__ == "__main__":
     import sys

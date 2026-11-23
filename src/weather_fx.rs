@@ -32,8 +32,8 @@ pub(crate) struct FlakeMaterial(Handle<StandardMaterial>);
 #[derive(Resource)]
 pub(crate) struct VisualWeather {
     pub(crate) fog: f32,
-    snow: f32,
-    wind: f32,
+    pub(crate) snow: f32,
+    pub(crate) wind: f32,
     pub(crate) light: f32,
     /// 0 = clean white fog, 1 = radioactive green.
     pub(crate) sick: f32,
@@ -217,11 +217,8 @@ fn update_fog_volume(
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AtmosphereSet;
 
-/// Exposure for the scattering model's colours.
-pub const SKY_EXPOSURE: f32 = 0.8;
-
 /// What the sky looks like this frame: worked out once here from the
-/// scattering model and the weather, then used by the sky dome, fog, sun and
+/// sky's palette and the weather, then used by the sky dome, fog, sun and
 /// ambient light so they all agree.
 #[derive(Resource, Clone)]
 pub struct SkyLook {
@@ -276,17 +273,17 @@ fn apply_atmosphere(
     let day = ((sky.daylight - 0.12) / 0.88).clamp(0.0, 1.0);
     let overcast = ((vis.fog - 0.01) / 0.03).clamp(0.0, 1.0);
 
-    // The sky itself: scattering through winter air, hazier in a storm.
+    // The sky itself: clear winter air, hazier in a storm.
     let conditions = Conditions { sun: sky.sun_pos, haze: 1.0 + 2.5 * overcast + 0.6 * vis.snow, moon: sky.moon * (1.0 - sky.sun) };
-    // The scattering model is costly and depends on nothing else: reuse the
+    // The palette's sums depend on nothing else: reuse the
     // last answer while the conditions are bit for bit the same (paused, the title screen).
     let key = conditions_key(&conditions);
     let [clear_horizon, clear_zenith, sun_light] = match *clear_sky {
         Some((k, colors)) if k == key => colors,
         _ => {
             let colors = [
-                v3(atmosphere::horizon_color(&conditions, SKY_EXPOSURE)),
-                v3(atmosphere::zenith_color(&conditions, SKY_EXPOSURE)),
+                v3(atmosphere::horizon_color(&conditions)),
+                v3(atmosphere::zenith_color(&conditions)),
                 v3(atmosphere::sun_transmittance(sky.sun_pos, conditions.haze)),
             ];
             *clear_sky = Some((key, colors));
@@ -305,7 +302,7 @@ fn apply_atmosphere(
     let color = Color::linear_rgb(horizon.x, horizon.y, horizon.z);
     for mut f in &mut fog {
         f.color = color;
-        f.falloff = FogFalloff::Exponential { density: vis.fog };
+        f.falloff = FogFalloff::Exponential { density: atmosphere::air_density(vis.fog) };
         // Fog toward the sun glows with its light (warm at sunrise and sunset).
         let glare = sun_light * 0.55 * (1.0 - overcast);
         f.directional_light_color = Color::linear_rgb(glare.x, glare.y, glare.z);
@@ -372,7 +369,7 @@ fn move_flakes(
     interior: Res<CurrentInterior>,
     mut rng: ResMut<RngRes>,
     flake_mat: Res<FlakeMaterial>,
-    clock: Res<ClockRes>,
+    look: Res<SkyLook>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     player: Query<&Transform, With<Player>>,
     mut flakes: Query<(&mut Transform, &mut Visibility, &Flake), Without<Player>>,
@@ -384,7 +381,9 @@ fn move_flakes(
         // Radioactive snow glows faintly green.
         // Unlit, so dim them by hand at night. (Written only when it changes:
         // a touched material re-queues all 900 flakes.)
-        let light = 0.2 + 0.8 * clock.0.sky().daylight.clamp(0.0, 1.0);
+        // They take the light of the sky they fall through: bright by day,
+        // grey at dusk, barely there at night.
+        let light = (luma(look.horizon) * 1.25).clamp(0.02, 1.0);
         let c = Vec3::new(0.95, 0.97, 1.0).lerp(Vec3::new(0.7, 1.3, 0.7), vis.sick) * light;
         crate::changed::set_base_color(&mut materials, &flake_mat.0, Color::LinearRgba(LinearRgba::new(c.x, c.y, c.z, 0.9)));
     }

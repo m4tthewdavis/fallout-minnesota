@@ -25,7 +25,8 @@ use crate::snow::{SnowExt, SnowMaterial};
 /// Handles to every model, material and sprite the world uses.
 #[derive(Resource)]
 pub struct GameAssets {
-    /// Pipe-rifle textures: steel_diff, steel_arm, wood_diff, wood_nor.
+    /// Weapon textures (from photographs, see tools/gen_textures.py): steel_diff,
+    /// steel_arm, steel_nor, wood_diff, wood_nor, and the frost rime.
     pub gun_textures: std::collections::HashMap<&'static str, Handle<Image>>,
     pub font: Handle<Font>,
 
@@ -79,6 +80,8 @@ pub struct GameAssets {
     pub fur: Handle<StandardMaterial>,
     pub wool: Handle<StandardMaterial>,
     pub leather: Handle<StandardMaterial>,
+    /// Coarse woven cloth (scanned hessian), for the jumpsuit's sleeves.
+    pub canvas: Handle<StandardMaterial>,
     /// Rust textures on their own, for car bodies in different paint colours.
     pub rust_diff: Handle<Image>,
     pub rust_normal: Handle<Image>,
@@ -265,17 +268,18 @@ fn load_assets(
     let soft = png(include_bytes!("../assets/textures/generated/soft.png"));
     let flash = png(include_bytes!("../assets/textures/generated/flash.png"));
 
-    // Terrain snow: a cleaned-up diffuse (see tools/gen_textures.py) and no
-    // baked AO, which made the whole map look dirty when tiled.
-    // Generated snow (tools/gen_textures.py): the photo set's twigs and
-    // debris read as dark streaks when tiled across a whole map.
+    // Terrain snow, from a photograph of wind-packed snow made to tile
+    // (tools/gen_textures.py, `snow_photo_textures`): its colour with some
+    // of the photo's own light and shade left in, the relief read from its
+    // shading (over the broad forms of ambientCG's scanned Snow014 crust), and
+    // a roughness map in which the grains that flashed in the
+    // photo glint here too. Clean snow only: twigs and debris in a ground
+    // texture read as dark streaks once it is tiled across a whole map.
     let snow_base = StandardMaterial {
         base_color: Color::srgb(0.8, 0.81, 0.83),
-        base_color_texture: Some(tiled(s, "textures/generated/snow_diff.jpg".into(), true)),
-        // Photo-scanned crust relief (ambientCG Snow014): its colour map has
-        // grass specks that would tile, but the relief alone reads as real snow.
-        normal_map_texture: Some(tiled(s, "textures/Snow014/nor.jpg".into(), false)),
-        metallic_roughness_texture: Some(tiled(s, "textures/generated/snow_arm.jpg".into(), false)),
+        base_color_texture: Some(tiled(s, "textures/generated/snow_photo_diff.jpg".into(), true)),
+        normal_map_texture: Some(tiled(s, "textures/generated/snow_photo_nor.jpg".into(), false)),
+        metallic_roughness_texture: Some(tiled(s, "textures/generated/snow_photo_arm.jpg".into(), false)),
         metallic: 0.0,
         perceptual_roughness: 1.0,
         ..default()
@@ -304,11 +308,11 @@ fn load_assets(
     });
 
     let gun_textures = [
-        ("steel_diff", "gun_steel_diff.png", true),
-        ("steel_arm", "gun_steel_arm.png", false),
-        ("wood_diff", "gun_wood_diff.png", true),
-        ("wood_nor", "gun_wood_nor.png", false),
-        ("steel_nor", "gun_steel_nor.png", false),
+        ("steel_diff", "gun_steel_diff.jpg", true),
+        ("steel_arm", "gun_steel_arm.jpg", false),
+        ("wood_diff", "gun_wood_diff.jpg", true),
+        ("wood_nor", "gun_wood_nor.jpg", false),
+        ("steel_nor", "gun_steel_nor.jpg", false),
         ("rime", "frost_rime.png", true),
     ]
     .into_iter()
@@ -363,6 +367,7 @@ fn load_assets(
         fur: pbr(s, m, "curly_teddy_natural", Color::WHITE),
         wool: pbr(s, m, "wool_boucle", Color::WHITE),
         leather: pbr(s, m, "brown_leather", Color::srgb(0.8, 0.7, 0.62)),
+        canvas: pbr(s, m, "hessian_230", Color::WHITE),
         rust_diff: tiled(s, "textures/rusty_metal_02/diff.jpg".into(), true),
         rust_normal: tiled(s, "textures/rusty_metal_02/nor.jpg".into(), false),
 
@@ -437,7 +442,7 @@ fn add_mipmaps(mut events: EventReader<AssetEvent<Image>>, mut images: ResMut<As
         // Alpha-tested foliage cards keep their density in the distance.
         let foliage = server.get_path(*id).is_some_and(|p| {
             let p = p.path().to_string_lossy();
-            ["spray_", "twigs", "grass_tuft", "reed_plume", "snow_clumps"].iter().any(|k| p.contains(k))
+            ["spray_", "twigs", "grass_tuft", "reed_plume", "snow_clumps", "tree_cards"].iter().any(|k| p.contains(k))
         });
         if foliage {
             mipmaps::preserve_coverage(&mut chain, w, h, levels, 0.35);

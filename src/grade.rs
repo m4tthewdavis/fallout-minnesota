@@ -5,6 +5,7 @@
 
 use bevy::core_pipeline::post_process::ChromaticAberration;
 use bevy::prelude::*;
+use bevy::render::camera::Exposure;
 use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
 
 use crate::gun::ViewModelCamera;
@@ -56,6 +57,7 @@ fn apply_grade(
     game: Res<Game>,
     mut current: ResMut<Current>,
     mut gun_cam: Query<(Entity, Option<&mut ColorGrading>, Option<&mut ChromaticAberration>), With<ViewModelCamera>>,
+    mut exposures: Query<(Entity, Option<&mut Exposure>), With<Camera3d>>,
 ) {
     let sky = clock.0.sky();
     let s = &game.survival;
@@ -72,6 +74,23 @@ fn apply_grade(
         hurt: game.hurt_flash,
     };
     let want = grade::grade(&mood);
+    // The camera stops down for sunlit snow (both cameras: the rifle is in
+    // the same light). Eased like the grade; a door snaps.
+    let ev100 = grade::camera_ev100(mood.day, mood.overcast, interior.0.is_some());
+    let snap = current.room != interior.0;
+    for (cam, exposure) in &mut exposures {
+        match exposure {
+            Some(mut e) => {
+                let next = if snap { ev100 } else { e.ev100 + (ev100 - e.ev100) * (1.0 - (-real.delta_secs() * 1.5).exp()).clamp(0.0, 1.0) };
+                if (next - e.ev100).abs() > 1e-4 {
+                    e.ev100 = next;
+                }
+            }
+            None => {
+                commands.entity(cam).insert(Exposure { ev100 });
+            }
+        }
+    }
     // Weather and light drift over a few seconds; a hit lands at once.
     let k = if current.room != interior.0 { 1.0 } else { 1.0 - (-real.delta_secs() * 1.5).exp() };
     current.room = interior.0;

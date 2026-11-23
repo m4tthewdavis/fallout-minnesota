@@ -117,7 +117,7 @@ AMBIENTCG = [
     ("Concrete031", "1K", "concrete panel walls on the reactor level"),
     ("MetalPlates013", "1K", "riveted plating on the reactor core and machinery"),
     ("OfficeCeiling003", "1K", "drop ceiling in the vault lobby"),
-    ("Snow014", "1K", "surface relief of the snow ground (normal map)"),
+    ("Snow014", "1K", "the broad forms in the snow ground's relief (blended into its normal map by gen_textures.py)"),
     ("Ice003", "1K", "clear green-black lake ice with bubbles and cracks"),
     ("LeafSet019", "1K", "photo-scanned fir sprays on the balsam fir and spruce cards (see gen_textures.py)"),
 ]
@@ -212,7 +212,7 @@ def write_credits(credits):
     lines = [
         "# Asset credits",
         "",
-        "Every asset in this folder is either made for this project or released under",
+        "Every asset in this folder is either made for this project (some of it generated: see \"Generated pictures\") or released under",
         "**CC0 1.0** (public domain), except some recorded sound effects that are **CC BY 3.0/4.0**",
         "(attribution under \"Recorded sounds\" below). No Fallout/Bethesda assets are used.",
         "",

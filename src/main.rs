@@ -15,6 +15,7 @@
 
 mod assets;
 mod audio;
+mod backdrop;
 mod changed;
 mod characters;
 mod combat;
@@ -116,5 +117,6 @@ fn main() {
             pipboy::PipboyPlugin,
         ))
         .add_plugins((menu::MenuPlugin, saves::SavePlugin, quest::QuestPlugin, characters::CharactersPlugin, fo4ui::Fo4UiPlugin, perf::PerfPlugin, window_icon::WindowIconPlugin, crows::CrowPlugin, raiders::RaiderPlugin, devshot::DevShotPlugin, grade::GradePlugin, library::LibraryPlugin, dressing::DressingPlugin, envlight::EnvLightPlugin, worldhash::WorldHashPlugin))
+        .add_plugins(backdrop::BackdropPlugin)
         .run();
 }

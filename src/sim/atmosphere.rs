@@ -1,26 +1,19 @@
-//! A single-scattering model of the sky (Rayleigh and Mie scattering through
-//! a thin spherical atmosphere), used to paint the sky dome, colour the fog
-//! and tint the sunlight. It's what makes the horizon pale, the zenith deep
-//! blue, a low winter sun orange and the sky behind it a soft pink, and it
-//! passes smoothly through dusk into night. Pure maths (no Bevy), so the
-//! colours are unit-tested.
+//! The sky's colours: what paints the sky dome, colours the fog and tints
+//! the sunlight. The dome is an art-directed palette keyed on how high the
+//! sun is (deep clean blue by day over a pale horizon, gold round a low sun,
+//! orange and rose at sunset with a violet belt opposite, a long ember dusk,
+//! and a moonlit night), bent round the sun's compass direction and thickened
+//! by haze. Sunlight's own colour comes from how much air it has crossed.
+//! Pure maths (no Bevy), so the colours are unit-tested.
 
-use super::mathx::dot3 as dot;
+use super::mathx::{dot3 as dot, smoothstep};
 
-const EARTH_R: f32 = 6_360_000.0;
-const ATMO_R: f32 = 6_420_000.0;
-/// Where the observer stands above the ground.
-const EYE_H: f32 = 10.0;
-/// Rayleigh scattering per metre (red, green, blue): why the sky is blue.
+/// Rayleigh scattering per metre (red, green, blue): why low sunlight is red.
 const BETA_R: [f32; 3] = [7.0e-6, 16.5e-6, 41.0e-6];
-/// Mie scattering per metre (haze, ice crystals): a pale halo round the sun.
+/// Mie scattering per metre (haze, ice crystals).
 const BETA_M: f32 = 21.0e-6;
 const SCALE_R: f32 = 8_000.0;
 const SCALE_M: f32 = 1_200.0;
-const MIE_G: f32 = 0.76;
-const SUN_POWER: f32 = 22.0;
-const PRIMARY_STEPS: usize = 12;
-const LIGHT_STEPS: usize = 5;
 
 /// What the sky looks like right now.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,103 +37,108 @@ fn norm(a: V3) -> V3 {
     }
 }
 
-/// Distance along a ray from `origin` to where it leaves the sphere of radius
-/// `r` centred on the planet's centre (the ray starts inside it).
-fn exit_distance(origin: V3, dir: V3, r: f32) -> f32 {
-    let b = dot(origin, dir);
-    let c = dot(origin, origin) - r * r;
-    -b + (b * b - c).max(0.0).sqrt()
+fn mix3(a: V3, b: V3, t: f32) -> V3 {
+    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 }
 
-/// Does the ray hit the ground?
-fn hits_ground(origin: V3, dir: V3) -> bool {
-    let b = dot(origin, dir);
-    let c = dot(origin, origin) - EARTH_R * EARTH_R;
-    b < 0.0 && b * b - c > 0.0
+/// The sky at one height of the sun: straight up, at the horizon away from
+/// the sun, at the horizon under the sun, and the glare round the sun itself.
+struct Key {
+    /// Sun altitude in degrees this look belongs to.
+    alt: f32,
+    zenith: V3,
+    away: V3,
+    toward: V3,
+    glare: V3,
 }
 
-fn rayleigh_phase(mu: f32) -> f32 {
-    3.0 / (16.0 * std::f32::consts::PI) * (1.0 + mu * mu)
+/// The day's looks, from deep night up to full day (linear RGB, as shown).
+const KEYS: [Key; 7] = [
+    // Night: near black, a trace of blue.
+    Key { alt: -14.0, zenith: [0.006, 0.010, 0.028], away: [0.013, 0.020, 0.044], toward: [0.013, 0.020, 0.044], glare: [0.0, 0.0, 0.0] },
+    // Late dusk: the last ember on the horizon under a navy sky.
+    Key { alt: -7.0, zenith: [0.014, 0.028, 0.090], away: [0.035, 0.050, 0.120], toward: [0.300, 0.120, 0.080], glare: [0.10, 0.03, 0.01] },
+    // Dusk: a band of fire where the sun went down, violet opposite.
+    Key { alt: -3.0, zenith: [0.035, 0.080, 0.230], away: [0.170, 0.160, 0.300], toward: [0.920, 0.380, 0.140], glare: [0.50, 0.18, 0.05] },
+    // Sunset: orange under the sun, the rose "belt of Venus" on the far side.
+    Key { alt: 1.0, zenith: [0.075, 0.160, 0.400], away: [0.500, 0.400, 0.500], toward: [1.000, 0.580, 0.220], glare: [0.90, 0.45, 0.14] },
+    // Golden hour.
+    Key { alt: 6.0, zenith: [0.088, 0.200, 0.450], away: [0.560, 0.620, 0.740], toward: [0.980, 0.800, 0.540], glare: [0.80, 0.60, 0.34] },
+    // A low winter day.
+    Key { alt: 14.0, zenith: [0.090, 0.215, 0.490], away: [0.590, 0.700, 0.840], toward: [0.860, 0.850, 0.820], glare: [0.60, 0.56, 0.46] },
+    // Full day: deep clean blue over a pale, luminous horizon.
+    Key { alt: 30.0, zenith: [0.085, 0.210, 0.500], away: [0.600, 0.715, 0.860], toward: [0.800, 0.840, 0.880], glare: [0.50, 0.50, 0.46] },
+];
+
+/// The look for a sun `alt` degrees up, blended between its neighbours.
+fn key_at(alt: f32) -> Key {
+    let first = &KEYS[0];
+    if alt <= first.alt {
+        return Key { alt, zenith: first.zenith, away: first.away, toward: first.toward, glare: first.glare };
+    }
+    for pair in KEYS.windows(2) {
+        let (a, b) = (&pair[0], &pair[1]);
+        if alt <= b.alt {
+            let t = smoothstep(a.alt, b.alt, alt);
+            return Key { alt, zenith: mix3(a.zenith, b.zenith, t), away: mix3(a.away, b.away, t), toward: mix3(a.toward, b.toward, t), glare: mix3(a.glare, b.glare, t) };
+        }
+    }
+    let last = &KEYS[KEYS.len() - 1];
+    Key { alt, zenith: last.zenith, away: last.away, toward: last.toward, glare: last.glare }
 }
 
-fn mie_phase(mu: f32) -> f32 {
-    let g2 = MIE_G * MIE_G;
-    3.0 / (8.0 * std::f32::consts::PI) * ((1.0 - g2) * (1.0 + mu * mu)) / ((2.0 + g2) * (1.0 + g2 - 2.0 * MIE_G * mu).powf(1.5))
-}
-
-/// Light arriving from the direction `view` (unit; below the horizon is
-/// treated as the horizon), as linear RGB before exposure.
-pub fn sky_radiance(view: V3, c: &Conditions) -> V3 {
+/// The colour of the sky in the direction `view` (unit; below the horizon is
+/// treated as the horizon), as linear RGB in 0..=1 ready for the screen.
+pub fn sky_color(view: V3, c: &Conditions) -> V3 {
     let mut dir = norm(view);
     dir[1] = dir[1].max(0.0);
     let dir = norm(dir);
     let sun = norm(c.sun);
-    let origin = [0.0, EARTH_R + EYE_H, 0.0];
-    let len = exit_distance(origin, dir, ATMO_R);
-    let step = len / PRIMARY_STEPS as f32;
-    let mu = dot(dir, sun);
-    let (pr, pm) = (rayleigh_phase(mu), mie_phase(mu));
-    let beta_m = BETA_M * c.haze.max(0.0);
-    let (mut sum_r, mut sum_m) = ([0.0f32; 3], [0.0f32; 3]);
-    let (mut od_r, mut od_m) = (0.0f32, 0.0f32);
-    for i in 0..PRIMARY_STEPS {
-        let t = (i as f32 + 0.5) * step;
-        let p = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
-        let h = (dot(p, p).sqrt() - EARTH_R).max(0.0);
-        let (dr, dm) = ((-h / SCALE_R).exp() * step, (-h / SCALE_M).exp() * step);
-        od_r += dr;
-        od_m += dm;
-        // Sunlight reaching this point, if the ground doesn't shadow it.
-        if hits_ground(p, sun) {
-            continue;
-        }
-        let l_len = exit_distance(p, sun, ATMO_R);
-        let l_step = l_len / LIGHT_STEPS as f32;
-        let (mut lod_r, mut lod_m) = (0.0f32, 0.0f32);
-        for j in 0..LIGHT_STEPS {
-            let lt = (j as f32 + 0.5) * l_step;
-            let q = [p[0] + sun[0] * lt, p[1] + sun[1] * lt, p[2] + sun[2] * lt];
-            let lh = (dot(q, q).sqrt() - EARTH_R).max(0.0);
-            lod_r += (-lh / SCALE_R).exp() * l_step;
-            lod_m += (-lh / SCALE_M).exp() * l_step;
-        }
-        for k in 0..3 {
-            let tau = BETA_R[k] * (od_r + lod_r) + beta_m * 1.1 * (od_m + lod_m);
-            let atten = (-tau).exp();
-            sum_r[k] += atten * dr;
-            sum_m[k] += atten * dm;
-        }
-    }
-    let mut out = [0.0f32; 3];
-    for k in 0..3 {
-        out[k] = SUN_POWER * (sum_r[k] * BETA_R[k] * pr + sum_m[k] * beta_m * pm);
-    }
-    // A real sky is lit many times over, which whitens the horizon and keeps
-    // it from going yellow-green; single scattering misses that. Fade a cool
-    // white in as the sun climbs (a low sun keeps its fire).
     let alt = sun[1].clamp(-1.0, 1.0).asin().to_degrees();
-    let whiten = ((alt - 3.0) / 11.0).clamp(0.0, 1.0);
-    if whiten > 0.0 {
-        let l = 0.2126 * out[0] + 0.7152 * out[1] + 0.0722 * out[2];
-        let cool = [0.84, 0.97, 1.12];
-        for k in 0..3 {
-            let target = l * cool[k] + (out[k] - l) * 0.55;
-            out[k] += (target - out[k]) * whiten * 0.8;
-        }
-    }
-    // The night: a faint airglow, and moonlight's cold blue wash.
-    let up = dir[1];
-    let glow = 0.0035 + 0.05 * c.moon;
-    out[0] += glow * 0.55 * (1.0 - 0.4 * up);
-    out[1] += glow * 0.8 * (1.0 - 0.3 * up);
-    out[2] += glow * 1.6;
-    out
-}
+    let key = key_at(alt);
+    let haze = c.haze.max(0.0);
 
-/// Squash radiance into 0..1 for the screen (a soft shoulder, so a bright sun
-/// halo rolls off instead of clipping).
-pub fn expose(c: V3, exposure: f32) -> V3 {
-    [1.0 - (-c[0] * exposure).exp(), 1.0 - (-c[1] * exposure).exp(), 1.0 - (-c[2] * exposure).exp()]
+    // How much this direction faces the sun's side of the compass (0..1).
+    let flat = |v: V3| {
+        let l = (v[0] * v[0] + v[2] * v[2]).sqrt();
+        if l < 1e-6 {
+            [0.0, 0.0]
+        } else {
+            [v[0] / l, v[2] / l]
+        }
+    };
+    let (d2, s2) = (flat(dir), flat(sun));
+    let facing = 0.5 + 0.5 * (d2[0] * s2[0] + d2[1] * s2[1]);
+    let sunward = facing * facing;
+
+    // The horizon's colour reaches up the sky in a band: narrow on a clear
+    // day, wider round a low sun and in haze.
+    let low_sun = 1.0 - smoothstep(0.0, 14.0, alt);
+    let reach = (5.2 - 2.2 * low_sun * sunward) / (1.0 + 0.35 * (haze - 1.0).max(0.0));
+    let band = (-dir[1] * reach).exp();
+    let horizon = mix3(key.away, key.toward, sunward);
+    let mut out = mix3(key.zenith, horizon, band);
+
+    // At sunset the Earth's shadow lies along the far horizon: a cool grey-blue
+    // strip under the rose belt.
+    let dusk = smoothstep(-8.0, -1.0, alt) * (1.0 - smoothstep(2.0, 7.0, alt));
+    let shadow = dusk * (1.0 - sunward) * (-dir[1] * 22.0).exp() * 0.6;
+    out = mix3(out, [key.zenith[0] * 1.6, key.zenith[1] * 1.5, key.zenith[2] * 1.2], shadow);
+
+    // Glare round the sun: light scattered forward by haze and ice crystals.
+    let mu = dot(dir, sun).max(0.0);
+    let glare = (0.30 * mu.powf(10.0) + 0.45 * mu.powf(90.0)) * (0.7 + 0.3 * haze.min(4.0));
+    for k in 0..3 {
+        out[k] += key.glare[k] * glare;
+    }
+
+    // The night: a faint airglow, and moonlight's cold blue wash.
+    let night = 1.0 - smoothstep(-10.0, -2.0, alt);
+    let wash = (0.002 + 0.030 * c.moon.clamp(0.0, 1.0)) * night;
+    out[0] += wash * 0.55 * (1.0 - 0.4 * dir[1]);
+    out[1] += wash * 0.80 * (1.0 - 0.3 * dir[1]);
+    out[2] += wash * 1.60;
+    [out[0].clamp(0.0, 1.0), out[1].clamp(0.0, 1.0), out[2].clamp(0.0, 1.0)]
 }
 
 /// The colour of direct sunlight at the ground: white-gold when high,
@@ -163,12 +161,12 @@ pub fn sun_transmittance(sun: V3, haze: f32) -> V3 {
 
 /// The sky's colour all round at a low angle: what distant land and the fog
 /// fade into. Averaged over eight compass points.
-pub fn horizon_color(c: &Conditions, exposure: f32) -> V3 {
+pub fn horizon_color(c: &Conditions) -> V3 {
     let mut sum = [0.0f32; 3];
     for i in 0..8 {
         let a = i as f32 / 8.0 * std::f32::consts::TAU;
         let e = 0.07f32;
-        let col = expose(sky_radiance([a.cos() * (1.0 - e), e, a.sin() * (1.0 - e)], c), exposure);
+        let col = sky_color([a.cos() * (1.0 - e), e, a.sin() * (1.0 - e)], c);
         for k in 0..3 {
             sum[k] += col[k] / 8.0;
         }
@@ -177,8 +175,44 @@ pub fn horizon_color(c: &Conditions, exposure: f32) -> V3 {
 }
 
 /// The sky's colour overhead, for ambient light.
-pub fn zenith_color(c: &Conditions, exposure: f32) -> V3 {
-    expose(sky_radiance([0.0, 1.0, 0.0], c), exposure)
+pub fn zenith_color(c: &Conditions) -> V3 {
+    sky_color([0.0, 1.0, 0.0], c)
+}
+
+// ---------------------------------------------------------------------------
+// Haze
+// ---------------------------------------------------------------------------
+
+/// The exponential fog density the picture is drawn with, for the weather's
+/// own `fog_density`. Calm winter air is clear: far woods and hills stand
+/// in layers, each paler than the last, out to a kilometre and more. A storm
+/// closes in to the same whiteout the weather asks for.
+pub fn air_density(weather_fog: f32) -> f32 {
+    (weather_fog - 0.0053).max(0.0015)
+}
+
+/// How much of a thing `distance` metres off still shows through air of `density`.
+#[cfg(test)]
+fn seen_through(density: f32, distance: f32) -> f32 {
+    (-density * distance).exp()
+}
+
+// ---------------------------------------------------------------------------
+// Cloud
+// ---------------------------------------------------------------------------
+
+/// How much of the sky the cumulus deck covers (0..=1) `hours` into the game:
+/// fair-weather cloud that builds and thins through the days, and closes
+/// right over as the sky goes `overcast` (0..=1) ahead of a storm.
+pub fn cloud_cover(hours: f32, overcast: f32) -> f32 {
+    let fair = 0.40 + 0.10 * (hours * 0.37).sin() + 0.06 * (hours * 0.11 + 1.0).sin();
+    fair + (1.0 - fair) * overcast.clamp(0.0, 1.0)
+}
+
+/// How much high cirrus is streaked across the sky (0..=1), `hours` into the
+/// game. It comes and goes on its own slower rhythm.
+pub fn cirrus_amount(hours: f32) -> f32 {
+    (0.55 + 0.35 * (hours * 0.19 + 2.0).sin()).clamp(0.0, 1.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +276,37 @@ pub fn fog_density_field(w: usize, h: usize, d: usize) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn calm_air_is_clear_and_a_blizzard_is_a_whiteout() {
+        use crate::sim::weather::{Phase, Weather};
+        let calm = air_density(Weather::conditions_for(Phase::Calm).fog_density);
+        let warning = air_density(Weather::conditions_for(Phase::Warning).fog_density);
+        let storm = air_density(Weather::conditions_for(Phase::Blizzard).fog_density);
+        assert!(calm < warning && warning < storm);
+        // On a calm day the far side of the map is plain to see and hills a
+        // kilometre off still show; in a blizzard a tree 40 m away is all but gone.
+        assert!(seen_through(calm, 400.0) > 0.35);
+        assert!(seen_through(calm, 1000.0) > 0.08);
+        assert!(seen_through(storm, 40.0) < 0.08);
+        // Never perfectly clear, whatever the weather says.
+        assert!(air_density(0.0) > 0.0 && air_density(-1.0) > 0.0);
+    }
+
+    #[test]
+    fn cloud_is_broken_in_fair_weather_and_closes_over_in_a_storm() {
+        for i in 0..2000 {
+            let hours = i as f32 * 0.37;
+            let fair = cloud_cover(hours, 0.0);
+            assert!((0.2..=0.6).contains(&fair), "fair-weather cover {fair} at {hours} h");
+            assert!((cloud_cover(hours, 1.0) - 1.0).abs() < 1e-6);
+            assert!(cloud_cover(hours, 0.5) > fair);
+            assert!((0.0..=1.0).contains(&cirrus_amount(hours)));
+        }
+        // Out-of-range overcast is clamped, not extrapolated.
+        assert_eq!(cloud_cover(3.0, 7.0), cloud_cover(3.0, 1.0));
+        assert_eq!(cloud_cover(3.0, -7.0), cloud_cover(3.0, 0.0));
+    }
+
     fn sun_at(alt_deg: f32, az_deg: f32) -> V3 {
         let (a, z) = (alt_deg.to_radians(), az_deg.to_radians());
         [a.cos() * z.cos(), a.sin(), a.cos() * z.sin()]
@@ -251,15 +316,13 @@ mod tests {
         Conditions { sun: sun_at(alt, 90.0), haze: 1.0, moon: 0.0 }
     }
 
-    const EXPOSURE: f32 = 1.4;
-
     fn lum(c: V3) -> f32 {
         0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
     }
 
     #[test]
     fn a_daytime_sky_is_blue_overhead() {
-        let z = zenith_color(&conds(24.0), EXPOSURE);
+        let z = zenith_color(&conds(24.0));
         assert!(z[2] > z[1] && z[1] > z[0], "blue-weighted: {z:?}");
         assert!(z[2] > 0.3, "and bright: {z:?}");
     }
@@ -267,24 +330,44 @@ mod tests {
     #[test]
     fn the_horizon_is_paler_and_brighter_than_the_zenith() {
         let c = conds(24.0);
-        let h = horizon_color(&c, EXPOSURE);
-        let z = zenith_color(&c, EXPOSURE);
+        let h = horizon_color(&c);
+        let z = zenith_color(&c);
         assert!(lum(h) > lum(z), "horizon {h:?} vs zenith {z:?}");
         // Paler: less saturated.
         let sat = |c: V3| (c[2] - c[0]) / c[2].max(1e-3);
         assert!(sat(h) < sat(z), "paler at the horizon");
+        // And still blue, not the green-grey of a muddy day.
+        assert!(h[2] > h[1] && h[1] > h[0], "a clean pale blue: {h:?}");
+    }
+
+    #[test]
+    fn the_sky_darkens_smoothly_from_horizon_to_zenith() {
+        for alt in [-5.0f32, 2.0, 10.0, 24.0] {
+            let c = conds(alt);
+            let mut last = f32::MAX;
+            // (From a few degrees up: at sunset the Earth's shadow darkens the
+            // far horizon itself, under the rose belt.)
+            for e in [0.12f32, 0.2, 0.3, 0.5, 0.75, 1.0] {
+                // Looking away from the sun, so its glare doesn't come into it.
+                let l = lum(sky_color([0.0, e, -(1.0 - e * e).max(0.0).sqrt()], &c));
+                assert!(l <= last + 1e-4, "sun {alt}: brighter higher up at {e}");
+                last = l;
+            }
+        }
     }
 
     #[test]
     fn a_low_sun_turns_the_sky_round_it_orange() {
         let c = conds(4.0);
         // Looking at the sun's side of the horizon vs the opposite side.
-        // (Compared as raw radiance: a bright sky saturates once exposed.)
-        let toward = sky_radiance([0.0, 0.08, 1.0], &Conditions { sun: sun_at(4.0, 90.0), ..c });
-        let away = sky_radiance([0.0, 0.08, -1.0], &Conditions { sun: sun_at(4.0, 90.0), ..c });
-        assert!(toward[0] > toward[2] * 0.9, "warm toward the sun: {toward:?}");
+        let toward = sky_color([0.0, 0.08, 1.0], &c);
+        let away = sky_color([0.0, 0.08, -1.0], &c);
+        assert!(toward[0] > toward[2] * 1.3, "warm toward the sun: {toward:?}");
         assert!(toward[0] / toward[2] > away[0] / away[2], "warmer than the far side: {toward:?} vs {away:?}");
         assert!(lum(toward) > lum(away));
+        // The far side at sunset is rose, not grey: red and blue both over green.
+        let belt = sky_color([0.0, 0.08, -1.0], &conds(0.5));
+        assert!(belt[0] > belt[1] && belt[2] > belt[1], "a rose belt opposite the sunset: {belt:?}");
     }
 
     #[test]
@@ -312,20 +395,24 @@ mod tests {
     fn night_is_dark_but_not_black_and_the_moon_brightens_it() {
         let dark = Conditions { sun: sun_at(-35.0, 90.0), haze: 1.0, moon: 0.0 };
         let moonlit = Conditions { moon: 1.0, ..dark };
-        let (a, b) = (horizon_color(&dark, EXPOSURE), horizon_color(&moonlit, EXPOSURE));
+        let (a, b) = (horizon_color(&dark), horizon_color(&moonlit));
         assert!(lum(a) > 0.0 && lum(a) < 0.05, "night horizon {a:?}");
         assert!(lum(b) > lum(a));
         assert!(b[2] > b[0], "moonlight is blue: {b:?}");
-        let day = horizon_color(&conds(24.0), EXPOSURE);
+        let day = horizon_color(&conds(24.0));
         assert!(lum(day) > lum(b) * 8.0);
     }
 
     #[test]
     fn twilight_glows_after_the_sun_has_set() {
         // Just below the horizon the high atmosphere is still lit: brighter than deep night.
-        let dusk = horizon_color(&Conditions { sun: sun_at(-3.0, 90.0), haze: 1.0, moon: 0.0 }, EXPOSURE);
-        let night = horizon_color(&Conditions { sun: sun_at(-35.0, 90.0), haze: 1.0, moon: 0.0 }, EXPOSURE);
+        let dusk = horizon_color(&Conditions { sun: sun_at(-3.0, 90.0), haze: 1.0, moon: 0.0 });
+        let night = horizon_color(&Conditions { sun: sun_at(-35.0, 90.0), haze: 1.0, moon: 0.0 });
         assert!(lum(dusk) > lum(night) * 2.0, "{dusk:?} vs {night:?}");
+        // And the glow sits where the sun went down.
+        let c = Conditions { sun: sun_at(-3.0, 90.0), haze: 1.0, moon: 0.0 };
+        let (toward, away) = (sky_color([0.0, 0.05, 1.0], &c), sky_color([0.0, 0.05, -1.0], &c));
+        assert!(lum(toward) > lum(away) * 1.5 && toward[0] > toward[2]);
     }
 
     #[test]
@@ -333,7 +420,27 @@ mod tests {
         let near_sun = [0.0, 0.3, 1.0];
         let clear = Conditions { sun: sun_at(17.0, 90.0), haze: 1.0, moon: 0.0 };
         let hazy = Conditions { haze: 3.0, ..clear };
-        assert!(lum(sky_radiance(near_sun, &hazy)) > lum(sky_radiance(near_sun, &clear)) * 1.2);
+        assert!(lum(sky_color(near_sun, &hazy)) > lum(sky_color(near_sun, &clear)) * 1.1);
+    }
+
+    #[test]
+    fn the_day_passes_without_a_jump_in_colour() {
+        // Step the sun through the whole range: no two neighbouring looks differ much.
+        let mut last: Option<[V3; 3]> = None;
+        let mut alt = -20.0f32;
+        while alt <= 35.0 {
+            let c = conds(alt);
+            let now = [zenith_color(&c), sky_color([0.0, 0.05, 1.0], &c), sky_color([0.0, 0.05, -1.0], &c)];
+            if let Some(prev) = last {
+                for (a, b) in prev.iter().zip(&now) {
+                    for k in 0..3 {
+                        assert!((a[k] - b[k]).abs() < 0.03, "a jump at sun {alt}: {a:?} -> {b:?}");
+                    }
+                }
+            }
+            last = Some(now);
+            alt += 0.1;
+        }
     }
 
     #[test]
@@ -357,11 +464,11 @@ mod tests {
     #[test]
     fn it_never_produces_nonsense() {
         for alt in [-40.0f32, -5.0, 0.0, 10.0, 24.0, 80.0] {
-            for dir in [[0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.3, -0.1, -0.9], [0.0, 0.0, 0.0]] {
-                let r = sky_radiance(dir, &conds(alt));
-                assert!(r.iter().all(|v| v.is_finite() && *v >= 0.0), "{alt} {dir:?}: {r:?}");
-                let e = expose(r, EXPOSURE);
-                assert!(e.iter().all(|v| (0.0..=1.0).contains(v)));
+            for haze in [0.0f32, 1.0, 4.0, 50.0] {
+                for dir in [[0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.3, -0.1, -0.9], [0.0, 0.0, 0.0]] {
+                    let r = sky_color(dir, &Conditions { haze, ..conds(alt) });
+                    assert!(r.iter().all(|v| v.is_finite() && (0.0..=1.0).contains(v)), "{alt} {dir:?}: {r:?}");
+                }
             }
         }
     }
