@@ -355,3 +355,57 @@ fn dump_hands() {
     }
     write("sleeve", &sleeve());
 }
+
+#[test]
+fn rounded_boxes_keep_their_size_and_round_their_edges() {
+    for (size, r) in [([0.072, 0.095, 0.3], 0.008), ([0.03, 0.1, 0.04], 0.012), ([0.02, 0.02, 0.02], 0.05), ([1.0, 1.0, 1.0], 0.0)] {
+        let m = rounded_box(size, r, 3, 0.1);
+        assert!(m.is_valid(), "{size:?} {r}");
+        let (lo, hi) = m.bounds();
+        for k in 0..3 {
+            assert!((hi[k] - size[k] * 0.5).abs() < 1e-5 && (lo[k] + size[k] * 0.5).abs() < 1e-5, "{size:?} axis {k}: {lo:?} {hi:?}");
+        }
+        assert!(m.outwardness([0.0; 3]) > 0.0, "faces out");
+        // Every triangle faces away from the centre.
+        for tri in m.indices.chunks(3) {
+            let (a, b, c) = (m.positions[tri[0] as usize], m.positions[tri[1] as usize], m.positions[tri[2] as usize]);
+            let n = cross(sub(b, a), sub(c, a));
+            if length(n) < 1e-12 {
+                continue;
+            }
+            let mid = scale(add(add(a, b), c), 1.0 / 3.0);
+            assert!(dot(n, mid) > -1e-9, "{size:?} r {r}: a triangle faces in");
+        }
+    }
+    // A rounded corner is cut back: nothing reaches the box's own corner.
+    let m = rounded_box([0.1, 0.1, 0.1], 0.02, 4, 0.1);
+    let corner = m.positions.iter().map(|p| length(*p)).fold(0.0, f32::max);
+    let sharp = (3.0f32).sqrt() * 0.05;
+    assert!(corner < sharp - 0.005, "{corner} vs {sharp}");
+}
+
+#[test]
+fn extruded_parts_are_closed_solid_and_eased() {
+    let outline = smooth_outline(&[[-0.016, 0.035], [0.055, 0.035], [0.11, 0.0], [0.12, -0.03], [-0.016, -0.04]], 2);
+    assert_eq!(outline.len(), 20);
+    let m = extrude_x(&outline, 0.018, 0.004, 0.1);
+    assert!(m.is_valid());
+    let (lo, hi) = m.bounds();
+    assert!((lo[0] + 0.018).abs() < 1e-6 && (hi[0] - 0.018).abs() < 1e-6);
+    // Smoothing cuts corners, so the part sits inside the rough outline.
+    assert!(hi[2] <= 0.12 && lo[2] >= -0.016 && hi[1] <= 0.035 && lo[1] >= -0.04);
+    // Every triangle faces away from the middle of the part.
+    let centre = [0.0, -0.002, 0.045];
+    for tri in m.indices.chunks(3) {
+        let (a, b, c) = (m.positions[tri[0] as usize], m.positions[tri[1] as usize], m.positions[tri[2] as usize]);
+        let n = cross(sub(b, a), sub(c, a));
+        if length(n) < 1e-14 {
+            continue;
+        }
+        let mid = scale(add(add(a, b), c), 1.0 / 3.0);
+        assert!(dot(n, sub(mid, centre)) > 0.0, "a triangle faces in at {mid:?}");
+    }
+    // The faces are inset: the widest points of the outline are only on the sides.
+    let face_z = m.positions.iter().filter(|p| (p[0].abs() - 0.018).abs() < 1e-6).map(|p| p[2]).fold(f32::MIN, f32::max);
+    assert!(face_z < hi[2] - 0.002);
+}

@@ -30,6 +30,177 @@ pub fn cuboid(size: V3, uv_scale: f32) -> MeshData {
     m
 }
 
+/// A box centred on the origin with its edges and corners rounded off to
+/// `radius` (machined or cast metal, worn wood), `steps` facets round each
+/// rounded edge. UVs are planar per side, world-scaled like [`cuboid`]'s,
+/// and the normals are exact, so the rounding shades smoothly.
+pub fn rounded_box(size: V3, radius: f32, steps: usize, uv_scale: f32) -> MeshData {
+    let h = scale(size, 0.5);
+    let r = radius.max(0.0).min(h[0]).min(h[1]).min(h[2]);
+    let inner = [h[0] - r, h[1] - r, h[2] - r];
+    let steps = steps.max(1);
+    // Where vertices go along one axis of half-width `hw`: the flat run, then
+    // points spaced evenly in angle round the rounded edge at each end.
+    let stations = |ri: f32| -> Vec<f32> {
+        let mut out = Vec::new();
+        for k in (0..=steps).rev() {
+            out.push(-(ri + r * (k as f32 / steps as f32 * std::f32::consts::FRAC_PI_2).sin()));
+        }
+        for k in 0..=steps {
+            out.push(ri + r * (k as f32 / steps as f32 * std::f32::consts::FRAC_PI_2).sin());
+        }
+        out.dedup_by(|a, b| (*a - *b).abs() < 1e-7);
+        out
+    };
+    let axes = [stations(inner[0]), stations(inner[1]), stations(inner[2])];
+    // (normal axis, sign, u axis, v axis).
+    let faces: [(usize, f32, usize, usize); 6] = [(0, 1.0, 2, 1), (0, -1.0, 2, 1), (1, 1.0, 0, 2), (1, -1.0, 0, 2), (2, 1.0, 0, 1), (2, -1.0, 0, 1)];
+    let mut m = MeshData::default();
+    for (n, sign, ua, va) in faces {
+        let base = m.positions.len() as u32;
+        let (us, vs) = (&axes[ua], &axes[va]);
+        for &v in vs {
+            for &u in us {
+                // A point on the flat box, pulled onto the rounded one.
+                let mut p = [0.0f32; 3];
+                p[n] = sign * h[n];
+                p[ua] = u;
+                p[va] = v;
+                let c = [p[0].clamp(-inner[0], inner[0]), p[1].clamp(-inner[1], inner[1]), p[2].clamp(-inner[2], inner[2])];
+                let d = sub(p, c);
+                let len = length(d);
+                let normal = if len > 1e-9 { scale(d, 1.0 / len) } else { let mut f = [0.0; 3]; f[n] = sign; f };
+                let q = add(c, scale(normal, r));
+                // Planar UVs on the side, as `cuboid` lays them.
+                let uv = [q[ua] / uv_scale, -q[va] / uv_scale];
+                m.vertex(q, normal, uv, WHITE);
+            }
+        }
+        // Wind each side so it faces out: (u, v) must turn the same way as
+        // the side's outward normal.
+        let axis = |i: usize| {
+            let mut e = [0.0f32; 3];
+            e[i] = 1.0;
+            e
+        };
+        let out = cross(axis(ua), axis(va))[n] * sign > 0.0;
+        let row = us.len() as u32;
+        for j in 0..vs.len() as u32 - 1 {
+            for i in 0..row - 1 {
+                let a = base + j * row + i;
+                if out {
+                    m.quad(a, a + 1, a + row + 1, a + row);
+                } else {
+                    m.quad(a, a + row, a + row + 1, a + 1);
+                }
+            }
+        }
+    }
+    m
+}
+
+/// Rounds the corners off a closed outline (Chaikin's corner cutting,
+/// `passes` times): each pass replaces every corner with two points a
+/// quarter of the way along its edges.
+pub fn smooth_outline(outline: &[[f32; 2]], passes: usize) -> Vec<[f32; 2]> {
+    let mut pts = outline.to_vec();
+    for _ in 0..passes {
+        let n = pts.len();
+        let mut next = Vec::with_capacity(n * 2);
+        for i in 0..n {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            next.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+            next.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+        }
+        pts = next;
+    }
+    pts
+}
+
+/// A flat part cut from plate and dressed: the closed `outline` (z, y)
+/// extruded across x to `half_width` either side, with its edges eased by a
+/// `bevel` (the faces are inset by it). The outline must be star-shaped
+/// about its centroid (true of any convex shape and most gun parts). The
+/// sides are smooth round the outline, so a smoothed outline (see
+/// [`smooth_outline`]) gives a part with no hard corners.
+pub fn extrude_x(outline: &[[f32; 2]], half_width: f32, bevel: f32, uv_scale: f32) -> MeshData {
+    let n = outline.len();
+    let c = outline.iter().fold([0.0f32; 2], |a, p| [a[0] + p[0] / n as f32, a[1] + p[1] / n as f32]);
+    let bevel = bevel.clamp(0.0, half_width * 0.9);
+    // The face outline, pulled in towards the centre by the bevel.
+    let inset: Vec<[f32; 2]> = outline
+        .iter()
+        .map(|p| {
+            let (dz, dy) = (p[0] - c[0], p[1] - c[1]);
+            let d = (dz * dz + dy * dy).sqrt().max(1e-6);
+            let k = ((d - bevel) / d).max(0.1);
+            [c[0] + dz * k, c[1] + dy * k]
+        })
+        .collect();
+    let wall_x = half_width - bevel;
+    let mut m = MeshData::default();
+    // A ring of quads between two loops of the outline.
+    let strip = |m: &mut MeshData, a: &[[f32; 2]], ax: f32, b: &[[f32; 2]], bx: f32| {
+        let mut piece = MeshData::default();
+        let mut along = 0.0;
+        for i in 0..=n {
+            let (p, q) = (a[i % n], b[i % n]);
+            if i > 0 {
+                let prev = a[i - 1];
+                along += ((p[0] - prev[0]).powi(2) + (p[1] - prev[1]).powi(2)).sqrt();
+            }
+            piece.vertex([ax, p[1], p[0]], [0.0, 1.0, 0.0], [along / uv_scale, ax / uv_scale], WHITE);
+            piece.vertex([bx, q[1], q[0]], [0.0, 1.0, 0.0], [along / uv_scale, bx / uv_scale], WHITE);
+        }
+        for i in 0..n as u32 {
+            let (p0, q0, p1, q1) = (i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+            piece.quad(p0, p1, q1, q0);
+        }
+        // Face away from the part's middle.
+        if piece.outwardness([0.0, c[1], c[0]]) < 0.0 {
+            for t in piece.indices.as_chunks_mut::<3>().0 {
+                t.swap(1, 2);
+            }
+        }
+        piece.recompute_normals();
+        // The loop's first and last columns are the same place: one normal.
+        for (x, y) in [(0usize, n * 2), (1, n * 2 + 1)] {
+            let nn = normalize(add(piece.normals[x], piece.normals[y]));
+            piece.normals[x] = nn;
+            piece.normals[y] = nn;
+        }
+        m.append(&piece);
+    };
+    // The sides, then the bevels down to each face.
+    strip(&mut m, outline, -wall_x, outline, wall_x);
+    for sign in [-1.0f32, 1.0] {
+        strip(&mut m, outline, sign * wall_x, &inset, sign * half_width);
+    }
+    // The two faces: fans from the centre.
+    for sign in [-1.0f32, 1.0] {
+        let normal = [sign, 0.0, 0.0];
+        let base = m.positions.len() as u32;
+        m.vertex([sign * half_width, c[1], c[0]], normal, [c[0] / uv_scale, -c[1] / uv_scale], WHITE);
+        for p in &inset {
+            m.vertex([sign * half_width, p[1], p[0]], normal, [p[0] / uv_scale, -p[1] / uv_scale], WHITE);
+        }
+        for i in 0..n as u32 {
+            let (a, b) = (base + 1 + i, base + 1 + (i + 1) % n as u32);
+            // Wound to face along `normal`.
+            let pa = m.positions[a as usize];
+            let pb = m.positions[b as usize];
+            let pc = m.positions[base as usize];
+            let face = cross(sub(pa, pc), sub(pb, pc));
+            if face[0] * sign >= 0.0 {
+                m.tri(base, a, b);
+            } else {
+                m.tri(base, b, a);
+            }
+        }
+    }
+    m
+}
+
 /// Surface of revolution around the Y axis. `profile` is (radius, y) from
 /// bottom to top. Optional flat caps close the ends.
 pub fn lathe(profile: &[(f32, f32)], segments: usize, uv_scale: f32, cap_bottom: bool, cap_top: bool) -> MeshData {
